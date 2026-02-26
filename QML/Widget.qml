@@ -55,9 +55,18 @@ PluginComponent {
     property real lastUpdated: 0
     property var doneThreadState: ({})
     property string fetchSplitToken: "__GH_PARTICIPATING_SPLIT__"
+    property string authorSplitToken: "__GH_AUTHOR_SPLIT__"
     property int parseRequestSeq: 0
     property int viewApplyChunkSize: 20
     property var expandedReposState: ({ "__defaultExpanded": true })
+    property var authorsByThread: ({})
+    property var authorRequestQueue: []
+    property bool authorRequestInFlight: false
+    property var authorFetchedUrlsByThread: ({})
+    property var pendingThreadDoneQueue: []
+    property var avatarPreloadEntries: []
+    property var avatarPreloadMap: ({})
+    property int avatarPreloadLimit: 500
 
     property url githubIconPrimary: "https://github.com/favicon.ico"
     property url githubIconFallback: Qt.resolvedUrl("../Images/github-mark.svg")
@@ -121,6 +130,589 @@ PluginComponent {
         return copy
     }
 
+    function cloneAuthorsByThread() {
+        var copy = {}
+        for (var threadId in authorsByThread)
+            copy[threadId] = authorsByThread[threadId]
+        return copy
+    }
+
+    function cloneAuthorFetchedUrlsByThread() {
+        var copy = {}
+        for (var threadId in authorFetchedUrlsByThread) {
+            var threadCopy = {}
+            var source = authorFetchedUrlsByThread[threadId] || {}
+            for (var url in source)
+                threadCopy[url] = source[url]
+            copy[threadId] = threadCopy
+        }
+        return copy
+    }
+
+    function cloneAvatarPreloadMap() {
+        var copy = {}
+        for (var key in avatarPreloadMap)
+            copy[key] = avatarPreloadMap[key]
+        return copy
+    }
+
+    function cloneThreadFetchedUrlMap(threadId) {
+        var source = authorFetchedUrlsByThread[threadId] || {}
+        var copy = {}
+        for (var url in source)
+            copy[url] = source[url]
+        return copy
+    }
+
+    function markThreadUrlsFetched(threadId, urls) {
+        if (!threadId || !urls || urls.length === 0)
+            return
+
+        var nextByThread = cloneAuthorFetchedUrlsByThread()
+        var nextThreadMap = cloneThreadFetchedUrlMap(threadId)
+
+        for (var index = 0; index < urls.length; index++) {
+            var url = normalizeApiUrl(urls[index])
+            if (url)
+                nextThreadMap[url] = true
+        }
+
+        nextByThread[threadId] = nextThreadMap
+        authorFetchedUrlsByThread = nextByThread
+    }
+
+    function filterThreadUnfetchedUrls(threadId, urls) {
+        var result = []
+        if (!threadId || !urls || urls.length === 0)
+            return result
+
+        var fetchedMap = authorFetchedUrlsByThread[threadId] || {}
+        var seen = {}
+
+        for (var index = 0; index < urls.length; index++) {
+            var rawUrl = String(urls[index] || "").trim()
+            var normalized = normalizeApiUrl(rawUrl)
+            if (!normalized || fetchedMap[normalized] || seen[normalized])
+                continue
+            seen[normalized] = true
+            result.push(rawUrl)
+        }
+
+        return result
+    }
+
+    function defaultAvatarUrlForLogin(login) {
+        var normalized = String(login || "").trim()
+        if (!normalized)
+            return ""
+        return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=80"
+    }
+
+    function authorAvatarUrl(authorLike) {
+        if (!authorLike)
+            return ""
+
+        var avatarUrl = String(authorLike.avatarUrl || authorLike.avatar_url || "").trim()
+        if (avatarUrl)
+            return avatarUrl
+
+        var login = String(authorLike.login || "").trim()
+        if (login)
+            return defaultAvatarUrlForLogin(login)
+
+        return ""
+    }
+
+    function authorKey(login, htmlUrl, avatarUrl) {
+        var normalizedLogin = String(login || "").trim().toLowerCase()
+        if (normalizedLogin)
+            return normalizedLogin
+
+        var normalizedHtml = String(htmlUrl || "").trim()
+        if (normalizedHtml)
+            return normalizedHtml
+
+        return String(avatarUrl || "").trim()
+    }
+
+    function mergeAuthorLists(existingAuthors, incomingAuthors) {
+        var merged = []
+        var byKey = {}
+
+        var existing = existingAuthors || []
+        for (var existingIndex = 0; existingIndex < existing.length; existingIndex++)
+            pushAuthorCandidate(merged, byKey, existing[existingIndex])
+
+        var incoming = incomingAuthors || []
+        for (var incomingIndex = 0; incomingIndex < incoming.length; incomingIndex++)
+            pushAuthorCandidate(merged, byKey, incoming[incomingIndex])
+
+        return merged
+    }
+
+    function isLikelyGitHubLogin(login) {
+        var value = String(login || "").trim()
+        if (!value)
+            return false
+
+        // Allow standard GitHub logins and GitHub bot accounts (e.g. dependabot[bot]).
+        if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(value))
+            return true
+        if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\[bot\]$/.test(value))
+            return true
+
+        return false
+    }
+
+    function pushAuthorCandidate(target, byKey, userLike) {
+        if (!userLike || typeof userLike !== "object")
+            return
+
+        var login = String(userLike.login || "").trim()
+        if (!isLikelyGitHubLogin(login))
+            return
+
+        var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
+        var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+
+        htmlUrl = String(htmlUrl || "").trim()
+        if (!htmlUrl)
+            htmlUrl = "https://github.com/" + encodeURIComponent(login)
+
+        avatarUrl = authorAvatarUrl({
+            login: login,
+            avatarUrl: avatarUrl
+        })
+
+        var key = authorKey(login, htmlUrl, avatarUrl)
+        if (!key)
+            return
+
+        if (byKey.hasOwnProperty(key)) {
+            var existing = target[byKey[key]]
+            if (!existing.login && login)
+                existing.login = login
+            if (!existing.avatarUrl && avatarUrl)
+                existing.avatarUrl = avatarUrl
+            if (!existing.htmlUrl && htmlUrl)
+                existing.htmlUrl = htmlUrl
+            return
+        }
+
+        byKey[key] = target.length
+        target.push({
+            login: login,
+            avatarUrl: avatarUrl,
+            htmlUrl: htmlUrl
+        })
+    }
+
+    function queueAvatarPreloadFromAuthors(authors) {
+        if (!authors || authors.length === 0 || avatarPreloadEntries.length >= avatarPreloadLimit)
+            return
+
+        var nextEntries = avatarPreloadEntries.slice(0)
+        var nextMap = cloneAvatarPreloadMap()
+        var changed = false
+
+        for (var index = 0; index < authors.length; index++) {
+            if (nextEntries.length >= avatarPreloadLimit)
+                break
+
+            var author = authors[index]
+            var login = String((author && author.login) || "").trim()
+            var avatarUrl = authorAvatarUrl(author)
+            var key = authorKey(login, (author && author.htmlUrl) || "", avatarUrl)
+            if (!key || !avatarUrl || nextMap.hasOwnProperty(key))
+                continue
+
+            nextMap[key] = avatarUrl
+            nextEntries.push({
+                key: key,
+                source: avatarUrl
+            })
+            changed = true
+        }
+
+        if (changed) {
+            avatarPreloadMap = nextMap
+            avatarPreloadEntries = nextEntries
+        }
+    }
+
+    function queueAvatarPreloadFromNotifications(items) {
+        if (!items || items.length === 0)
+            return
+
+        var ownerAuthors = []
+        for (var index = 0; index < items.length; index++) {
+            var item = items[index]
+            ownerAuthors.push({
+                login: item.repositoryOwnerLogin || "",
+                avatarUrl: item.repositoryOwnerAvatarUrl || "",
+                htmlUrl: item.repositoryOwnerLogin ? ("https://github.com/" + encodeURIComponent(item.repositoryOwnerLogin)) : ""
+            })
+        }
+
+        queueAvatarPreloadFromAuthors(ownerAuthors)
+    }
+
+    function parseSubjectAuthors(payloadText) {
+        var authors = []
+        var byKey = {}
+        var parsed
+
+        try {
+            parsed = JSON.parse(payloadText || "{}")
+        } catch (error) {
+            return []
+        }
+
+        function walk(value, depth) {
+            if (!value || depth > 8)
+                return
+
+            if (Array.isArray(value)) {
+                for (var arrayIndex = 0; arrayIndex < value.length; arrayIndex++)
+                    walk(value[arrayIndex], depth + 1)
+                return
+            }
+
+            if (typeof value !== "object")
+                return
+
+            if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
+                pushAuthorCandidate(authors, byKey, value)
+
+            pushAuthorCandidate(authors, byKey, value.user)
+            pushAuthorCandidate(authors, byKey, value.author)
+            pushAuthorCandidate(authors, byKey, value.assignee)
+            pushAuthorCandidate(authors, byKey, value.sender)
+            pushAuthorCandidate(authors, byKey, value.creator)
+            pushAuthorCandidate(authors, byKey, value.merged_by)
+            pushAuthorCandidate(authors, byKey, value.closed_by)
+            pushAuthorCandidate(authors, byKey, value.dismissed_by)
+            pushAuthorCandidate(authors, byKey, value.actor)
+
+            for (var key in value) {
+                if (!value.hasOwnProperty(key))
+                    continue
+                var child = value[key]
+                if (!child || typeof child !== "object")
+                    continue
+                walk(child, depth + 1)
+            }
+        }
+
+        walk(parsed, 0)
+        return authors
+    }
+
+    function parseSubjectAuthorsMulti(payloadText, splitToken) {
+        var marker = "\n" + (splitToken || authorSplitToken) + "\n"
+        var normalized = String(payloadText || "")
+        if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+            normalized += "\n"
+
+        var parts = normalized.split(marker)
+        var merged = []
+        var mergedByKey = {}
+
+        for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+            var part = String(parts[partIndex] || "").trim()
+            if (!part)
+                continue
+
+            var partAuthors = parseSubjectAuthors(part)
+            for (var authorIndex = 0; authorIndex < partAuthors.length; authorIndex++)
+                pushAuthorCandidate(merged, mergedByKey, partAuthors[authorIndex])
+        }
+
+        return merged
+    }
+
+    function normalizeApiUrl(url) {
+        var normalized = String(url || "").trim()
+        if (!normalized)
+            return ""
+
+        var queryIndex = normalized.indexOf("?")
+        if (queryIndex >= 0)
+            normalized = normalized.substring(0, queryIndex)
+
+        if (normalized.indexOf("{") >= 0)
+            return ""
+
+        if (normalized.indexOf("https://api.github.com/repos/") !== 0)
+            return ""
+
+        return normalized
+    }
+
+    function isThreadParentApiUrl(url) {
+        var normalized = normalizeApiUrl(url)
+        if (!normalized)
+            return false
+
+        var parts = normalized.split("/")
+        if (parts.length !== 8)
+            return false
+
+        if (parts[0] !== "https:" || parts[2] !== "api.github.com" || parts[3] !== "repos")
+            return false
+
+        if (parts[6] !== "issues" && parts[6] !== "pulls")
+            return false
+
+        return /^[0-9]+$/.test(parts[7])
+    }
+
+    function collectSubjectExpansionUrls(value, target, seen, depth) {
+        if (!value || depth > 8)
+            return
+
+        if (Array.isArray(value)) {
+            for (var arrayIndex = 0; arrayIndex < value.length; arrayIndex++)
+                collectSubjectExpansionUrls(value[arrayIndex], target, seen, depth + 1)
+            return
+        }
+
+        if (typeof value !== "object")
+            return
+
+        function push(url) {
+            var normalized = normalizeApiUrl(url)
+            if (!normalized || !isThreadParentApiUrl(normalized) || seen[normalized])
+                return
+            seen[normalized] = true
+            target.push(normalized)
+        }
+
+        push(value.issue_url)
+        push(value.pull_request_url)
+        push(value.url)
+
+        for (var key in value) {
+            if (!value.hasOwnProperty(key))
+                continue
+            var child = value[key]
+            if (!child || typeof child !== "object")
+                continue
+            collectSubjectExpansionUrls(child, target, seen, depth + 1)
+        }
+    }
+
+    function parseSubjectExpansionUrls(payloadText, splitToken) {
+        var marker = "\n" + (splitToken || authorSplitToken) + "\n"
+        var normalized = String(payloadText || "")
+        if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+            normalized += "\n"
+
+        var parts = normalized.split(marker)
+        var urls = []
+        var seen = {}
+
+        for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+            var part = String(parts[partIndex] || "").trim()
+            if (!part)
+                continue
+
+            var parsed
+            try {
+                parsed = JSON.parse(part)
+            } catch (error) {
+                continue
+            }
+
+            collectSubjectExpansionUrls(parsed, urls, seen, 0)
+        }
+
+        return urls
+    }
+
+    function appendAuthorQuery(url, query) {
+        if (!url)
+            return ""
+        return url + (url.indexOf("?") >= 0 ? "&" : "?") + query
+    }
+
+    function buildAuthorFetchUrls(subjectApiUrl, subjectType) {
+        var urls = []
+        var perPageQuery = "per_page=100"
+
+        function push(url) {
+            if (!url)
+                return
+            if (urls.indexOf(url) >= 0)
+                return
+            urls.push(url)
+        }
+
+        push(subjectApiUrl)
+
+        if (isThreadParentApiUrl(subjectApiUrl) && subjectApiUrl.indexOf("/pulls/") >= 0) {
+            push(appendAuthorQuery(subjectApiUrl + "/reviews", perPageQuery))
+            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
+            push(appendAuthorQuery(subjectApiUrl + "/commits", perPageQuery))
+
+            var issueApiUrl = subjectApiUrl.replace("/pulls/", "/issues/")
+            push(appendAuthorQuery(issueApiUrl + "/comments", perPageQuery))
+            push(appendAuthorQuery(issueApiUrl + "/timeline", perPageQuery))
+            push(appendAuthorQuery(issueApiUrl + "/events", perPageQuery))
+        }
+
+        if (isThreadParentApiUrl(subjectApiUrl) && subjectApiUrl.indexOf("/issues/") >= 0) {
+            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
+            push(appendAuthorQuery(subjectApiUrl + "/timeline", perPageQuery))
+            push(appendAuthorQuery(subjectApiUrl + "/events", perPageQuery))
+        }
+
+        if (subjectApiUrl.indexOf("/discussions/") >= 0)
+            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
+
+        if (subjectApiUrl.indexOf("/commits/") >= 0)
+            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
+
+        return urls
+    }
+
+    function enqueueAuthorUrls(threadId, urls) {
+        if (!token || !threadId || !urls || urls.length === 0)
+            return
+
+        var candidateUrls = filterThreadUnfetchedUrls(threadId, urls)
+        if (candidateUrls.length === 0)
+            return
+
+        var pendingMap = {}
+        var nextQueue = authorRequestQueue.slice(0)
+
+        for (var queueIndex = 0; queueIndex < nextQueue.length; queueIndex++) {
+            var queueItem = nextQueue[queueIndex]
+            if (queueItem.threadId !== threadId)
+                continue
+            var pendingUrls = queueItem.urls || []
+            for (var pendingIndex = 0; pendingIndex < pendingUrls.length; pendingIndex++) {
+                var pendingKey = normalizeApiUrl(pendingUrls[pendingIndex])
+                if (pendingKey)
+                    pendingMap[pendingKey] = true
+            }
+        }
+
+        var filtered = []
+        for (var index = 0; index < candidateUrls.length; index++) {
+            var url = candidateUrls[index]
+            var urlKey = normalizeApiUrl(url)
+            if (!urlKey || pendingMap[urlKey])
+                continue
+            pendingMap[urlKey] = true
+            filtered.push(url)
+        }
+
+        if (filtered.length === 0)
+            return
+
+        nextQueue.push({
+            threadId: threadId,
+            urls: filtered
+        })
+        authorRequestQueue = nextQueue
+        processAuthorQueue()
+    }
+
+    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType) {
+        if (!token || !threadId || !subjectApiUrl)
+            return
+
+        enqueueAuthorUrls(threadId, buildAuthorFetchUrls(subjectApiUrl, subjectType || ""))
+    }
+
+    function processAuthorQueue() {
+        if (authorRequestInFlight || !token)
+            return
+        if (authorRequestQueue.length === 0)
+            return
+
+        var nextQueue = authorRequestQueue.slice(0)
+        var request = nextQueue.shift()
+        authorRequestQueue = nextQueue
+
+        var urls = filterThreadUnfetchedUrls(request.threadId, request.urls || [])
+        if (urls.length === 0) {
+            Qt.callLater(root.processAuthorQueue)
+            return
+        }
+
+        authorRequestInFlight = true
+        var process = authorFetchComponent.createObject(root, {
+            threadId: request.threadId,
+            requestedUrls: urls
+        })
+
+        var command = ["curl"]
+        for (var urlIndex = 0; urlIndex < urls.length; urlIndex++) {
+            var url = urls[urlIndex]
+            if (!url)
+                continue
+            if (command.length > 1)
+                command.push("--next")
+            command.push(
+                "-sS",
+                "--connect-timeout", "10",
+                "--max-time", "20",
+                "-H", "Accept: application/vnd.github+json",
+                "-H", "X-GitHub-Api-Version: 2022-11-28",
+                "-H", "Authorization: token " + token,
+                "-w", "\n" + authorSplitToken + "\n",
+                url
+            )
+        }
+
+        process.command = command
+        process.running = true
+    }
+
+    function queueThreadDoneSync(threadIds) {
+        if (!threadIds || threadIds.length === 0)
+            return
+
+        var nextQueue = pendingThreadDoneQueue.slice(0)
+        var seen = {}
+        for (var existingIndex = 0; existingIndex < nextQueue.length; existingIndex++)
+            seen[nextQueue[existingIndex]] = true
+
+        for (var index = 0; index < threadIds.length; index++) {
+            var threadId = threadIds[index]
+            if (!threadId || seen[threadId])
+                continue
+            seen[threadId] = true
+            nextQueue.push(threadId)
+        }
+
+        pendingThreadDoneQueue = nextQueue
+        processPendingThreadDoneQueue()
+    }
+
+    function processPendingThreadDoneQueue() {
+        if (!token || isMutating || isLoading)
+            return
+        if (pendingThreadDoneQueue.length === 0)
+            return
+
+        var nextQueue = pendingThreadDoneQueue.slice(0)
+        var threadId = nextQueue.shift()
+        pendingThreadDoneQueue = nextQueue
+
+        runMutation(
+            "DELETE",
+            "https://api.github.com/notifications/threads/" + threadId,
+            "thread_done_sync",
+            threadId,
+            "",
+            ""
+        )
+    }
+
     onPollIntervalMsChanged: {
         pollTimer.interval = pollIntervalMs
         if (pollTimer.running)
@@ -140,6 +732,13 @@ PluginComponent {
             fetchQueued = false
             parseRequestSeq = parseRequestSeq + 1
             isLoading = false
+            pendingThreadDoneQueue = []
+            authorRequestQueue = []
+            authorRequestInFlight = false
+            authorFetchedUrlsByThread = ({})
+            authorsByThread = ({})
+            avatarPreloadEntries = []
+            avatarPreloadMap = ({})
             expandedReposState = ({ "__defaultExpanded": true })
             return
         }
@@ -175,10 +774,15 @@ PluginComponent {
                 root.notificationsForView = []
                 root.pendingViewNotifications = []
                 root.pendingViewIndex = 0
+                root.authorsByThread = ({})
+                root.authorRequestQueue = []
+                root.authorRequestInFlight = false
+                root.authorFetchedUrlsByThread = ({})
                 viewApplyTimer.stop()
                 root.unreadCount = 0
                 root.errorMessage = message.error
                 root.lastUpdated = Date.now()
+                Qt.callLater(root.processPendingThreadDoneQueue)
                 if (root.fetchQueued) {
                     root.fetchQueued = false
                     Qt.callLater(root.fetchNotifications)
@@ -191,6 +795,10 @@ PluginComponent {
                 root.notificationsForView = []
                 root.pendingViewNotifications = []
                 root.pendingViewIndex = 0
+                root.authorsByThread = ({})
+                root.authorRequestQueue = []
+                root.authorRequestInFlight = false
+                root.authorFetchedUrlsByThread = ({})
                 root.unreadCount = parseInt(message.unreadCount || 0)
                 root.errorMessage = ""
                 root.lastUpdated = Date.now()
@@ -214,11 +822,13 @@ PluginComponent {
                         nextNotifications.push(chunk[index])
                     root.notifications = nextNotifications
                     root.notificationsForView = nextNotifications
+                    root.queueAvatarPreloadFromNotifications(chunk)
                 }
 
                 if (message.isLast) {
                     root.isLoading = false
                     root.lastUpdated = Date.now()
+                    Qt.callLater(root.processPendingThreadDoneQueue)
                     if (root.fetchQueued) {
                         root.fetchQueued = false
                         Qt.callLater(root.fetchNotifications)
@@ -231,6 +841,7 @@ PluginComponent {
             root.notifications = message.items || []
             root.unreadCount = parseInt(message.unreadCount || 0)
             root.queueViewNotifications(root.notifications)
+            root.queueAvatarPreloadFromNotifications(root.notifications)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
 
@@ -288,6 +899,60 @@ PluginComponent {
     }
 
     Component {
+        id: authorFetchComponent
+
+        Process {
+            property string threadId: ""
+            property var requestedUrls: []
+            property string _buffer: ""
+
+            stdout: SplitParser {
+                onRead: line => _buffer += line + "\n"
+            }
+
+            stderr: SplitParser {
+                onRead: line => {
+                    if (line.trim())
+                        console.warn("[GitHubInbox] author:", line)
+                }
+            }
+
+            onExited: exitCode => {
+                root.markThreadUrlsFetched(threadId, requestedUrls || [])
+
+                var fetchedAuthors = []
+                if (exitCode === 0)
+                    fetchedAuthors = root.parseSubjectAuthorsMulti(_buffer, root.authorSplitToken)
+
+                var nextAuthors = root.cloneAuthorsByThread()
+                var existingAuthors = nextAuthors[threadId] || []
+                var mergedAuthors = root.mergeAuthorLists(existingAuthors, fetchedAuthors)
+                nextAuthors[threadId] = mergedAuthors
+                root.authorsByThread = nextAuthors
+                root.queueAvatarPreloadFromAuthors(mergedAuthors)
+
+                if (exitCode === 0) {
+                    var expansionRoots = root.parseSubjectExpansionUrls(_buffer, root.authorSplitToken)
+                    if (expansionRoots.length > 0) {
+                        var expansionUrls = []
+                        for (var rootIndex = 0; rootIndex < expansionRoots.length; rootIndex++) {
+                            var parentUrl = expansionRoots[rootIndex]
+                            var builtUrls = root.buildAuthorFetchUrls(parentUrl, "")
+                            for (var urlIndex = 0; urlIndex < builtUrls.length; urlIndex++)
+                                expansionUrls.push(builtUrls[urlIndex])
+                        }
+                        root.enqueueAuthorUrls(threadId, expansionUrls)
+                    }
+                }
+
+                root.authorRequestInFlight = false
+                Qt.callLater(root.processAuthorQueue)
+                destroy()
+            }
+        }
+    }
+
+    Component {
         id: mutationComponent
 
         Process {
@@ -325,6 +990,7 @@ PluginComponent {
                     root.errorMessage = "Action failed (HTTP " + (isNaN(statusCode) ? "?" : statusCode) + ")."
                 }
 
+                Qt.callLater(root.processPendingThreadDoneQueue)
                 destroy()
             }
         }
@@ -429,6 +1095,9 @@ PluginComponent {
         var updated = []
         var doneCopy = {}
         for (var doneKey in doneThreadState) doneCopy[doneKey] = doneThreadState[doneKey]
+
+        if (actionType === "thread_done_sync")
+            return
 
         if (actionType === "all_read") {
             for (var allIndex = 0; allIndex < notifications.length; allIndex++)
@@ -559,6 +1228,37 @@ PluginComponent {
         )
     }
 
+    function markRepoDone(repositoryFullName) {
+        if (!repositoryFullName)
+            return
+
+        var doneCopy = {}
+        for (var doneKey in doneThreadState)
+            doneCopy[doneKey] = doneThreadState[doneKey]
+
+        var updated = []
+        var threadIds = []
+
+        for (var index = 0; index < notifications.length; index++) {
+            var item = notifications[index]
+            if (item.repository === repositoryFullName && item.threadId) {
+                doneCopy[item.threadId] = true
+                threadIds.push(item.threadId)
+                continue
+            }
+            updated.push(item)
+        }
+
+        if (threadIds.length === 0)
+            return
+
+        doneThreadState = doneCopy
+        notifications = updated
+        queueViewNotifications(notifications)
+        unreadCount = recalculateUnread(updated)
+        queueThreadDoneSync(threadIds)
+    }
+
     function markRepoAsRead(repositoryFullName) {
         if (!repositoryFullName)
             return
@@ -588,6 +1288,27 @@ PluginComponent {
             "",
             ""
         )
+    }
+
+    Item {
+        id: avatarPreloadHost
+        visible: false
+        width: 0
+        height: 0
+
+        Repeater {
+            model: root.avatarPreloadEntries
+
+            delegate: Image {
+                required property var modelData
+                source: modelData.source || ""
+                asynchronous: true
+                cache: true
+                sourceSize.width: 48
+                sourceSize.height: 48
+                visible: false
+            }
+        }
     }
 
     // =======================================================================
@@ -668,13 +1389,17 @@ PluginComponent {
                 titleLines: root.titleLines
                 groupItemLimit: root.groupItemLimit
                 expandedReposState: root.expandedReposState
+                authorsByThread: root.authorsByThread
 
                 onRefreshNow: root.refreshNow()
                 onMarkAllRead: root.markAllAsRead()
-                onMarkRepoRead: function(repositoryFullName) { root.markRepoAsRead(repositoryFullName) }
+                onMarkRepoDone: function(repositoryFullName) { root.markRepoDone(repositoryFullName) }
                 onMarkThreadRead: function(threadId) { root.markThreadAsRead(threadId) }
                 onMarkThreadUnread: function(threadId) { root.markThreadAsUnread(threadId) }
                 onMarkThreadDone: function(threadId) { root.markThreadDone(threadId) }
+                onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
+                    root.enqueueAuthorFetch(threadId, subjectApiUrl, subjectType)
+                }
                 onClosePopout: root.closePopout()
                 onPersistExpandedRepos: function(state) { root.expandedReposState = root.cloneExpandedState(state) }
             }

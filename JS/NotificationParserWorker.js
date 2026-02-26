@@ -166,8 +166,11 @@ function parseNotificationsPayload(payloadText) {
             updatedAt: item.updated_at || "",
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",
+            repositoryOwnerLogin: (repository.owner && repository.owner.login) || "",
+            repositoryOwnerAvatarUrl: (repository.owner && repository.owner.avatar_url) || "",
             subjectType: subject.type || "Notification",
             title: subject.title || "(untitled)",
+            subjectApiUrl: subject.url || "",
             webUrl: resolveWebUrl(item)
         })
     }
@@ -181,7 +184,7 @@ function resolveWebUrl(notification) {
 
     var subject = notification.subject || {}
     var apiUrl = subject.url || ""
-    var converted = apiToWebUrl(apiUrl)
+    var converted = apiToWebUrl(apiUrl, subject.type || "", subject.title || "")
     if (converted)
         return converted
 
@@ -192,7 +195,20 @@ function resolveWebUrl(notification) {
     return "https://github.com/notifications"
 }
 
-function apiToWebUrl(apiUrl) {
+function releaseTagFromSubject(subjectType, subjectTitle) {
+    var normalizedType = String(subjectType || "").toLowerCase()
+    if (normalizedType !== "release")
+        return ""
+
+    var title = String(subjectTitle || "").trim()
+    if (!title)
+        return ""
+
+    title = title.replace(/^release\s+/i, "").trim()
+    return title
+}
+
+function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     if (!apiUrl || apiUrl.indexOf("https://api.github.com/repos/") !== 0)
         return ""
 
@@ -214,8 +230,12 @@ function apiToWebUrl(apiUrl) {
         return base + "/commit/" + tail[1]
     if (tail.length >= 2 && tail[0] === "discussions")
         return base + "/discussions/" + tail[1]
-    if (tail.length >= 2 && tail[0] === "releases")
-        return base + "/releases/" + tail[1]
+    if (tail.length >= 2 && tail[0] === "releases") {
+        var releaseTag = releaseTagFromSubject(subjectType, subjectTitle)
+        if (releaseTag)
+            return base + "/releases/tag/" + encodeURIComponent(releaseTag)
+        return base + "/releases"
+    }
     if (tail.length >= 3 && tail[0] === "dependabot" && tail[1] === "alerts")
         return base + "/security/dependabot/" + tail[2]
     if (tail.length >= 2 && tail[0] === "security-advisories")

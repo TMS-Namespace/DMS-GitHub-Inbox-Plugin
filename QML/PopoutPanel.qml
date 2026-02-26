@@ -18,14 +18,16 @@ Item {
     property int titleLines: 2
     property int groupItemLimit: 25
     property var expandedReposState: ({ "__defaultExpanded": true })
+    property var authorsByThread: ({})
 
     // -- Actions --------------------------------------------------------------
     signal refreshNow()
     signal markAllRead()
-    signal markRepoRead(string repositoryFullName)
+    signal markRepoDone(string repositoryFullName)
     signal markThreadRead(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
+    signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
     signal closePopout()
     signal persistExpandedRepos(var state)
 
@@ -71,9 +73,16 @@ Item {
                 groupsByRepo[repo] = {
                     repository: repo,
                     unreadCount: 0,
+                    repoOwnerLogin: "",
+                    repoAvatarUrl: "",
                     items: []
                 }
                 repoOrder.push(repo)
+            }
+
+            if (!groupsByRepo[repo].repoAvatarUrl) {
+                groupsByRepo[repo].repoOwnerLogin = item.repositoryOwnerLogin || ""
+                groupsByRepo[repo].repoAvatarUrl = item.repositoryOwnerAvatarUrl || ""
             }
 
             if (groupsByRepo[repo].items.length >= groupItemLimit)
@@ -386,15 +395,40 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: Theme.spacingXS
 
-                                DankIcon {
-                                    name: "folder"
-                                    size: 16
-                                    color: Theme.surfaceVariantText
+                                Item {
+                                    width: 16
+                                    height: 16
                                     anchors.verticalCenter: parent.verticalCenter
+
+                                    Rectangle {
+                                        id: repoAvatarMask
+                                        anchors.fill: parent
+                                        radius: width / 2
+                                        clip: true
+                                        color: Theme.surfaceContainerHighest
+                                        visible: repoAvatarImage.status === Image.Ready
+
+                                        Image {
+                                            id: repoAvatarImage
+                                            anchors.fill: parent
+                                            source: groupCard.groupData.repoAvatarUrl || ""
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                            cache: true
+                                        }
+                                    }
+
+                                    DankIcon {
+                                        anchors.centerIn: parent
+                                        name: "folder"
+                                        size: 16
+                                        color: Theme.surfaceVariantText
+                                        visible: repoAvatarImage.status !== Image.Ready
+                                    }
                                 }
 
                                 StyledText {
-                                    width: parent.width - 22
+                                    width: parent.width - 24
                                     text: groupCard.groupData.repository
                                     font.pixelSize: Theme.fontSizeSmall
                                     font.weight: Font.Medium
@@ -425,7 +459,7 @@ Item {
                                         hoverEnabled: true
                                         cursorShape: panel.anyBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
                                         enabled: !panel.anyBusy
-                                        onClicked: panel.markRepoRead(groupCard.groupData.repository)
+                                        onClicked: panel.markRepoDone(groupCard.groupData.repository)
                                     }
 
                                     DankIcon {
@@ -486,11 +520,15 @@ Item {
                                 delegate: NotificationRow {
                                     width: parent.width
                                     notificationData: modelData
+                                    authors: panel.authorsByThread[modelData.threadId] || []
                                     isBusy: panel.anyBusy
                                     titleLines: panel.titleLines
                                     onMarkRead: function(threadId) { panel.markThreadRead(threadId) }
                                     onMarkUnread: function(threadId) { panel.markThreadUnread(threadId) }
                                     onMarkDone: function(threadId) { panel.markThreadDone(threadId) }
+                                    onRequestAuthors: function(threadId, subjectApiUrl, subjectType) {
+                                        panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
+                                    }
                                 }
                             }
                         }
