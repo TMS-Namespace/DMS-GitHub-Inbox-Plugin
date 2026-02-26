@@ -63,6 +63,7 @@ PluginComponent {
     property var authorRequestQueue: []
     property bool authorRequestInFlight: false
     property var authorFetchedUrlsByThread: ({})
+    property bool authorPrefetchPending: false
     property var pendingThreadDoneQueue: []
     property var avatarPreloadEntries: []
     property var avatarPreloadMap: ({})
@@ -672,6 +673,35 @@ PluginComponent {
         process.running = true
     }
 
+    function queueAuthorPrefetchForNotifications(items) {
+        if (!token || !items || items.length === 0)
+            return
+
+        for (var index = 0; index < items.length; index++) {
+            var item = items[index]
+            if (!item || !item.threadId || !item.subjectApiUrl)
+                continue
+            enqueueAuthorFetch(item.threadId, item.subjectApiUrl, item.subjectType || "")
+        }
+    }
+
+    function finalizeAuthorPrefetchState() {
+        if (!authorPrefetchPending)
+            return
+        if (authorRequestInFlight || authorRequestQueue.length > 0)
+            return
+
+        authorPrefetchPending = false
+        if (isLoading)
+            isLoading = false
+
+        Qt.callLater(processPendingThreadDoneQueue)
+        if (fetchQueued) {
+            fetchQueued = false
+            Qt.callLater(fetchNotifications)
+        }
+    }
+
     function queueThreadDoneSync(threadIds) {
         if (!threadIds || threadIds.length === 0)
             return
@@ -736,6 +766,7 @@ PluginComponent {
             authorRequestQueue = []
             authorRequestInFlight = false
             authorFetchedUrlsByThread = ({})
+            authorPrefetchPending = false
             authorsByThread = ({})
             avatarPreloadEntries = []
             avatarPreloadMap = ({})
@@ -778,6 +809,7 @@ PluginComponent {
                 root.authorRequestQueue = []
                 root.authorRequestInFlight = false
                 root.authorFetchedUrlsByThread = ({})
+                root.authorPrefetchPending = false
                 viewApplyTimer.stop()
                 root.unreadCount = 0
                 root.errorMessage = message.error
@@ -799,6 +831,7 @@ PluginComponent {
                 root.authorRequestQueue = []
                 root.authorRequestInFlight = false
                 root.authorFetchedUrlsByThread = ({})
+                root.authorPrefetchPending = parseInt(message.totalCount || 0) > 0
                 root.unreadCount = parseInt(message.unreadCount || 0)
                 root.errorMessage = ""
                 root.lastUpdated = Date.now()
@@ -823,32 +856,25 @@ PluginComponent {
                     root.notifications = nextNotifications
                     root.notificationsForView = nextNotifications
                     root.queueAvatarPreloadFromNotifications(chunk)
+                    root.queueAuthorPrefetchForNotifications(chunk)
                 }
 
                 if (message.isLast) {
-                    root.isLoading = false
                     root.lastUpdated = Date.now()
-                    Qt.callLater(root.processPendingThreadDoneQueue)
-                    if (root.fetchQueued) {
-                        root.fetchQueued = false
-                        Qt.callLater(root.fetchNotifications)
-                    }
+                    root.finalizeAuthorPrefetchState()
                 }
                 return
             }
 
-            root.isLoading = false
             root.notifications = message.items || []
             root.unreadCount = parseInt(message.unreadCount || 0)
             root.queueViewNotifications(root.notifications)
             root.queueAvatarPreloadFromNotifications(root.notifications)
+            root.authorPrefetchPending = root.notifications.length > 0
+            root.queueAuthorPrefetchForNotifications(root.notifications)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
-
-            if (root.fetchQueued) {
-                root.fetchQueued = false
-                Qt.callLater(root.fetchNotifications)
-            }
+            root.finalizeAuthorPrefetchState()
         }
     }
 
@@ -946,6 +972,7 @@ PluginComponent {
                 }
 
                 root.authorRequestInFlight = false
+                root.finalizeAuthorPrefetchState()
                 Qt.callLater(root.processAuthorQueue)
                 destroy()
             }

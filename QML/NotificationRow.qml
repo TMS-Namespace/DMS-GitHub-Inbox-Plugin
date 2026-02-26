@@ -86,24 +86,7 @@ Item {
     }
 
     function requestAuthorsIfNeeded() {
-        if (authorRequestSent)
-            return
-        if (!threadId || !subjectApiUrl)
-            return
-        authorRequestSent = true
-        requestAuthors(threadId, subjectApiUrl, subjectType)
-    }
-
-    Component.onCompleted: requestAuthorsIfNeeded()
-
-    onThreadIdChanged: {
-        authorRequestSent = false
-        requestAuthorsIfNeeded()
-    }
-
-    onSubjectApiUrlChanged: {
-        authorRequestSent = false
-        requestAuthorsIfNeeded()
+        // Authors are pre-fetched during refresh in Widget.qml.
     }
 
     height: Math.max(72, rowHeight)

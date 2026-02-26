@@ -378,7 +378,7 @@ Item {
                         Item {
                             id: repoHeader
                             width: parent.width
-                            height: 22
+                            height: 28
 
                             MouseArea {
                                 id: repoHeaderArea
@@ -396,8 +396,8 @@ Item {
                                 spacing: Theme.spacingXS
 
                                 Item {
-                                    width: 16
-                                    height: 16
+                                    width: 20
+                                    height: 20
                                     anchors.verticalCenter: parent.verticalCenter
 
                                     Rectangle {
@@ -421,14 +421,14 @@ Item {
                                     DankIcon {
                                         anchors.centerIn: parent
                                         name: "folder"
-                                        size: 16
+                                        size: 18
                                         color: Theme.surfaceVariantText
                                         visible: repoAvatarImage.status !== Image.Ready
                                     }
                                 }
 
                                 StyledText {
-                                    width: parent.width - 24
+                                    width: parent.width - 30
                                     text: groupCard.groupData.repository
                                     font.pixelSize: Theme.fontSizeSmall
                                     font.weight: Font.Medium
