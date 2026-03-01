@@ -13,6 +13,7 @@ PluginSettings {
     property bool showToken: false
     property int groupLimitValue: 25
     property int fetchPagesValue: 3
+    property int popupHeightValue: 10
 
     function saveValue(key, value) {
         if (pluginService)
@@ -51,11 +52,22 @@ PluginSettings {
         fetchPagesValue = clampFetchPages(loadValue("fetchPages", "3"))
     }
 
+    function clampPopupHeight(value) {
+        var units = parseInt(value || "10")
+        if (isNaN(units))
+            return 10
+        return Math.max(5, Math.min(40, units))
+    }
+
+    function loadPopupHeight() {
+        popupHeightValue = clampPopupHeight(loadValue("popupHeight", "10"))
+    }
     onPluginServiceChanged: {
         if (pluginService) {
             loadToken()
             loadGroupLimit()
             loadFetchPages()
+            loadPopupHeight()
         }
     }
 
@@ -63,17 +75,12 @@ PluginSettings {
         loadToken()
         loadGroupLimit()
         loadFetchPages()
+        loadPopupHeight()
     }
 
     Row {
         width: parent.width
         spacing: Theme.spacingS
-
-        GitHubIcon {
-            size: Theme.fontSizeLarge
-            iconOpacity: 0.74
-            anchors.verticalCenter: parent.verticalCenter
-        }
 
         StyledText {
             text: "GitHub Inbox"
@@ -109,7 +116,7 @@ PluginSettings {
             }
 
             StyledText {
-                text: "Create token on GitHub"
+                text: "Create classic token on GitHub"
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.primary
                 anchors.verticalCenter: parent.verticalCenter
@@ -211,14 +218,6 @@ PluginSettings {
         }
     }
 
-    StyledText {
-        width: parent.width
-        text: "Stored in DMS plugin settings and used for API authentication."
-        font.pixelSize: Theme.fontSizeSmall
-        color: Theme.surfaceVariantText
-        wrapMode: Text.WordWrap
-    }
-
     SelectionSetting {
         settingKey: "pollInterval"
         label: "Refresh Interval"
@@ -233,6 +232,22 @@ PluginSettings {
         defaultValue: "120"
     }
 
+    ToggleSetting {
+        settingKey: "loadAuthorInfo"
+        label: "Load Author Details"
+        description: "Load author avatars and profile names for each notification"
+        defaultValue: true
+    }
+
+    StyledText {
+        width: parent.width
+        text: "Note: This will considerably increase notification loading time."
+        font.pixelSize: Theme.fontSizeSmall
+        font.weight: Font.Bold
+        color: Theme.surfaceVariantText
+        wrapMode: Text.WordWrap
+    }
+
     Item {
         width: parent.width
         height: 52
@@ -245,7 +260,7 @@ PluginSettings {
                 width: parent.width
 
                 StyledText {
-                    text: "Items Per Group (1-25)"
+                    text: "Max Items Per Group"
                     font.pixelSize: Theme.fontSizeMedium
                     color: Theme.surfaceText
                 }
@@ -334,7 +349,7 @@ PluginSettings {
                 width: parent.width
 
                 StyledText {
-                    text: "Fetch Pages (1-10)"
+                    text: "Max Pages to Fetch"
                     font.pixelSize: Theme.fontSizeMedium
                     color: Theme.surfaceText
                 }
@@ -411,24 +426,98 @@ PluginSettings {
         }
     }
 
-    SelectionSetting {
-        settingKey: "popupItems"
-        label: "Items in Popup"
-        description: "Maximum notification items shown in the popup"
-        options: [
-            { label: "3 items", value: "3" },
-            { label: "5 items", value: "5" },
-            { label: "8 items", value: "8" },
-            { label: "10 items", value: "10" },
-            { label: "15 items", value: "15" },
-            { label: "20 items", value: "20" }
-        ]
-        defaultValue: "5"
+    Item {
+        width: parent.width
+        height: 52
+
+        Column {
+            anchors.fill: parent
+            spacing: 4
+
+            Row {
+                width: parent.width
+
+                StyledText {
+                    text: "Popup Height"
+                    font.pixelSize: Theme.fontSizeMedium
+                    color: Theme.surfaceText
+                }
+
+                Item { width: Theme.spacingS; height: 1 }
+
+                StyledText {
+                    text: popupHeightSlider.value.toFixed(0)
+                    font.pixelSize: Theme.fontSizeMedium
+                    font.weight: Font.Bold
+                    color: Theme.primary
+                }
+            }
+
+            Item {
+                width: parent.width
+                height: 24
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 4
+                    radius: 2
+                    color: Theme.surfaceContainerHighest
+
+                    Rectangle {
+                        width: (popupHeightSlider.value - 5) / 35 * parent.width
+                        height: parent.height
+                        radius: 2
+                        color: Theme.primary
+                    }
+                }
+
+                Rectangle {
+                    id: popupHeightHandle
+                    width: 18
+                    height: 18
+                    radius: 9
+                    color: popupHeightMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
+                    border.color: Theme.primary
+                    border.width: 2
+                    x: (popupHeightSlider.value - 5) / 35 * (parent.width - width)
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                QtObject {
+                    id: popupHeightSlider
+                    property real value: root.popupHeightValue
+                }
+
+                MouseArea {
+                    id: popupHeightMouse
+                    anchors.fill: parent
+                    anchors.topMargin: -8
+                    anchors.bottomMargin: -8
+                    cursorShape: Qt.PointingHandCursor
+
+                    function updateValue(mouseX) {
+                        var ratio = Math.max(0, Math.min(1, mouseX / width))
+                        popupHeightSlider.value = Math.round(5 + ratio * 35)
+                    }
+
+                    onPressed: function(mouse) { updateValue(mouse.x) }
+                    onPositionChanged: function(mouse) { if (pressed) updateValue(mouse.x) }
+                    onReleased: {
+                        var limited = root.clampPopupHeight(popupHeightSlider.value)
+                        popupHeightSlider.value = limited
+                        root.popupHeightValue = limited
+                        root.saveValue("popupHeight", String(limited))
+                    }
+                }
+            }
+        }
     }
 
     SelectionSetting {
         settingKey: "titleLines"
-        label: "Title Rows"
+        label: "Max Rows for Title"
         description: "How many lines each notification title can use"
         options: [
             { label: "1 line", value: "1" },
@@ -438,13 +527,4 @@ PluginSettings {
         ]
         defaultValue: "2"
     }
-
-    StyledText {
-        width: parent.width
-        text: "Popup height is automatically estimated from item count and title rows."
-        font.pixelSize: Theme.fontSizeSmall
-        color: Theme.surfaceVariantText
-        wrapMode: Text.WordWrap
-    }
-
 }

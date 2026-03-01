@@ -12,6 +12,7 @@ Item {
     property bool isBusy: false
     property int titleLines: 2
     property var authors: []
+    property bool showAuthors: true
 
     signal markRead(string threadId)
     signal markUnread(string threadId)
@@ -40,7 +41,7 @@ Item {
     }
 
     property int authorRowHeight: 22
-    property int authorColumnHeight: Math.max(0, limitedAuthors.length * authorRowHeight)
+    property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
     property int contentMinHeight: 40 + (Math.max(1, titleLines) * 16)
     property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + 8)
 
@@ -151,7 +152,9 @@ Item {
 
                 Column {
                     id: mainInfo
-                    width: Math.max(120, Math.floor(bodySlot.width * 0.75))
+                    width: (showAuthors && row.limitedAuthors.length > 0)
+                           ? Math.max(120, Math.floor(bodySlot.width * 0.75))
+                           : bodySlot.width
                     anchors.top: parent.top
                     spacing: 3
 
@@ -207,7 +210,7 @@ Item {
                     id: authorInfo
                     width: Math.max(72, bodySlot.width - mainInfo.width - Theme.spacingS)
                     height: parent.height
-                    visible: row.limitedAuthors.length > 0
+                    visible: row.showAuthors && row.limitedAuthors.length > 0
 
                     Column {
                         id: authorColumn

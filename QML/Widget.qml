@@ -29,11 +29,14 @@ PluginComponent {
             return 3
         return Math.max(1, Math.min(10, value))
     }
-    property int popupItems: {
-        var value = parseInt(pluginData.popupItems || "5")
+    property int popupHeightUnits: {
+        var rawValue = pluginData.popupHeight
+        if (rawValue === undefined || rawValue === "")
+            rawValue = pluginData.popupItems || "10"
+        var value = parseInt(rawValue)
         if (isNaN(value))
-            return 5
-        return Math.max(1, Math.min(50, value))
+            return 10
+        return Math.max(5, Math.min(40, value))
     }
     property int titleLines: {
         var value = parseInt(pluginData.titleLines || "2")
@@ -41,6 +44,7 @@ PluginComponent {
             return 2
         return Math.max(1, Math.min(6, value))
     }
+    property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
 
     // -- Runtime state --------------------------------------------------------
     property var notifications: []
@@ -53,6 +57,7 @@ PluginComponent {
     property bool fetchQueued: false
     property string errorMessage: ""
     property real lastUpdated: 0
+    property string notifLastModified: ""
     property var doneThreadState: ({})
     property string fetchSplitToken: "__GH_PARTICIPATING_SPLIT__"
     property string authorSplitToken: "__GH_AUTHOR_SPLIT__"
@@ -63,7 +68,9 @@ PluginComponent {
     property var authorRequestQueue: []
     property bool authorRequestInFlight: false
     property var authorFetchedUrlsByThread: ({})
+    property var authorFetchedAtUpdatedAt: ({})
     property bool authorPrefetchPending: false
+    property bool fetchPayloadComplete: false
     property var pendingThreadDoneQueue: []
     property var avatarPreloadEntries: []
     property var avatarPreloadMap: ({})
@@ -76,7 +83,7 @@ PluginComponent {
     property int readCount: Math.max(0, notifications.length - unreadCount)
     property int shownCount: notificationsForView.length
 
-    property string barCountText: GitHub.formatBarCount(unreadCount, totalCount, true)
+    property string barCountText: unreadCount > 0 ? GitHub.formatCountValue(unreadCount) : ""
 
     property string popoutDetails: {
         if (!token)
@@ -256,10 +263,40 @@ PluginComponent {
         if (!value)
             return false
 
-        // Allow standard GitHub logins and GitHub bot accounts (e.g. dependabot[bot]).
-        if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(value))
+        // Be permissive enough for enterprise-managed users while still rejecting obvious junk.
+        var base = value
+        if (base.slice(-5) === "[bot]")
+            base = base.slice(0, -5)
+
+        return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,78}[A-Za-z0-9])?$/.test(base)
+    }
+
+    function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
+        if (!userLike || typeof userLike !== "object")
+            return false
+
+        var normalizedLogin = String(login || "").trim()
+        if (!isLikelyGitHubLogin(normalizedLogin))
+            return false
+
+        var normalizedType = String(userLike.type || "").trim().toLowerCase()
+        if (normalizedType === "user"
+                || normalizedType === "bot"
+                || normalizedType === "organization"
+                || normalizedType === "mannequin")
             return true
-        if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\[bot\]$/.test(value))
+
+        var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
+        if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0)
+            return true
+        if (normalizedAvatar.indexOf("https://github.com/") === 0 && normalizedAvatar.indexOf(".png") > 0)
+            return true
+
+        var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
+        var lowerLogin = normalizedLogin.toLowerCase()
+        if (normalizedHtml === "https://github.com/" + lowerLogin)
+            return true
+        if (normalizedHtml.indexOf("https://github.com/" + lowerLogin + "/") === 0)
             return true
 
         return false
@@ -270,11 +307,10 @@ PluginComponent {
             return
 
         var login = String(userLike.login || "").trim()
-        if (!isLikelyGitHubLogin(login))
-            return
-
         var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
         var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+        if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl))
+            return
 
         htmlUrl = String(htmlUrl || "").trim()
         if (!htmlUrl)
@@ -450,6 +486,57 @@ PluginComponent {
         return normalized
     }
 
+    function apiUrlFromWebUrl(webUrl) {
+        var normalized = String(webUrl || "").trim()
+        if (!normalized || normalized.indexOf("https://github.com/") !== 0)
+            return ""
+
+        var pathOnly = normalized.split("#")[0].split("?")[0]
+        var path = pathOnly.substring("https://github.com/".length)
+        var parts = path.split("/")
+        if (parts.length < 4)
+            return ""
+
+        var owner = parts[0]
+        var repo = parts[1]
+        var section = parts[2]
+        var subjectId = parts[3]
+        if (!owner || !repo || !section || !subjectId)
+            return ""
+
+        if (section === "pull")
+            section = "pulls"
+
+        if (section === "issues" || section === "pulls" || section === "discussions") {
+            if (!/^[0-9]+$/.test(subjectId))
+                return ""
+            return "https://api.github.com/repos/"
+                   + encodeURIComponent(owner)
+                   + "/"
+                   + encodeURIComponent(repo)
+                   + "/"
+                   + section
+                   + "/"
+                   + subjectId
+        }
+
+        if (section === "commit")
+            return "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/commits/" + subjectId
+
+        return ""
+    }
+
+    function resolveSubjectApiUrlForAuthors(item) {
+        if (!item)
+            return ""
+
+        var directUrl = normalizeApiUrl(item.subjectApiUrl || "")
+        if (directUrl)
+            return directUrl
+
+        return normalizeApiUrl(apiUrlFromWebUrl(item.webUrl || ""))
+    }
+
     function isThreadParentApiUrl(url) {
         var normalized = normalizeApiUrl(url)
         if (!normalized)
@@ -468,17 +555,8 @@ PluginComponent {
         return /^[0-9]+$/.test(parts[7])
     }
 
-    function collectSubjectExpansionUrls(value, target, seen, depth) {
-        if (!value || depth > 8)
-            return
-
-        if (Array.isArray(value)) {
-            for (var arrayIndex = 0; arrayIndex < value.length; arrayIndex++)
-                collectSubjectExpansionUrls(value[arrayIndex], target, seen, depth + 1)
-            return
-        }
-
-        if (typeof value !== "object")
+    function collectSubjectExpansionUrls(value, target, seen) {
+        if (!value || typeof value !== "object")
             return
 
         function push(url) {
@@ -492,15 +570,6 @@ PluginComponent {
         push(value.issue_url)
         push(value.pull_request_url)
         push(value.url)
-
-        for (var key in value) {
-            if (!value.hasOwnProperty(key))
-                continue
-            var child = value[key]
-            if (!child || typeof child !== "object")
-                continue
-            collectSubjectExpansionUrls(child, target, seen, depth + 1)
-        }
     }
 
     function parseSubjectExpansionUrls(payloadText, splitToken) {
@@ -525,7 +594,12 @@ PluginComponent {
                 continue
             }
 
-            collectSubjectExpansionUrls(parsed, urls, seen, 0)
+            if (Array.isArray(parsed)) {
+                for (var itemIndex = 0; itemIndex < parsed.length; itemIndex++)
+                    collectSubjectExpansionUrls(parsed[itemIndex], urls, seen)
+            } else {
+                collectSubjectExpansionUrls(parsed, urls, seen)
+            }
         }
 
         return urls
@@ -542,30 +616,21 @@ PluginComponent {
         var perPageQuery = "per_page=100"
 
         function push(url) {
-            if (!url)
-                return
-            if (urls.indexOf(url) >= 0)
+            if (!url || urls.indexOf(url) >= 0)
                 return
             urls.push(url)
         }
 
         push(subjectApiUrl)
 
-        if (isThreadParentApiUrl(subjectApiUrl) && subjectApiUrl.indexOf("/pulls/") >= 0) {
-            push(appendAuthorQuery(subjectApiUrl + "/reviews", perPageQuery))
-            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
-            push(appendAuthorQuery(subjectApiUrl + "/commits", perPageQuery))
-
-            var issueApiUrl = subjectApiUrl.replace("/pulls/", "/issues/")
-            push(appendAuthorQuery(issueApiUrl + "/comments", perPageQuery))
+        // For PRs and issues, the issue timeline is comprehensive:
+        // it includes comments, review events, assignments, and all actor data.
+        // This replaces the previous 4-7 separate endpoint calls per thread.
+        if (isThreadParentApiUrl(subjectApiUrl)) {
+            var issueApiUrl = subjectApiUrl.indexOf("/pulls/") >= 0
+                ? subjectApiUrl.replace("/pulls/", "/issues/")
+                : subjectApiUrl
             push(appendAuthorQuery(issueApiUrl + "/timeline", perPageQuery))
-            push(appendAuthorQuery(issueApiUrl + "/events", perPageQuery))
-        }
-
-        if (isThreadParentApiUrl(subjectApiUrl) && subjectApiUrl.indexOf("/issues/") >= 0) {
-            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
-            push(appendAuthorQuery(subjectApiUrl + "/timeline", perPageQuery))
-            push(appendAuthorQuery(subjectApiUrl + "/events", perPageQuery))
         }
 
         if (subjectApiUrl.indexOf("/discussions/") >= 0)
@@ -577,7 +642,7 @@ PluginComponent {
         return urls
     }
 
-    function enqueueAuthorUrls(threadId, urls) {
+    function enqueueAuthorUrls(threadId, urls, updatedAt) {
         if (!token || !threadId || !urls || urls.length === 0)
             return
 
@@ -613,23 +678,27 @@ PluginComponent {
         if (filtered.length === 0)
             return
 
+        if (filtered.length > 16)
+            filtered = filtered.slice(0, 16)
+
         nextQueue.push({
             threadId: threadId,
-            urls: filtered
+            urls: filtered,
+            updatedAt: updatedAt || ""
         })
         authorRequestQueue = nextQueue
         processAuthorQueue()
     }
 
-    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType) {
-        if (!token || !threadId || !subjectApiUrl)
+    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt) {
+        if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl)
             return
 
-        enqueueAuthorUrls(threadId, buildAuthorFetchUrls(subjectApiUrl, subjectType || ""))
+        enqueueAuthorUrls(threadId, buildAuthorFetchUrls(subjectApiUrl, subjectType || ""), updatedAt || "")
     }
 
     function processAuthorQueue() {
-        if (authorRequestInFlight || !token)
+        if (authorRequestInFlight || !token || !loadAuthorInfo)
             return
         if (authorRequestQueue.length === 0)
             return
@@ -647,7 +716,8 @@ PluginComponent {
         authorRequestInFlight = true
         var process = authorFetchComponent.createObject(root, {
             threadId: request.threadId,
-            requestedUrls: urls
+            requestedUrls: urls,
+            updatedAt: request.updatedAt || ""
         })
 
         var command = ["curl"]
@@ -674,24 +744,93 @@ PluginComponent {
     }
 
     function queueAuthorPrefetchForNotifications(items) {
-        if (!token || !items || items.length === 0)
+        if (!loadAuthorInfo || !token || !items || items.length === 0)
             return
 
         for (var index = 0; index < items.length; index++) {
             var item = items[index]
-            if (!item || !item.threadId || !item.subjectApiUrl)
+            if (!item || !item.threadId)
                 continue
-            enqueueAuthorFetch(item.threadId, item.subjectApiUrl, item.subjectType || "")
+
+            var subjectApiUrl = resolveSubjectApiUrlForAuthors(item)
+            if (!subjectApiUrl)
+                continue
+
+            // Skip if we have already fetched authors for this exact version of
+            // the notification.  Using updatedAt as the cache key means a new
+            // comment / activity (which bumps updatedAt) will trigger a re-fetch
+            // while an unchanged thread is never re-fetched across polls.
+            var lastFetchedUpdatedAt = authorFetchedAtUpdatedAt[item.threadId] || ""
+            if (lastFetchedUpdatedAt === item.updatedAt)
+                continue
+
+            // The notification has been updated since the last fetch.  Clear
+            // its URL-level fetch state so all URLs are tried again.
+            if (lastFetchedUpdatedAt !== "" && authorFetchedUrlsByThread.hasOwnProperty(item.threadId)) {
+                var nextFetchedState = cloneAuthorFetchedUrlsByThread()
+                delete nextFetchedState[item.threadId]
+                authorFetchedUrlsByThread = nextFetchedState
+            }
+
+            enqueueAuthorFetch(item.threadId, subjectApiUrl, item.subjectType || "", item.updatedAt || "")
         }
     }
 
+    function pruneAuthorCachesToCurrentNotifications() {
+        var keep = {}
+        for (var index = 0; index < notifications.length; index++) {
+            var threadId = notifications[index].threadId
+            if (threadId)
+                keep[threadId] = true
+        }
+
+        var nextAuthors = {}
+        for (var authorThreadId in authorsByThread) {
+            if (keep[authorThreadId])
+                nextAuthors[authorThreadId] = authorsByThread[authorThreadId]
+        }
+
+        var nextFetchedUrls = {}
+        for (var fetchedThreadId in authorFetchedUrlsByThread) {
+            if (keep[fetchedThreadId])
+                nextFetchedUrls[fetchedThreadId] = authorFetchedUrlsByThread[fetchedThreadId]
+        }
+
+        var nextFetchedUpdatedAt = {}
+        for (var updatedAtThreadId in authorFetchedAtUpdatedAt) {
+            if (keep[updatedAtThreadId])
+                nextFetchedUpdatedAt[updatedAtThreadId] = authorFetchedAtUpdatedAt[updatedAtThreadId]
+        }
+
+        authorsByThread = nextAuthors
+        authorFetchedUrlsByThread = nextFetchedUrls
+        authorFetchedAtUpdatedAt = nextFetchedUpdatedAt
+    }
+
+    function shouldExpandFromRequestedUrls(urls) {
+        if (!urls || urls.length === 0)
+            return false
+
+        for (var index = 0; index < urls.length; index++) {
+            var normalized = normalizeApiUrl(urls[index])
+            if (!normalized)
+                continue
+            if (!isThreadParentApiUrl(normalized))
+                return true
+        }
+
+        return false
+    }
+
     function finalizeAuthorPrefetchState() {
-        if (!authorPrefetchPending)
+        if (!authorPrefetchPending || !fetchPayloadComplete)
             return
         if (authorRequestInFlight || authorRequestQueue.length > 0)
             return
 
+        pruneAuthorCachesToCurrentNotifications()
         authorPrefetchPending = false
+        fetchPayloadComplete = false
         if (isLoading)
             isLoading = false
 
@@ -759,6 +898,7 @@ PluginComponent {
             unreadCount = 0
             errorMessage = ""
             lastUpdated = 0
+            notifLastModified = ""
             fetchQueued = false
             parseRequestSeq = parseRequestSeq + 1
             isLoading = false
@@ -766,7 +906,9 @@ PluginComponent {
             authorRequestQueue = []
             authorRequestInFlight = false
             authorFetchedUrlsByThread = ({})
+            authorFetchedAtUpdatedAt = ({})
             authorPrefetchPending = false
+            fetchPayloadComplete = false
             authorsByThread = ({})
             avatarPreloadEntries = []
             avatarPreloadMap = ({})
@@ -774,6 +916,24 @@ PluginComponent {
             return
         }
         fetchNotifications()
+    }
+
+    onLoadAuthorInfoChanged: {
+        authorRequestQueue = []
+        authorRequestInFlight = false
+        authorPrefetchPending = false
+
+        if (!loadAuthorInfo) {
+            authorsByThread = ({})
+            authorFetchedUrlsByThread = ({})
+            authorFetchedAtUpdatedAt = ({})
+            avatarPreloadEntries = []
+            avatarPreloadMap = ({})
+            return
+        }
+
+        if (token && notifications.length > 0)
+            queueAuthorPrefetchForNotifications(notifications)
     }
 
     onGroupItemLimitChanged: {
@@ -805,11 +965,10 @@ PluginComponent {
                 root.notificationsForView = []
                 root.pendingViewNotifications = []
                 root.pendingViewIndex = 0
-                root.authorsByThread = ({})
                 root.authorRequestQueue = []
                 root.authorRequestInFlight = false
-                root.authorFetchedUrlsByThread = ({})
                 root.authorPrefetchPending = false
+                root.fetchPayloadComplete = false
                 viewApplyTimer.stop()
                 root.unreadCount = 0
                 root.errorMessage = message.error
@@ -827,17 +986,17 @@ PluginComponent {
                 root.notificationsForView = []
                 root.pendingViewNotifications = []
                 root.pendingViewIndex = 0
-                root.authorsByThread = ({})
                 root.authorRequestQueue = []
                 root.authorRequestInFlight = false
-                root.authorFetchedUrlsByThread = ({})
                 root.authorPrefetchPending = parseInt(message.totalCount || 0) > 0
+                root.fetchPayloadComplete = false
                 root.unreadCount = parseInt(message.unreadCount || 0)
                 root.errorMessage = ""
                 root.lastUpdated = Date.now()
                 root.isLoading = true
 
                 if (parseInt(message.totalCount || 0) === 0) {
+                    root.fetchPayloadComplete = true
                     root.isLoading = false
                     if (root.fetchQueued) {
                         root.fetchQueued = false
@@ -861,6 +1020,7 @@ PluginComponent {
 
                 if (message.isLast) {
                     root.lastUpdated = Date.now()
+                    root.fetchPayloadComplete = true
                     root.finalizeAuthorPrefetchState()
                 }
                 return
@@ -874,6 +1034,7 @@ PluginComponent {
             root.queueAuthorPrefetchForNotifications(root.notifications)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
+            root.fetchPayloadComplete = true
             root.finalizeAuthorPrefetchState()
         }
     }
@@ -908,11 +1069,51 @@ PluginComponent {
                     return
                 }
 
+                // Strip GH_PAGE_META lines produced by -w and derive:
+                //   - whether any page returned real data (vs 304 Not Modified)
+                //   - the latest Last-Modified value to store for the next poll
+                var rawLines = _chunks.join("\n").split("\n")
+                var cleanLines = []
+                var anyRealData = false
+                var latestLastModified = ""
+
+                for (var li = 0; li < rawLines.length; li++) {
+                    var rawLine = rawLines[li]
+                    if (rawLine.indexOf("GH_PAGE_META:") === 0) {
+                        var meta = rawLine.substring("GH_PAGE_META:".length)
+                        var pipeIdx = meta.indexOf("|")
+                        var code = pipeIdx >= 0 ? parseInt(meta.substring(0, pipeIdx)) : parseInt(meta)
+                        var lastMod = pipeIdx >= 0 ? meta.substring(pipeIdx + 1).trim() : ""
+                        if (!isNaN(code) && code !== 304)
+                            anyRealData = true
+                        if (lastMod)
+                            latestLastModified = lastMod
+                        continue
+                    }
+                    cleanLines.push(rawLine)
+                }
+
+                // All pages returned 304 Not Modified — nothing changed, keep existing data.
+                if (!anyRealData) {
+                    root.isLoading = false
+                    if (latestLastModified)
+                        root.notifLastModified = latestLastModified
+                    if (root.fetchQueued) {
+                        root.fetchQueued = false
+                        Qt.callLater(root.fetchNotifications)
+                    }
+                    destroy()
+                    return
+                }
+
+                if (latestLastModified)
+                    root.notifLastModified = latestLastModified
+
                 var nextSeq = root.parseRequestSeq + 1
                 root.parseRequestSeq = nextSeq
                 parseWorker.sendMessage({
                     seq: nextSeq,
-                    payloadText: _chunks.join("\n") + "\n",
+                    payloadText: cleanLines.join("\n") + "\n",
                     separator: root.fetchSplitToken,
                     allSegmentCount: root.fetchPageCount,
                     doneThreadState: root.doneThreadState,
@@ -930,6 +1131,7 @@ PluginComponent {
         Process {
             property string threadId: ""
             property var requestedUrls: []
+            property string updatedAt: ""
             property string _buffer: ""
 
             stdout: SplitParser {
@@ -944,6 +1146,14 @@ PluginComponent {
             }
 
             onExited: exitCode => {
+                if (!root.loadAuthorInfo) {
+                    root.authorRequestInFlight = false
+                    root.finalizeAuthorPrefetchState()
+                    Qt.callLater(root.processAuthorQueue)
+                    destroy()
+                    return
+                }
+
                 root.markThreadUrlsFetched(threadId, requestedUrls || [])
 
                 var fetchedAuthors = []
@@ -957,7 +1167,17 @@ PluginComponent {
                 root.authorsByThread = nextAuthors
                 root.queueAvatarPreloadFromAuthors(mergedAuthors)
 
-                if (exitCode === 0) {
+                // Record that we have fetched authors for this version of the thread.
+                // Future polls will skip re-fetching until updatedAt changes.
+                if (threadId) {
+                    var nextFetchedUpdatedAt = {}
+                    for (var atKey in root.authorFetchedAtUpdatedAt)
+                        nextFetchedUpdatedAt[atKey] = root.authorFetchedAtUpdatedAt[atKey]
+                    nextFetchedUpdatedAt[threadId] = updatedAt
+                    root.authorFetchedAtUpdatedAt = nextFetchedUpdatedAt
+                }
+
+                if (exitCode === 0 && root.shouldExpandFromRequestedUrls(requestedUrls || [])) {
                     var expansionRoots = root.parseSubjectExpansionUrls(_buffer, root.authorSplitToken)
                     if (expansionRoots.length > 0) {
                         var expansionUrls = []
@@ -1036,36 +1256,40 @@ PluginComponent {
         errorMessage = ""
 
         // Canonical data source from GitHub:
-        // - full inbox (all=true)
-        // - participation subset (all=true&participating=true)
-        // We derive participation locally from the subset to avoid ambiguous participating=false behavior.
+        // - full inbox (all=true), multiple pages
+        // participation is now derived locally from the notification `reason` field,
+        // eliminating the second participating=true request set entirely.
         var apiPageSize = 50
         var pages = Math.max(1, fetchPageCount)
         var baseQuery = "per_page=" + apiPageSize + "&all=true"
         var allBaseUrl = "https://api.github.com/notifications?" + baseQuery
-        var participatingBaseUrl = allBaseUrl + "&participating=true"
         var command = ["curl"]
 
         function appendRequest(url) {
             if (command.length > 1)
                 command.push("--next")
-            command.push(
+            var args = [
                 "-sS",
                 "--connect-timeout", "10",
                 "--max-time", "20",
                 "-H", "Accept: application/vnd.github+json",
                 "-H", "X-GitHub-Api-Version: 2022-11-28",
-                "-H", "Authorization: token " + token,
-                "-w", "\n" + root.fetchSplitToken + "\n",
+                "-H", "Authorization: token " + token
+            ]
+            if (root.notifLastModified)
+                args = args.concat(["-H", "If-Modified-Since: " + root.notifLastModified])
+            // Append HTTP status and Last-Modified header value after the body so
+            // the fetch component can track conditional-request results.
+            args = args.concat([
+                "-w", "\nGH_PAGE_META:%{http_code}|%header{last-modified}\n" + root.fetchSplitToken + "\n",
                 url
-            )
+            ])
+            for (var ai = 0; ai < args.length; ai++)
+                command.push(args[ai])
         }
 
         for (var page = 1; page <= pages; page++)
             appendRequest(allBaseUrl + "&page=" + page)
-
-        for (var partPage = 1; partPage <= pages; partPage++)
-            appendRequest(participatingBaseUrl + "&page=" + partPage)
 
         var process = fetchComponent.createObject(root)
         process.command = command
@@ -1355,6 +1579,7 @@ PluginComponent {
             }
 
             StyledText {
+                visible: root.unreadCount > 0
                 text: root.barCountText
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceText
@@ -1377,6 +1602,7 @@ PluginComponent {
             }
 
             StyledText {
+                visible: root.unreadCount > 0
                 text: root.barCountText
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceText
@@ -1417,6 +1643,7 @@ PluginComponent {
                 groupItemLimit: root.groupItemLimit
                 expandedReposState: root.expandedReposState
                 authorsByThread: root.authorsByThread
+                showAuthorInfo: root.loadAuthorInfo
 
                 onRefreshNow: root.refreshNow()
                 onMarkAllRead: root.markAllAsRead()
@@ -1425,7 +1652,16 @@ PluginComponent {
                 onMarkThreadUnread: function(threadId) { root.markThreadAsUnread(threadId) }
                 onMarkThreadDone: function(threadId) { root.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
-                    root.enqueueAuthorFetch(threadId, subjectApiUrl, subjectType)
+                    if (!root.loadAuthorInfo)
+                        return
+                    var notifUpdatedAt = ""
+                    for (var ni = 0; ni < root.notifications.length; ni++) {
+                        if (root.notifications[ni].threadId === threadId) {
+                            notifUpdatedAt = root.notifications[ni].updatedAt || ""
+                            break
+                        }
+                    }
+                    root.enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, notifUpdatedAt)
                 }
                 onClosePopout: root.closePopout()
                 onPersistExpandedRepos: function(state) { root.expandedReposState = root.cloneExpandedState(state) }
@@ -1433,12 +1669,12 @@ PluginComponent {
         }
     }
 
-    popoutWidth: 560
+    popoutWidth: Math.round(560 * 0.85)
     popoutHeight: {
-        var items = Math.max(1, popupItems)
-        var rowHeight = 40 + titleLines * 16
-        var estimatedRepoHeaders = Math.max(1, Math.ceil(items / 3))
-        var estimated = (items * rowHeight) + (estimatedRepoHeaders * 30) + 130
-        return Math.max(240, Math.min(1000, estimated))
+        var groups = Math.max(5, popupHeightUnits)
+        var groupHeaderHeight = 38
+        var lineContribution = Math.max(1, titleLines) * 6
+        var estimated = (groups * (groupHeaderHeight + lineContribution)) + 180
+        return Math.max(260, Math.min(1200, estimated))
     }
 }

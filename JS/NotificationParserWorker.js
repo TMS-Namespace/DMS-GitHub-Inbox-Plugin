@@ -124,7 +124,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
     var mergedItems = []
     for (var threadId in allItemsByThread) {
         var mergedItem = allItemsByThread[threadId]
-        mergedItem.participated = !!participationMap[threadId]
+        mergedItem.participated = mergedItem.participated || !!participationMap[threadId]
         mergedItems.push(mergedItem)
     }
 
@@ -159,10 +159,17 @@ function parseNotificationsPayload(payloadText) {
         var subject = item.subject || {}
         var repository = item.repository || {}
 
+        var reason = item.reason || ""
+        var participatingReasons = {
+            comment: true, author: true, assign: true,
+            review_requested: true, mention: true, team_mention: true
+        }
+
         items.push({
             threadId: item.id || "",
             unread: !!item.unread,
-            reason: item.reason || "",
+            reason: reason,
+            participated: !!participatingReasons[reason],
             updatedAt: item.updated_at || "",
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",

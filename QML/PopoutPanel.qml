@@ -19,6 +19,7 @@ Item {
     property int groupItemLimit: 25
     property var expandedReposState: ({ "__defaultExpanded": true })
     property var authorsByThread: ({})
+    property bool showAuthorInfo: true
 
     // -- Actions --------------------------------------------------------------
     signal refreshNow()
@@ -41,8 +42,8 @@ Item {
     onExpandedReposStateChanged: {
         expandedRepos = normalizeExpandedState(expandedReposState)
     }
-    property string readFilter: "all"                 // unread | read | all
-    property string participationFilter: "all"        // participated | not_participated | all
+    property string readFilter: "both"                // yes(read) | no(unread) | both
+    property string participationFilter: "both"       // yes | no | both
 
     property var filteredNotifications: {
         var result = []
@@ -50,11 +51,11 @@ Item {
             var item = notifications[index]
             var participated = !!item.participated
 
-            if (readFilter === "unread" && !item.unread) continue
-            if (readFilter === "read" && item.unread) continue
+            if (readFilter === "yes" && item.unread) continue
+            if (readFilter === "no" && !item.unread) continue
 
-            if (participationFilter === "participated" && !participated) continue
-            if (participationFilter === "not_participated" && participated) continue
+            if (participationFilter === "yes" && !participated) continue
+            if (participationFilter === "no" && participated) continue
 
             result.push(item)
         }
@@ -167,7 +168,7 @@ Item {
     Row {
         id: headerButtons
         anchors.right: parent.right
-        anchors.rightMargin: Theme.spacingS
+        anchors.rightMargin: Theme.spacingXS
         y: -panel.headerOffset + Theme.spacingS
         spacing: 6
         visible: headerHoverArea.containsMouse
@@ -399,14 +400,12 @@ Item {
                                     width: 20
                                     height: 20
                                     anchors.verticalCenter: parent.verticalCenter
-
                                     Rectangle {
                                         id: repoAvatarMask
                                         anchors.fill: parent
                                         radius: width / 2
                                         clip: true
                                         color: Theme.surfaceContainerHighest
-                                        visible: repoAvatarImage.status === Image.Ready
 
                                         Image {
                                             id: repoAvatarImage
@@ -415,15 +414,16 @@ Item {
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true
                                             cache: true
+                                            visible: status === Image.Ready
                                         }
-                                    }
 
-                                    DankIcon {
-                                        anchors.centerIn: parent
-                                        name: "folder"
-                                        size: 18
-                                        color: Theme.surfaceVariantText
-                                        visible: repoAvatarImage.status !== Image.Ready
+                                        DankIcon {
+                                            anchors.centerIn: parent
+                                            name: "folder"
+                                            size: 18
+                                            color: Theme.surfaceVariantText
+                                            visible: repoAvatarImage.status !== Image.Ready
+                                        }
                                     }
                                 }
 
@@ -520,7 +520,8 @@ Item {
                                 delegate: NotificationRow {
                                     width: parent.width
                                     notificationData: modelData
-                                    authors: panel.authorsByThread[modelData.threadId] || []
+                                    authors: panel.showAuthorInfo ? (panel.authorsByThread[modelData.threadId] || []) : []
+                                    showAuthors: panel.showAuthorInfo
                                     isBusy: panel.anyBusy
                                     titleLines: panel.titleLines
                                     onMarkRead: function(threadId) { panel.markThreadRead(threadId) }
@@ -538,110 +539,146 @@ Item {
         }
     }
 
-    Rectangle {
+    Item {
         id: filterBar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: panel.tokenConfigured && panel.errorMessage === ""
-        height: filterColumn.implicitHeight + Theme.spacingS * 2
-        radius: Theme.cornerRadius
-        color: Qt.rgba(Theme.surfaceContainerHigh.r, Theme.surfaceContainerHigh.g, Theme.surfaceContainerHigh.b, 0.85)
-        border.color: Theme.outlineVariant
-        border.width: 1
+        height: filterRow.implicitHeight
         z: 5
 
-        Column {
-            id: filterColumn
-            anchors.fill: parent
-            anchors.margins: Theme.spacingS
+        Row {
+            id: filterRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Theme.spacingXS
+            anchors.rightMargin: Theme.spacingXS
+            anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spacingXS
 
-            Row {
-                spacing: Theme.spacingXS
+            property int groupGap: Theme.spacingM
+            property int segmentWidth: {
+                var available = width - readLabel.width - participatedLabel.width - groupGap - filterRow.spacing * 4
+                var fit = Math.floor(available / 2)
+                return Math.max(96, Math.min(132, fit))
+            }
 
-                StyledText {
-                    text: "Read"
-                    font.pixelSize: 10
-                    color: Theme.surfaceVariantText
-                    width: 52
-                }
+            StyledText {
+                id: readLabel
+                width: 34
+                text: "Read"
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+                anchors.verticalCenter: parent.verticalCenter
+            }
 
-                Repeater {
-                    model: [
-                        { label: "Unread", value: "unread" },
-                        { label: "Read", value: "read" },
-                        { label: "All", value: "all" }
-                    ]
+            Rectangle {
+                width: filterRow.segmentWidth
+                height: 24
+                radius: Theme.cornerRadius
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.80)
+                border.width: 1
+                border.color: Theme.outlineVariant
 
-                    delegate: Rectangle {
-                        required property var modelData
-                        height: 22
-                        radius: 11
-                        width: label.implicitWidth + Theme.spacingS
-                        color: panel.readFilter === modelData.value
-                               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
-                               : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
-                        border.width: 1
-                        border.color: panel.readFilter === modelData.value ? Theme.primary : Theme.outlineVariant
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 0
+                    spacing: 1
 
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: panel.readFilter = modelData.value
-                        }
+                    Repeater {
+                        model: [
+                            { label: "Yes", value: "yes" },
+                            { label: "No", value: "no" },
+                            { label: "Both", value: "both" }
+                        ]
 
-                        StyledText {
-                            id: label
-                            anchors.centerIn: parent
-                            text: modelData.label
-                            font.pixelSize: 10
-                            color: panel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: (parent.width - 2) / 3
+                            height: parent.height
+                            radius: Theme.cornerRadius
+                            color: panel.readFilter === modelData.value
+                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
+                                   : "transparent"
+                            border.width: panel.readFilter === modelData.value ? 1 : 0
+                            border.color: Theme.primary
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: panel.readFilter = modelData.value
+                            }
+
+                            StyledText {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                font.pixelSize: Theme.fontSizeSmall
+                                font.weight: panel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                color: panel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                            }
                         }
                     }
                 }
             }
+            Item {
+                width: filterRow.groupGap
+                height: 1
+            }
 
-            Row {
-                spacing: Theme.spacingXS
+            StyledText {
+                id: participatedLabel
+                width: 72
+                text: "Participated"
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+                anchors.verticalCenter: parent.verticalCenter
+            }
 
-                StyledText {
-                    text: "Part."
-                    font.pixelSize: 10
-                    color: Theme.surfaceVariantText
-                    width: 52
-                }
+            Rectangle {
+                width: filterRow.segmentWidth
+                height: 24
+                radius: Theme.cornerRadius
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.80)
+                border.width: 1
+                border.color: Theme.outlineVariant
 
-                Repeater {
-                    model: [
-                        { label: "Participated", value: "participated" },
-                        { label: "Not Participated", value: "not_participated" },
-                        { label: "All", value: "all" }
-                    ]
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 0
+                    spacing: 1
 
-                    delegate: Rectangle {
-                        required property var modelData
-                        height: 22
-                        radius: 11
-                        width: label.implicitWidth + Theme.spacingS
-                        color: panel.participationFilter === modelData.value
-                               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
-                               : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
-                        border.width: 1
-                        border.color: panel.participationFilter === modelData.value ? Theme.primary : Theme.outlineVariant
+                    Repeater {
+                        model: [
+                            { label: "Yes", value: "yes" },
+                            { label: "No", value: "no" },
+                            { label: "Both", value: "both" }
+                        ]
 
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: panel.participationFilter = modelData.value
-                        }
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: (parent.width - 2) / 3
+                            height: parent.height
+                            radius: Theme.cornerRadius
+                            color: panel.participationFilter === modelData.value
+                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
+                                   : "transparent"
+                            border.width: panel.participationFilter === modelData.value ? 1 : 0
+                            border.color: Theme.primary
 
-                        StyledText {
-                            id: label
-                            anchors.centerIn: parent
-                            text: modelData.label
-                            font.pixelSize: 10
-                            color: panel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: panel.participationFilter = modelData.value
+                            }
+
+                            StyledText {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                font.pixelSize: Theme.fontSizeSmall
+                                font.weight: panel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                color: panel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                            }
                         }
                     }
                 }

@@ -14,7 +14,7 @@ function pluginDataBool(value, defaultValue) {
 
 function pollIntervalMs(value) {
     var seconds = parseInt(value || "120")
-    if (isNaN(seconds) || seconds < 30)
+    if (isNaN(seconds) || seconds < 60)
         return 120000
     return seconds * 1000
 }
@@ -45,10 +45,17 @@ function parseNotificationsPayload(payloadText) {
         if (unread)
             unreadCount++
 
+        var reason = item.reason || ""
+        var participatingReasons = {
+            comment: true, author: true, assign: true,
+            review_requested: true, mention: true, team_mention: true
+        }
+
         items.push({
             threadId: item.id || "",
             unread: unread,
-            reason: item.reason || "",
+            reason: reason,
+            participated: !!participatingReasons[reason],
             updatedAt: item.updated_at || "",
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",
