@@ -57,7 +57,6 @@ PluginComponent {
     property bool fetchQueued: false
     property string errorMessage: ""
     property real lastUpdated: 0
-    property string notifLastModified: ""
     property var doneThreadState: ({})
     property string fetchSplitToken: "__GH_PARTICIPATING_SPLIT__"
     property string authorSplitToken: "__GH_AUTHOR_SPLIT__"
@@ -623,13 +622,19 @@ PluginComponent {
 
         push(subjectApiUrl)
 
-        // For PRs and issues, the issue timeline is comprehensive:
-        // it includes comments, review events, assignments, and all actor data.
-        // This replaces the previous 4-7 separate endpoint calls per thread.
         if (isThreadParentApiUrl(subjectApiUrl)) {
-            var issueApiUrl = subjectApiUrl.indexOf("/pulls/") >= 0
+            var isPR = subjectApiUrl.indexOf("/pulls/") >= 0
+            var issueApiUrl = isPR
                 ? subjectApiUrl.replace("/pulls/", "/issues/")
                 : subjectApiUrl
+
+            // PR reviews are only accessible from the pulls reviews endpoint;
+            // the issue timeline does not reliably expose reviewer objects.
+            if (isPR)
+                push(appendAuthorQuery(subjectApiUrl + "/reviews", perPageQuery))
+
+            // The issue timeline covers comments, assignments, cross-references
+            // and most other actor data in a single call for both PRs and issues.
             push(appendAuthorQuery(issueApiUrl + "/timeline", perPageQuery))
         }
 
@@ -898,7 +903,6 @@ PluginComponent {
             unreadCount = 0
             errorMessage = ""
             lastUpdated = 0
-            notifLastModified = ""
             fetchQueued = false
             parseRequestSeq = parseRequestSeq + 1
             isLoading = false
@@ -1069,51 +1073,11 @@ PluginComponent {
                     return
                 }
 
-                // Strip GH_PAGE_META lines produced by -w and derive:
-                //   - whether any page returned real data (vs 304 Not Modified)
-                //   - the latest Last-Modified value to store for the next poll
-                var rawLines = _chunks.join("\n").split("\n")
-                var cleanLines = []
-                var anyRealData = false
-                var latestLastModified = ""
-
-                for (var li = 0; li < rawLines.length; li++) {
-                    var rawLine = rawLines[li]
-                    if (rawLine.indexOf("GH_PAGE_META:") === 0) {
-                        var meta = rawLine.substring("GH_PAGE_META:".length)
-                        var pipeIdx = meta.indexOf("|")
-                        var code = pipeIdx >= 0 ? parseInt(meta.substring(0, pipeIdx)) : parseInt(meta)
-                        var lastMod = pipeIdx >= 0 ? meta.substring(pipeIdx + 1).trim() : ""
-                        if (!isNaN(code) && code !== 304)
-                            anyRealData = true
-                        if (lastMod)
-                            latestLastModified = lastMod
-                        continue
-                    }
-                    cleanLines.push(rawLine)
-                }
-
-                // All pages returned 304 Not Modified — nothing changed, keep existing data.
-                if (!anyRealData) {
-                    root.isLoading = false
-                    if (latestLastModified)
-                        root.notifLastModified = latestLastModified
-                    if (root.fetchQueued) {
-                        root.fetchQueued = false
-                        Qt.callLater(root.fetchNotifications)
-                    }
-                    destroy()
-                    return
-                }
-
-                if (latestLastModified)
-                    root.notifLastModified = latestLastModified
-
                 var nextSeq = root.parseRequestSeq + 1
                 root.parseRequestSeq = nextSeq
                 parseWorker.sendMessage({
                     seq: nextSeq,
-                    payloadText: cleanLines.join("\n") + "\n",
+                    payloadText: _chunks.join("\n") + "\n",
                     separator: root.fetchSplitToken,
                     allSegmentCount: root.fetchPageCount,
                     doneThreadState: root.doneThreadState,
@@ -1167,9 +1131,11 @@ PluginComponent {
                 root.authorsByThread = nextAuthors
                 root.queueAvatarPreloadFromAuthors(mergedAuthors)
 
-                // Record that we have fetched authors for this version of the thread.
-                // Future polls will skip re-fetching until updatedAt changes.
-                if (threadId) {
+                // Only cache the updatedAt when we actually resolved at least one
+                // author.  An empty result (permission error, bot-only PR, etc.)
+                // is not recorded, so the next poll will retry rather than
+                // permanently skipping the thread for its current version.
+                if (threadId && mergedAuthors.length > 0) {
                     var nextFetchedUpdatedAt = {}
                     for (var atKey in root.authorFetchedAtUpdatedAt)
                         nextFetchedUpdatedAt[atKey] = root.authorFetchedAtUpdatedAt[atKey]
@@ -1268,24 +1234,16 @@ PluginComponent {
         function appendRequest(url) {
             if (command.length > 1)
                 command.push("--next")
-            var args = [
+            command.push(
                 "-sS",
                 "--connect-timeout", "10",
                 "--max-time", "20",
                 "-H", "Accept: application/vnd.github+json",
                 "-H", "X-GitHub-Api-Version: 2022-11-28",
-                "-H", "Authorization: token " + token
-            ]
-            if (root.notifLastModified)
-                args = args.concat(["-H", "If-Modified-Since: " + root.notifLastModified])
-            // Append HTTP status and Last-Modified header value after the body so
-            // the fetch component can track conditional-request results.
-            args = args.concat([
-                "-w", "\nGH_PAGE_META:%{http_code}|%header{last-modified}\n" + root.fetchSplitToken + "\n",
+                "-H", "Authorization: token " + token,
+                "-w", "\n" + root.fetchSplitToken + "\n",
                 url
-            ])
-            for (var ai = 0; ai < args.length; ai++)
-                command.push(args[ai])
+            )
         }
 
         for (var page = 1; page <= pages; page++)
