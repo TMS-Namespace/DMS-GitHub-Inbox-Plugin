@@ -1,0 +1,197 @@
+// NotificationFetcher.qml - Fetches GitHub notifications via curl, parses in background
+//
+// Encapsulates the multi-page curl fetch and WorkerScript-based JSON parsing.
+// Emits signals for each phase of the result so the parent can update state.
+
+import QtQuick
+import Quickshell.Io
+import "../JS/GitHubHelpers.js" as GitHub
+
+Item {
+    id: fetcher
+    visible: false
+
+    // -- Configuration --------------------------------------------------------
+    property string token: ""
+    property int fetchPageCount: 1
+    property string fetchSplitToken: Constants.fetchPayloadSplitToken
+    property var doneThreadState: ({})
+
+    // -- State ----------------------------------------------------------------
+    property bool isLoading: false
+    property bool fetchQueued: false
+    property int parseRequestSeq: 0
+
+    // -- Signals --------------------------------------------------------------
+    signal fetchBegin(int totalCount, int unreadCount)
+    signal fetchChunk(var items, bool isLast)
+    signal fetchComplete(var items, int unreadCount)
+    signal fetchError(string errorMessage)
+
+    // =========================================================================
+    //  PUBLIC API
+    // =========================================================================
+
+    function fetch() {
+        if (!token)
+            return
+
+        if (isLoading) {
+            fetchQueued = true
+            return
+        }
+
+        isLoading = true
+        ApiCallStats.resetSession()
+
+        var pages = Math.max(1, fetchPageCount)
+        var baseQuery = "per_page=" + Constants.notificationsApiPageSize + "&all=true"
+        var allBaseUrl = Constants.githubNotificationsApiUrl + "?" + baseQuery
+        var command = ["curl"]
+
+        for (var page = 1; page <= pages; page++) {
+            if (command.length > 1)
+                command.push("--next")
+            command.push(
+                "-sS",
+                "--connect-timeout", Constants.curlConnectTimeoutSeconds,
+                "--max-time", Constants.curlMaxTimeSeconds,
+                "-H", "Accept: " + Constants.httpAcceptHeader,
+                "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                "-H", "Authorization: token " + token,
+                "-w", "\n" + fetchSplitToken + "\n",
+                allBaseUrl + "&page=" + page
+            )
+        }
+
+        ApiCallStats.recordCalls(pages)
+        var process = fetchComponentDef.createObject(fetcher)
+        process.command = command
+        process.running = true
+    }
+
+    function cancel() {
+        parseRequestSeq = parseRequestSeq + 1
+        isLoading = false
+        fetchQueued = false
+    }
+
+    function retryIfQueued() {
+        if (fetchQueued) {
+            fetchQueued = false
+            Qt.callLater(fetch)
+        }
+    }
+
+    // =========================================================================
+    //  PROCESS COMPONENT
+    // =========================================================================
+
+    Component {
+        id: fetchComponentDef
+
+        Process {
+            property var _chunks: []
+
+            stdout: SplitParser {
+                onRead: line => _chunks.push(line)
+            }
+
+            stderr: SplitParser {
+                onRead: line => {
+                    if (line.trim())
+                        console.warn("[GitHubInbox] fetch:", line)
+                }
+            }
+
+            onExited: exitCode => {
+                if (exitCode !== 0) {
+                    ApiCallStats.recordRefreshComplete()
+                    fetcher.isLoading = false
+                    fetcher.fetchError("Request failed. Check token or network.")
+                    fetcher.retryIfQueued()
+                    destroy()
+                    return
+                }
+
+                var nextSeq = fetcher.parseRequestSeq + 1
+                fetcher.parseRequestSeq = nextSeq
+                parseWorker.sendMessage({
+                    seq: nextSeq,
+                    payloadText: _chunks.join("\n") + "\n",
+                    separator: fetcher.fetchSplitToken,
+                    allSegmentCount: fetcher.fetchPageCount,
+                    doneThreadState: fetcher.doneThreadState,
+                    chunkSize: Constants.notificationsParseChunkSize
+                })
+
+                destroy()
+            }
+        }
+    }
+
+    // =========================================================================
+    //  WORKER SCRIPT (author results are forwarded via authorResultReceived)
+    // =========================================================================
+
+    signal authorResultReceived(var message)
+
+    WorkerScript {
+        id: parseWorker
+        source: Qt.resolvedUrl("../JS/NotificationParserWorker.js")
+
+        onMessage: function(message) {
+            // Author parse results are forwarded to the parent (AuthorFetcher
+            // will connect to the authorResultReceived signal).
+            if (message.action === "authorsResult") {
+                fetcher.authorResultReceived(message)
+                return
+            }
+
+            if (message.seq !== fetcher.parseRequestSeq)
+                return
+
+            if (message.error) {
+                ApiCallStats.recordRefreshComplete()
+                fetcher.isLoading = false
+                fetcher.fetchError(message.error)
+                fetcher.retryIfQueued()
+                return
+            }
+
+            if (message.phase === "begin") {
+                var totalCount = parseInt(message.totalCount || 0)
+                var unreadCount = parseInt(message.unreadCount || 0)
+                fetcher.fetchBegin(totalCount, unreadCount)
+
+                if (totalCount === 0) {
+                    ApiCallStats.recordRefreshComplete()
+                    fetcher.isLoading = false
+                    fetcher.retryIfQueued()
+                }
+                return
+            }
+
+            if (message.phase === "chunk") {
+                var chunk = message.items || []
+                fetcher.fetchChunk(chunk, !!message.isLast)
+
+                if (message.isLast) {
+                    fetcher.isLoading = false
+                    fetcher.retryIfQueued()
+                }
+                return
+            }
+
+            // Legacy single-message path
+            fetcher.fetchComplete(message.items || [], parseInt(message.unreadCount || 0))
+            fetcher.isLoading = false
+            fetcher.retryIfQueued()
+        }
+    }
+
+    // Expose sendMessage for AuthorFetcher to offload parsing
+    function sendWorkerMessage(msg) {
+        parseWorker.sendMessage(msg)
+    }
+}

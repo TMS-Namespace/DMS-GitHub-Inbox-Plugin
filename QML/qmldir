@@ -1,0 +1,3 @@
+singleton ApiCallStats 1.0 ApiCallStats.qml
+singleton AuthorUtils 1.0 AuthorUtils.qml
+singleton Constants 1.0 Constants.qml

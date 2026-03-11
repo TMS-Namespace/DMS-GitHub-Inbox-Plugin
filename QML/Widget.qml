@@ -1,4 +1,13 @@
-// Widget.qml - Main GitHub Inbox widget for DankMaterialShell
+// Widget.qml - Main GitHub Inbox widget orchestrator for DankMaterialShell
+//
+// This file is the top-level PluginComponent that wires together the
+// extracted sub-components.  Business logic lives in the delegates:
+//   - NotificationFetcher  — curl-based notification fetching + WorkerScript
+//   - AuthorFetcher        — author data queue, dedup, fetching
+//   - NotificationMutator  — mark read/done/unread mutations
+//   - AvatarPreloader      — hidden Image warm-up cache
+//   - CacheCoordinator     — disk cache bridge (notifications, authors, avatars)
+//   - AuthorUtils          — pure helper functions (singleton)
 
 import QtQuick
 import QtQml
@@ -12,76 +21,70 @@ import "../JS/GitHubHelpers.js" as GitHub
 PluginComponent {
     id: root
 
-    layerNamespacePlugin: "github-inbox"
+    layerNamespacePlugin: Constants.pluginNamespaceId
 
-    // -- Settings-backed state ------------------------------------------------
+    // =========================================================================
+    //  SETTINGS-BACKED STATE
+    // =========================================================================
+
     property string token: (pluginData.githubToken || "").trim()
     property int pollIntervalMs: GitHub.pollIntervalMs(pluginData.pollInterval)
     property int groupItemLimit: {
-        var value = parseInt(pluginData.groupItemLimit || "25")
+        var value = parseInt(pluginData.groupItemLimit || Constants.defaultGroupItemLimit)
         if (isNaN(value))
-            return 25
-        return Math.max(1, Math.min(25, value))
+            return Constants.defaultGroupItemLimit
+        return Math.max(Constants.minGroupItemLimit, Math.min(Constants.maxGroupItemLimit, value))
     }
     property int fetchPageCount: {
-        var value = parseInt(pluginData.fetchPages || "3")
+        var value = parseInt(pluginData.fetchPages || Constants.defaultFetchPageCount)
         if (isNaN(value))
-            return 3
-        return Math.max(1, Math.min(10, value))
+            return Constants.defaultFetchPageCount
+        return Math.max(Constants.minFetchPageCount, Math.min(Constants.maxFetchPageCount, value))
     }
     property int popupHeightUnits: {
         var rawValue = pluginData.popupHeight
         if (rawValue === undefined || rawValue === "")
-            rawValue = pluginData.popupItems || "10"
+            rawValue = pluginData.popupItems || Constants.defaultPopupHeightUnits
         var value = parseInt(rawValue)
         if (isNaN(value))
-            return 10
-        return Math.max(5, Math.min(40, value))
+            return Constants.defaultPopupHeightUnits
+        return Math.max(Constants.minPopupHeightUnits, Math.min(Constants.maxPopupHeightUnits, value))
     }
     property int titleLines: {
-        var value = parseInt(pluginData.titleLines || "2")
+        var value = parseInt(pluginData.titleLines || Constants.defaultTitleLines)
         if (isNaN(value))
-            return 2
-        return Math.max(1, Math.min(6, value))
+            return Constants.defaultTitleLines
+        return Math.max(Constants.minTitleLines, Math.min(Constants.maxTitleLines, value))
     }
     property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
+    property int cacheTtlMinutes: {
+        var value = parseInt(pluginData.cacheTtlMinutes || Constants.defaultCacheTtlMinutes)
+        if (isNaN(value))
+            return Constants.defaultCacheTtlMinutes
+        return Math.max(Constants.minCacheTtlMinutes, Math.min(Constants.maxCacheTtlMinutes, value))
+    }
 
-    // -- Runtime state --------------------------------------------------------
+    // =========================================================================
+    //  RUNTIME STATE
+    // =========================================================================
+
     property var notifications: []
     property var notificationsForView: []
     property var pendingViewNotifications: []
     property int pendingViewIndex: 0
     property int unreadCount: 0
-    property bool isLoading: false
-    property bool isMutating: false
-    property bool fetchQueued: false
     property string errorMessage: ""
     property real lastUpdated: 0
-    property var doneThreadState: ({})
-    property string fetchSplitToken: "__GH_PARTICIPATING_SPLIT__"
-    property string authorSplitToken: "__GH_AUTHOR_SPLIT__"
-    property int parseRequestSeq: 0
-    property int viewApplyChunkSize: 20
-    property var expandedReposState: ({ "__defaultExpanded": true })
+    property var expandedReposState: ({ [Constants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
-    property var authorRequestQueue: []
-    property bool authorRequestInFlight: false
-    property var authorFetchedUrlsByThread: ({})
-    property var authorFetchedAtUpdatedAt: ({})
-    property bool authorPrefetchPending: false
-    property bool fetchPayloadComplete: false
-    property var pendingThreadDoneQueue: []
-    property var avatarPreloadEntries: []
-    property var avatarPreloadMap: ({})
-    property int avatarPreloadLimit: 500
 
-    property url githubIconPrimary: "https://github.com/favicon.ico"
+    property url githubIconPrimary: Constants.githubFaviconUrl
     property url githubIconFallback: Qt.resolvedUrl("../Images/github-mark.svg")
 
+    // -- Computed properties --------------------------------------------------
     property int totalCount: notifications.length
     property int readCount: Math.max(0, notifications.length - unreadCount)
     property int shownCount: notificationsForView.length
-
     property string barCountText: unreadCount > 0 ? GitHub.formatCountValue(unreadCount) : ""
 
     property string popoutDetails: {
@@ -89,7 +92,7 @@ PluginComponent {
             return "Set your GitHub classic token in Settings"
         if (errorMessage)
             return errorMessage
-        if (isLoading && notifications.length === 0)
+        if (fetcher.isLoading && notifications.length === 0)
             return "Loading notifications..."
 
         var counts = unreadCount + " unread / " + readCount + " read / " + totalCount + " total"
@@ -99,689 +102,253 @@ PluginComponent {
         return summary
     }
 
-    // -- Polling --------------------------------------------------------------
+    // =========================================================================
+    //  SUB-COMPONENTS
+    // =========================================================================
+
+    CacheCoordinator {
+        id: cacheCoord
+        cacheTtlMinutes: root.cacheTtlMinutes
+        onCacheReady: root._onCacheReady()
+        onAvatarCachedLocally: function(login, localUrl) {
+            avatarPreloader.updateEntrySource(login, localUrl)
+        }
+    }
+
+    NotificationFetcher {
+        id: fetcher
+        token: root.token
+        fetchPageCount: root.fetchPageCount
+        doneThreadState: mutator.doneThreadState
+
+        onFetchBegin: function(totalCount, unreadCount) {
+            root.notifications = []
+            root.notificationsForView = []
+            root.pendingViewNotifications = []
+            root.pendingViewIndex = 0
+            authorFetch.resetState()
+            authorFetch.prefetchPending = totalCount > 0
+            root.unreadCount = unreadCount
+            root.errorMessage = ""
+            root.lastUpdated = Date.now()
+
+            if (totalCount === 0)
+                _finalizeFetchCycle()
+        }
+
+        onFetchChunk: function(chunk, isLast) {
+            if (chunk.length > 0) {
+                cacheCoord.resolveNotificationAvatars(chunk)
+                var nextNotifications = root.notifications.slice(0)
+                for (var index = 0; index < chunk.length; index++)
+                    nextNotifications.push(chunk[index])
+                root.notifications = nextNotifications
+                root.notificationsForView = nextNotifications
+                avatarPreloader.queueFromNotifications(chunk)
+                authorFetch.prefetchForNotifications(chunk)
+            }
+
+            if (isLast) {
+                root.lastUpdated = Date.now()
+                cacheCoord.updateNotifications(root.notifications)
+                _tryFinalizeAuthorPrefetch()
+            }
+        }
+
+        onFetchComplete: function(items, unreadCount) {
+            cacheCoord.resolveNotificationAvatars(items)
+            root.notifications = items
+            root.unreadCount = unreadCount
+            root._queueViewNotifications(root.notifications)
+            avatarPreloader.queueFromNotifications(root.notifications)
+            authorFetch.prefetchPending = root.notifications.length > 0
+            authorFetch.prefetchForNotifications(root.notifications)
+            root.errorMessage = ""
+            root.lastUpdated = Date.now()
+            cacheCoord.updateNotifications(root.notifications)
+            _tryFinalizeAuthorPrefetch()
+        }
+
+        onFetchError: function(errorMessage) {
+            root.notifications = []
+            root.notificationsForView = []
+            root.pendingViewNotifications = []
+            root.pendingViewIndex = 0
+            viewApplyTimer.stop()
+            authorFetch.resetState()
+            root.unreadCount = 0
+            root.errorMessage = errorMessage
+            root.lastUpdated = Date.now()
+            Qt.callLater(mutator.processPendingDoneQueue)
+        }
+
+        onAuthorResultReceived: function(message) {
+            authorFetch.handleAuthorResult(message)
+        }
+    }
+
+    AuthorFetcher {
+        id: authorFetch
+        token: root.token
+        loadAuthorInfo: root.loadAuthorInfo
+        authorsByThreadRef: root.authorsByThread
+        workerSendMessage: fetcher.sendWorkerMessage
+
+        onAuthorsMerged: function(mergedAuthors, preloadAuthors) {
+            // Resolve avatar URLs from local cache before storing
+            for (var resolveId in mergedAuthors)
+                cacheCoord.resolveAuthorAvatars(mergedAuthors[resolveId])
+
+            root.authorsByThread = mergedAuthors
+            cacheCoord.bulkUpdateAuthors(mergedAuthors)
+
+            if (preloadAuthors.length > 0)
+                avatarPreloader.queueFromAuthors(preloadAuthors)
+        }
+
+        onAuthorFetchedAtChanged: function(threadId, updatedAt) {
+            cacheCoord.updateAuthorFetchedAt(threadId, updatedAt)
+        }
+
+        onExpansionUrlsDiscovered: function(threadId, urls) {
+            authorFetch.enqueueAuthorUrls(threadId, urls)
+        }
+
+        onPrefetchMaybeComplete: root._tryFinalizeAuthorPrefetch()
+    }
+
+    NotificationMutator {
+        id: mutator
+        token: root.token
+        isLoading: fetcher.isLoading
+
+        onMutationApplied: function(actionType, threadId, repositoryFullName) {
+            var result = mutator.applyResult(actionType, threadId, repositoryFullName, root.notifications)
+            root.notifications = result.items
+            root._queueViewNotifications(root.notifications)
+            if (result.unreadChanged)
+                root.unreadCount = _recalculateUnread(root.notifications)
+            root.errorMessage = ""
+            root.lastUpdated = Date.now()
+        }
+
+        onMutationError: function(errorMessage) {
+            root.errorMessage = errorMessage
+        }
+    }
+
+    AvatarPreloader {
+        id: avatarPreloader
+    }
+
+    // =========================================================================
+    //  TIMERS
+    // =========================================================================
+
     Timer {
         id: pollTimer
         interval: root.pollIntervalMs
         running: root.token !== ""
         repeat: true
-        onTriggered: root.fetchNotifications()
+        onTriggered: root._fetchNotifications()
     }
 
     Timer {
         id: viewApplyTimer
-        interval: 8
+        interval: Constants.viewApplyTimerIntervalMs
         repeat: true
-        onTriggered: root.applyViewChunk()
+        onTriggered: root._applyViewChunk()
     }
 
-    function queueViewNotifications(items) {
-        var nextItems = (items || []).slice(0)
-        pendingViewNotifications = nextItems
-        pendingViewIndex = nextItems.length
-        notificationsForView = nextItems
-        viewApplyTimer.stop()
-    }
+    // =========================================================================
+    //  ORCHESTRATION LOGIC
+    // =========================================================================
 
-    function applyViewChunk() {
-        viewApplyTimer.stop()
-    }
-
-    function cloneExpandedState(state) {
-        var copy = {}
-        var source = state || {}
-        for (var key in source)
-            copy[key] = source[key]
-        if (copy.__defaultExpanded === undefined)
-            copy.__defaultExpanded = true
-        return copy
-    }
-
-    function cloneAuthorsByThread() {
-        var copy = {}
-        for (var threadId in authorsByThread)
-            copy[threadId] = authorsByThread[threadId]
-        return copy
-    }
-
-    function cloneAuthorFetchedUrlsByThread() {
-        var copy = {}
-        for (var threadId in authorFetchedUrlsByThread) {
-            var threadCopy = {}
-            var source = authorFetchedUrlsByThread[threadId] || {}
-            for (var url in source)
-                threadCopy[url] = source[url]
-            copy[threadId] = threadCopy
-        }
-        return copy
-    }
-
-    function cloneAvatarPreloadMap() {
-        var copy = {}
-        for (var key in avatarPreloadMap)
-            copy[key] = avatarPreloadMap[key]
-        return copy
-    }
-
-    function cloneThreadFetchedUrlMap(threadId) {
-        var source = authorFetchedUrlsByThread[threadId] || {}
-        var copy = {}
-        for (var url in source)
-            copy[url] = source[url]
-        return copy
-    }
-
-    function markThreadUrlsFetched(threadId, urls) {
-        if (!threadId || !urls || urls.length === 0)
+    function _fetchNotifications() {
+        if (!token || mutator.isMutating)
             return
-
-        var nextByThread = cloneAuthorFetchedUrlsByThread()
-        var nextThreadMap = cloneThreadFetchedUrlMap(threadId)
-
-        for (var index = 0; index < urls.length; index++) {
-            var url = normalizeApiUrl(urls[index])
-            if (url)
-                nextThreadMap[url] = true
-        }
-
-        nextByThread[threadId] = nextThreadMap
-        authorFetchedUrlsByThread = nextByThread
+        fetcher.fetch()
     }
 
-    function filterThreadUnfetchedUrls(threadId, urls) {
-        var result = []
-        if (!threadId || !urls || urls.length === 0)
-            return result
-
-        var fetchedMap = authorFetchedUrlsByThread[threadId] || {}
-        var seen = {}
-
-        for (var index = 0; index < urls.length; index++) {
-            var rawUrl = String(urls[index] || "").trim()
-            var normalized = normalizeApiUrl(rawUrl)
-            if (!normalized || fetchedMap[normalized] || seen[normalized])
-                continue
-            seen[normalized] = true
-            result.push(rawUrl)
-        }
-
-        return result
-    }
-
-    function defaultAvatarUrlForLogin(login) {
-        var normalized = String(login || "").trim()
-        if (!normalized)
-            return ""
-        return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=80"
-    }
-
-    function authorAvatarUrl(authorLike) {
-        if (!authorLike)
-            return ""
-
-        var avatarUrl = String(authorLike.avatarUrl || authorLike.avatar_url || "").trim()
-        if (avatarUrl)
-            return avatarUrl
-
-        var login = String(authorLike.login || "").trim()
-        if (login)
-            return defaultAvatarUrlForLogin(login)
-
-        return ""
-    }
-
-    function authorKey(login, htmlUrl, avatarUrl) {
-        var normalizedLogin = String(login || "").trim().toLowerCase()
-        if (normalizedLogin)
-            return normalizedLogin
-
-        var normalizedHtml = String(htmlUrl || "").trim()
-        if (normalizedHtml)
-            return normalizedHtml
-
-        return String(avatarUrl || "").trim()
-    }
-
-    function mergeAuthorLists(existingAuthors, incomingAuthors) {
-        var merged = []
-        var byKey = {}
-
-        var existing = existingAuthors || []
-        for (var existingIndex = 0; existingIndex < existing.length; existingIndex++)
-            pushAuthorCandidate(merged, byKey, existing[existingIndex])
-
-        var incoming = incomingAuthors || []
-        for (var incomingIndex = 0; incomingIndex < incoming.length; incomingIndex++)
-            pushAuthorCandidate(merged, byKey, incoming[incomingIndex])
-
-        return merged
-    }
-
-    function isLikelyGitHubLogin(login) {
-        var value = String(login || "").trim()
-        if (!value)
-            return false
-
-        // Be permissive enough for enterprise-managed users while still rejecting obvious junk.
-        var base = value
-        if (base.slice(-5) === "[bot]")
-            base = base.slice(0, -5)
-
-        return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,78}[A-Za-z0-9])?$/.test(base)
-    }
-
-    function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
-        if (!userLike || typeof userLike !== "object")
-            return false
-
-        var normalizedLogin = String(login || "").trim()
-        if (!isLikelyGitHubLogin(normalizedLogin))
-            return false
-
-        var normalizedType = String(userLike.type || "").trim().toLowerCase()
-        if (normalizedType === "user"
-                || normalizedType === "bot"
-                || normalizedType === "organization"
-                || normalizedType === "mannequin")
-            return true
-
-        var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
-        if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0)
-            return true
-        if (normalizedAvatar.indexOf("https://github.com/") === 0 && normalizedAvatar.indexOf(".png") > 0)
-            return true
-
-        var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
-        var lowerLogin = normalizedLogin.toLowerCase()
-        if (normalizedHtml === "https://github.com/" + lowerLogin)
-            return true
-        if (normalizedHtml.indexOf("https://github.com/" + lowerLogin + "/") === 0)
-            return true
-
-        return false
-    }
-
-    function pushAuthorCandidate(target, byKey, userLike) {
-        if (!userLike || typeof userLike !== "object")
-            return
-
-        var login = String(userLike.login || "").trim()
-        var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
-        var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
-        if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl))
-            return
-
-        htmlUrl = String(htmlUrl || "").trim()
-        if (!htmlUrl)
-            htmlUrl = "https://github.com/" + encodeURIComponent(login)
-
-        avatarUrl = authorAvatarUrl({
-            login: login,
-            avatarUrl: avatarUrl
-        })
-
-        var key = authorKey(login, htmlUrl, avatarUrl)
-        if (!key)
-            return
-
-        if (byKey.hasOwnProperty(key)) {
-            var existing = target[byKey[key]]
-            if (!existing.login && login)
-                existing.login = login
-            if (!existing.avatarUrl && avatarUrl)
-                existing.avatarUrl = avatarUrl
-            if (!existing.htmlUrl && htmlUrl)
-                existing.htmlUrl = htmlUrl
+    function _refreshNow() {
+        if (!token) {
+            errorMessage = "Set your GitHub token in Settings."
             return
         }
-
-        byKey[key] = target.length
-        target.push({
-            login: login,
-            avatarUrl: avatarUrl,
-            htmlUrl: htmlUrl
-        })
+        _fetchNotifications()
     }
 
-    function queueAvatarPreloadFromAuthors(authors) {
-        if (!authors || authors.length === 0 || avatarPreloadEntries.length >= avatarPreloadLimit)
-            return
+    function _onCacheReady() {
+        if (!token) return
 
-        var nextEntries = avatarPreloadEntries.slice(0)
-        var nextMap = cloneAvatarPreloadMap()
-        var changed = false
+        var cached = cacheCoord.loadCachedState()
 
-        for (var index = 0; index < authors.length; index++) {
-            if (nextEntries.length >= avatarPreloadLimit)
-                break
-
-            var author = authors[index]
-            var login = String((author && author.login) || "").trim()
-            var avatarUrl = authorAvatarUrl(author)
-            var key = authorKey(login, (author && author.htmlUrl) || "", avatarUrl)
-            if (!key || !avatarUrl || nextMap.hasOwnProperty(key))
-                continue
-
-            nextMap[key] = avatarUrl
-            nextEntries.push({
-                key: key,
-                source: avatarUrl
-            })
-            changed = true
+        // Load notifications for immediate display
+        if (cached.notifications.length > 0) {
+            cacheCoord.resolveNotificationAvatars(cached.notifications)
+            notifications = cached.notifications
+            unreadCount = _recalculateUnread(cached.notifications)
+            _queueViewNotifications(cached.notifications)
+            lastUpdated = cached.timestamp
         }
 
-        if (changed) {
-            avatarPreloadMap = nextMap
-            avatarPreloadEntries = nextEntries
-        }
-    }
-
-    function queueAvatarPreloadFromNotifications(items) {
-        if (!items || items.length === 0)
-            return
-
-        var ownerAuthors = []
-        for (var index = 0; index < items.length; index++) {
-            var item = items[index]
-            ownerAuthors.push({
-                login: item.repositoryOwnerLogin || "",
-                avatarUrl: item.repositoryOwnerAvatarUrl || "",
-                htmlUrl: item.repositoryOwnerLogin ? ("https://github.com/" + encodeURIComponent(item.repositoryOwnerLogin)) : ""
-            })
-        }
-
-        queueAvatarPreloadFromAuthors(ownerAuthors)
-    }
-
-    function parseSubjectAuthors(payloadText) {
-        var authors = []
-        var byKey = {}
-        var parsed
-
-        try {
-            parsed = JSON.parse(payloadText || "{}")
-        } catch (error) {
-            return []
-        }
-
-        function walk(value, depth) {
-            if (!value || depth > 8)
-                return
-
-            if (Array.isArray(value)) {
-                for (var arrayIndex = 0; arrayIndex < value.length; arrayIndex++)
-                    walk(value[arrayIndex], depth + 1)
-                return
+        // Load cached authors
+        var resolvedAuthors = {}
+        var cachedAuthors = cached.authorsByThread
+        if (cachedAuthors && typeof cachedAuthors === "object") {
+            for (var tid in cachedAuthors) {
+                var authors = cachedAuthors[tid]
+                if (authors && authors.length > 0) {
+                    cacheCoord.resolveAuthorAvatars(authors)
+                    resolvedAuthors[tid] = authors
+                }
             }
-
-            if (typeof value !== "object")
-                return
-
-            if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
-                pushAuthorCandidate(authors, byKey, value)
-
-            pushAuthorCandidate(authors, byKey, value.user)
-            pushAuthorCandidate(authors, byKey, value.author)
-            pushAuthorCandidate(authors, byKey, value.assignee)
-            pushAuthorCandidate(authors, byKey, value.sender)
-            pushAuthorCandidate(authors, byKey, value.creator)
-            pushAuthorCandidate(authors, byKey, value.merged_by)
-            pushAuthorCandidate(authors, byKey, value.closed_by)
-            pushAuthorCandidate(authors, byKey, value.dismissed_by)
-            pushAuthorCandidate(authors, byKey, value.actor)
-
-            for (var key in value) {
-                if (!value.hasOwnProperty(key))
-                    continue
-                var child = value[key]
-                if (!child || typeof child !== "object")
-                    continue
-                walk(child, depth + 1)
-            }
+            authorsByThread = resolvedAuthors
         }
 
-        walk(parsed, 0)
-        return authors
-    }
-
-    function parseSubjectAuthorsMulti(payloadText, splitToken) {
-        var marker = "\n" + (splitToken || authorSplitToken) + "\n"
-        var normalized = String(payloadText || "")
-        if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
-            normalized += "\n"
-
-        var parts = normalized.split(marker)
-        var merged = []
-        var mergedByKey = {}
-
-        for (var partIndex = 0; partIndex < parts.length; partIndex++) {
-            var part = String(parts[partIndex] || "").trim()
-            if (!part)
-                continue
-
-            var partAuthors = parseSubjectAuthors(part)
-            for (var authorIndex = 0; authorIndex < partAuthors.length; authorIndex++)
-                pushAuthorCandidate(merged, mergedByKey, partAuthors[authorIndex])
+        // Load cached author fetch timestamps
+        var cachedFetchedAt = cached.authorFetchedAt
+        if (cachedFetchedAt && typeof cachedFetchedAt === "object") {
+            for (var fid in cachedFetchedAt)
+                authorFetch.fetchedAtUpdatedAt[fid] = cachedFetchedAt[fid]
         }
 
-        return merged
-    }
-
-    function normalizeApiUrl(url) {
-        var normalized = String(url || "").trim()
-        if (!normalized)
-            return ""
-
-        var queryIndex = normalized.indexOf("?")
-        if (queryIndex >= 0)
-            normalized = normalized.substring(0, queryIndex)
-
-        if (normalized.indexOf("{") >= 0)
-            return ""
-
-        if (normalized.indexOf("https://api.github.com/repos/") !== 0)
-            return ""
-
-        return normalized
-    }
-
-    function apiUrlFromWebUrl(webUrl) {
-        var normalized = String(webUrl || "").trim()
-        if (!normalized || normalized.indexOf("https://github.com/") !== 0)
-            return ""
-
-        var pathOnly = normalized.split("#")[0].split("?")[0]
-        var path = pathOnly.substring("https://github.com/".length)
-        var parts = path.split("/")
-        if (parts.length < 4)
-            return ""
-
-        var owner = parts[0]
-        var repo = parts[1]
-        var section = parts[2]
-        var subjectId = parts[3]
-        if (!owner || !repo || !section || !subjectId)
-            return ""
-
-        if (section === "pull")
-            section = "pulls"
-
-        if (section === "issues" || section === "pulls" || section === "discussions") {
-            if (!/^[0-9]+$/.test(subjectId))
-                return ""
-            return "https://api.github.com/repos/"
-                   + encodeURIComponent(owner)
-                   + "/"
-                   + encodeURIComponent(repo)
-                   + "/"
-                   + section
-                   + "/"
-                   + subjectId
+        // Queue preload for all known avatars from cache
+        avatarPreloader.queueFromNotifications(cached.notifications)
+        var allAuthors = []
+        for (var atid in resolvedAuthors) {
+            var authorList = resolvedAuthors[atid] || []
+            for (var ai = 0; ai < authorList.length; ai++)
+                allAuthors.push(authorList[ai])
         }
+        if (allAuthors.length > 0)
+            avatarPreloader.queueFromAuthors(allAuthors)
 
-        if (section === "commit")
-            return "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/commits/" + subjectId
-
-        return ""
+        _fetchNotifications()
     }
 
-    function resolveSubjectApiUrlForAuthors(item) {
-        if (!item)
-            return ""
-
-        var directUrl = normalizeApiUrl(item.subjectApiUrl || "")
-        if (directUrl)
-            return directUrl
-
-        return normalizeApiUrl(apiUrlFromWebUrl(item.webUrl || ""))
-    }
-
-    function isThreadParentApiUrl(url) {
-        var normalized = normalizeApiUrl(url)
-        if (!normalized)
-            return false
-
-        var parts = normalized.split("/")
-        if (parts.length !== 8)
-            return false
-
-        if (parts[0] !== "https:" || parts[2] !== "api.github.com" || parts[3] !== "repos")
-            return false
-
-        if (parts[6] !== "issues" && parts[6] !== "pulls")
-            return false
-
-        return /^[0-9]+$/.test(parts[7])
-    }
-
-    function collectSubjectExpansionUrls(value, target, seen) {
-        if (!value || typeof value !== "object")
+    function _tryFinalizeAuthorPrefetch() {
+        if (!authorFetch.prefetchPending)
+            return
+        if (authorFetch.requestInFlight || authorFetch.requestQueue.length > 0)
+            return
+        if (fetcher.isLoading)
             return
 
-        function push(url) {
-            var normalized = normalizeApiUrl(url)
-            if (!normalized || !isThreadParentApiUrl(normalized) || seen[normalized])
-                return
-            seen[normalized] = true
-            target.push(normalized)
-        }
+        _pruneAuthorCaches()
+        ApiCallStats.recordRefreshComplete()
+        authorFetch.prefetchPending = false
 
-        push(value.issue_url)
-        push(value.pull_request_url)
-        push(value.url)
+        Qt.callLater(mutator.processPendingDoneQueue)
+        fetcher.retryIfQueued()
     }
 
-    function parseSubjectExpansionUrls(payloadText, splitToken) {
-        var marker = "\n" + (splitToken || authorSplitToken) + "\n"
-        var normalized = String(payloadText || "")
-        if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
-            normalized += "\n"
-
-        var parts = normalized.split(marker)
-        var urls = []
-        var seen = {}
-
-        for (var partIndex = 0; partIndex < parts.length; partIndex++) {
-            var part = String(parts[partIndex] || "").trim()
-            if (!part)
-                continue
-
-            var parsed
-            try {
-                parsed = JSON.parse(part)
-            } catch (error) {
-                continue
-            }
-
-            if (Array.isArray(parsed)) {
-                for (var itemIndex = 0; itemIndex < parsed.length; itemIndex++)
-                    collectSubjectExpansionUrls(parsed[itemIndex], urls, seen)
-            } else {
-                collectSubjectExpansionUrls(parsed, urls, seen)
-            }
-        }
-
-        return urls
+    function _finalizeFetchCycle() {
+        ApiCallStats.recordRefreshComplete()
+        fetcher.retryIfQueued()
     }
 
-    function appendAuthorQuery(url, query) {
-        if (!url)
-            return ""
-        return url + (url.indexOf("?") >= 0 ? "&" : "?") + query
-    }
-
-    function buildAuthorFetchUrls(subjectApiUrl, subjectType) {
-        var urls = []
-        var perPageQuery = "per_page=100"
-
-        function push(url) {
-            if (!url || urls.indexOf(url) >= 0)
-                return
-            urls.push(url)
-        }
-
-        push(subjectApiUrl)
-
-        if (isThreadParentApiUrl(subjectApiUrl)) {
-            var isPR = subjectApiUrl.indexOf("/pulls/") >= 0
-            var issueApiUrl = isPR
-                ? subjectApiUrl.replace("/pulls/", "/issues/")
-                : subjectApiUrl
-
-            // PR reviews are only accessible from the pulls reviews endpoint;
-            // the issue timeline does not reliably expose reviewer objects.
-            if (isPR)
-                push(appendAuthorQuery(subjectApiUrl + "/reviews", perPageQuery))
-
-            // The issue timeline covers comments, assignments, cross-references
-            // and most other actor data in a single call for both PRs and issues.
-            push(appendAuthorQuery(issueApiUrl + "/timeline", perPageQuery))
-        }
-
-        if (subjectApiUrl.indexOf("/discussions/") >= 0)
-            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
-
-        if (subjectApiUrl.indexOf("/commits/") >= 0)
-            push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
-
-        return urls
-    }
-
-    function enqueueAuthorUrls(threadId, urls, updatedAt) {
-        if (!token || !threadId || !urls || urls.length === 0)
-            return
-
-        var candidateUrls = filterThreadUnfetchedUrls(threadId, urls)
-        if (candidateUrls.length === 0)
-            return
-
-        var pendingMap = {}
-        var nextQueue = authorRequestQueue.slice(0)
-
-        for (var queueIndex = 0; queueIndex < nextQueue.length; queueIndex++) {
-            var queueItem = nextQueue[queueIndex]
-            if (queueItem.threadId !== threadId)
-                continue
-            var pendingUrls = queueItem.urls || []
-            for (var pendingIndex = 0; pendingIndex < pendingUrls.length; pendingIndex++) {
-                var pendingKey = normalizeApiUrl(pendingUrls[pendingIndex])
-                if (pendingKey)
-                    pendingMap[pendingKey] = true
-            }
-        }
-
-        var filtered = []
-        for (var index = 0; index < candidateUrls.length; index++) {
-            var url = candidateUrls[index]
-            var urlKey = normalizeApiUrl(url)
-            if (!urlKey || pendingMap[urlKey])
-                continue
-            pendingMap[urlKey] = true
-            filtered.push(url)
-        }
-
-        if (filtered.length === 0)
-            return
-
-        if (filtered.length > 16)
-            filtered = filtered.slice(0, 16)
-
-        nextQueue.push({
-            threadId: threadId,
-            urls: filtered,
-            updatedAt: updatedAt || ""
-        })
-        authorRequestQueue = nextQueue
-        processAuthorQueue()
-    }
-
-    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt) {
-        if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl)
-            return
-
-        enqueueAuthorUrls(threadId, buildAuthorFetchUrls(subjectApiUrl, subjectType || ""), updatedAt || "")
-    }
-
-    function processAuthorQueue() {
-        if (authorRequestInFlight || !token || !loadAuthorInfo)
-            return
-        if (authorRequestQueue.length === 0)
-            return
-
-        var nextQueue = authorRequestQueue.slice(0)
-        var request = nextQueue.shift()
-        authorRequestQueue = nextQueue
-
-        var urls = filterThreadUnfetchedUrls(request.threadId, request.urls || [])
-        if (urls.length === 0) {
-            Qt.callLater(root.processAuthorQueue)
-            return
-        }
-
-        authorRequestInFlight = true
-        var process = authorFetchComponent.createObject(root, {
-            threadId: request.threadId,
-            requestedUrls: urls,
-            updatedAt: request.updatedAt || ""
-        })
-
-        var command = ["curl"]
-        for (var urlIndex = 0; urlIndex < urls.length; urlIndex++) {
-            var url = urls[urlIndex]
-            if (!url)
-                continue
-            if (command.length > 1)
-                command.push("--next")
-            command.push(
-                "-sS",
-                "--connect-timeout", "10",
-                "--max-time", "20",
-                "-H", "Accept: application/vnd.github+json",
-                "-H", "X-GitHub-Api-Version: 2022-11-28",
-                "-H", "Authorization: token " + token,
-                "-w", "\n" + authorSplitToken + "\n",
-                url
-            )
-        }
-
-        process.command = command
-        process.running = true
-    }
-
-    function queueAuthorPrefetchForNotifications(items) {
-        if (!loadAuthorInfo || !token || !items || items.length === 0)
-            return
-
-        for (var index = 0; index < items.length; index++) {
-            var item = items[index]
-            if (!item || !item.threadId)
-                continue
-
-            var subjectApiUrl = resolveSubjectApiUrlForAuthors(item)
-            if (!subjectApiUrl)
-                continue
-
-            // Skip if we have already fetched authors for this exact version of
-            // the notification.  Using updatedAt as the cache key means a new
-            // comment / activity (which bumps updatedAt) will trigger a re-fetch
-            // while an unchanged thread is never re-fetched across polls.
-            var lastFetchedUpdatedAt = authorFetchedAtUpdatedAt[item.threadId] || ""
-            if (lastFetchedUpdatedAt === item.updatedAt)
-                continue
-
-            // The notification has been updated since the last fetch.  Clear
-            // its URL-level fetch state so all URLs are tried again.
-            if (lastFetchedUpdatedAt !== "" && authorFetchedUrlsByThread.hasOwnProperty(item.threadId)) {
-                var nextFetchedState = cloneAuthorFetchedUrlsByThread()
-                delete nextFetchedState[item.threadId]
-                authorFetchedUrlsByThread = nextFetchedState
-            }
-
-            enqueueAuthorFetch(item.threadId, subjectApiUrl, item.subjectType || "", item.updatedAt || "")
-        }
-    }
-
-    function pruneAuthorCachesToCurrentNotifications() {
+    function _pruneAuthorCaches() {
         var keep = {}
         for (var index = 0; index < notifications.length; index++) {
             var threadId = notifications[index].threadId
@@ -796,96 +363,63 @@ PluginComponent {
         }
 
         var nextFetchedUrls = {}
-        for (var fetchedThreadId in authorFetchedUrlsByThread) {
+        for (var fetchedThreadId in authorFetch.fetchedUrlsByThread) {
             if (keep[fetchedThreadId])
-                nextFetchedUrls[fetchedThreadId] = authorFetchedUrlsByThread[fetchedThreadId]
+                nextFetchedUrls[fetchedThreadId] = authorFetch.fetchedUrlsByThread[fetchedThreadId]
         }
 
         var nextFetchedUpdatedAt = {}
-        for (var updatedAtThreadId in authorFetchedAtUpdatedAt) {
+        for (var updatedAtThreadId in authorFetch.fetchedAtUpdatedAt) {
             if (keep[updatedAtThreadId])
-                nextFetchedUpdatedAt[updatedAtThreadId] = authorFetchedAtUpdatedAt[updatedAtThreadId]
+                nextFetchedUpdatedAt[updatedAtThreadId] = authorFetch.fetchedAtUpdatedAt[updatedAtThreadId]
         }
 
         authorsByThread = nextAuthors
-        authorFetchedUrlsByThread = nextFetchedUrls
-        authorFetchedAtUpdatedAt = nextFetchedUpdatedAt
+        authorFetch.fetchedUrlsByThread = nextFetchedUrls
+        authorFetch.fetchedAtUpdatedAt = nextFetchedUpdatedAt
+
+        var keepIds = []
+        for (var keepId in keep)
+            keepIds.push(keepId)
+        cacheCoord.pruneToThreads(keepIds)
     }
 
-    function shouldExpandFromRequestedUrls(urls) {
-        if (!urls || urls.length === 0)
-            return false
+    // -- View helpers ---------------------------------------------------------
 
-        for (var index = 0; index < urls.length; index++) {
-            var normalized = normalizeApiUrl(urls[index])
-            if (!normalized)
-                continue
-            if (!isThreadParentApiUrl(normalized))
-                return true
+    function _queueViewNotifications(items) {
+        var nextItems = (items || []).slice(0)
+        pendingViewNotifications = nextItems
+        pendingViewIndex = nextItems.length
+        notificationsForView = nextItems
+        viewApplyTimer.stop()
+    }
+
+    function _applyViewChunk() {
+        viewApplyTimer.stop()
+    }
+
+    function _recalculateUnread(items) {
+        var count = 0
+        for (var index = 0; index < items.length; index++) {
+            if (items[index].unread)
+                count++
         }
-
-        return false
+        return count
     }
 
-    function finalizeAuthorPrefetchState() {
-        if (!authorPrefetchPending || !fetchPayloadComplete)
-            return
-        if (authorRequestInFlight || authorRequestQueue.length > 0)
-            return
-
-        pruneAuthorCachesToCurrentNotifications()
-        authorPrefetchPending = false
-        fetchPayloadComplete = false
-        if (isLoading)
-            isLoading = false
-
-        Qt.callLater(processPendingThreadDoneQueue)
-        if (fetchQueued) {
-            fetchQueued = false
-            Qt.callLater(fetchNotifications)
-        }
+    function _cloneExpandedState(state) {
+        var copy = {}
+        var source = state || {}
+        for (var key in source)
+            copy[key] = source[key]
+        if (copy[Constants.expandedStateDefaultKey] === undefined)
+            copy[Constants.expandedStateDefaultKey] = true
+        return copy
     }
 
-    function queueThreadDoneSync(threadIds) {
-        if (!threadIds || threadIds.length === 0)
-            return
-
-        var nextQueue = pendingThreadDoneQueue.slice(0)
-        var seen = {}
-        for (var existingIndex = 0; existingIndex < nextQueue.length; existingIndex++)
-            seen[nextQueue[existingIndex]] = true
-
-        for (var index = 0; index < threadIds.length; index++) {
-            var threadId = threadIds[index]
-            if (!threadId || seen[threadId])
-                continue
-            seen[threadId] = true
-            nextQueue.push(threadId)
-        }
-
-        pendingThreadDoneQueue = nextQueue
-        processPendingThreadDoneQueue()
-    }
-
-    function processPendingThreadDoneQueue() {
-        if (!token || isMutating || isLoading)
-            return
-        if (pendingThreadDoneQueue.length === 0)
-            return
-
-        var nextQueue = pendingThreadDoneQueue.slice(0)
-        var threadId = nextQueue.shift()
-        pendingThreadDoneQueue = nextQueue
-
-        runMutation(
-            "DELETE",
-            "https://api.github.com/notifications/threads/" + threadId,
-            "thread_done_sync",
-            threadId,
-            "",
-            ""
-        )
-    }
+    // =========================================================================
+    //  PROPERTY-CHANGE HANDLERS
+    // =========================================================================
 
     onPollIntervalMsChanged: {
         pollTimer.interval = pollIntervalMs
@@ -903,626 +437,53 @@ PluginComponent {
             unreadCount = 0
             errorMessage = ""
             lastUpdated = 0
-            fetchQueued = false
-            parseRequestSeq = parseRequestSeq + 1
-            isLoading = false
-            pendingThreadDoneQueue = []
-            authorRequestQueue = []
-            authorRequestInFlight = false
-            authorFetchedUrlsByThread = ({})
-            authorFetchedAtUpdatedAt = ({})
-            authorPrefetchPending = false
-            fetchPayloadComplete = false
+            fetcher.cancel()
+            authorFetch.clearAllState()
+            mutator.resetState()
+            avatarPreloader.reset()
             authorsByThread = ({})
-            avatarPreloadEntries = []
-            avatarPreloadMap = ({})
-            expandedReposState = ({ "__defaultExpanded": true })
+            expandedReposState = ({ [Constants.expandedStateDefaultKey]: true })
             return
         }
-        fetchNotifications()
+        if (cacheCoord.initialized)
+            _fetchNotifications()
+        else
+            cacheCoord.initialize()
     }
 
     onLoadAuthorInfoChanged: {
-        authorRequestQueue = []
-        authorRequestInFlight = false
-        authorPrefetchPending = false
+        authorFetch.resetState()
 
         if (!loadAuthorInfo) {
             authorsByThread = ({})
-            authorFetchedUrlsByThread = ({})
-            authorFetchedAtUpdatedAt = ({})
-            avatarPreloadEntries = []
-            avatarPreloadMap = ({})
+            authorFetch.clearAllState()
+            avatarPreloader.reset()
             return
         }
 
         if (token && notifications.length > 0)
-            queueAuthorPrefetchForNotifications(notifications)
+            authorFetch.prefetchForNotifications(notifications)
     }
 
     onGroupItemLimitChanged: {
         if (token)
-            fetchNotifications()
+            _fetchNotifications()
     }
 
     onFetchPageCountChanged: {
         if (token)
-            fetchNotifications()
+            _fetchNotifications()
     }
 
     Component.onCompleted: {
+        cacheCoord.handleClearCacheRequest(pluginData, pluginService)
         if (token)
-            fetchNotifications()
+            cacheCoord.initialize()
     }
 
-    WorkerScript {
-        id: parseWorker
-        source: Qt.resolvedUrl("../JS/NotificationParserWorker.js")
-
-        onMessage: function(message) {
-            if (message.seq !== root.parseRequestSeq)
-                return
-
-            if (message.error) {
-                root.isLoading = false
-                root.notifications = []
-                root.notificationsForView = []
-                root.pendingViewNotifications = []
-                root.pendingViewIndex = 0
-                root.authorRequestQueue = []
-                root.authorRequestInFlight = false
-                root.authorPrefetchPending = false
-                root.fetchPayloadComplete = false
-                viewApplyTimer.stop()
-                root.unreadCount = 0
-                root.errorMessage = message.error
-                root.lastUpdated = Date.now()
-                Qt.callLater(root.processPendingThreadDoneQueue)
-                if (root.fetchQueued) {
-                    root.fetchQueued = false
-                    Qt.callLater(root.fetchNotifications)
-                }
-                return
-            }
-
-            if (message.phase === "begin") {
-                root.notifications = []
-                root.notificationsForView = []
-                root.pendingViewNotifications = []
-                root.pendingViewIndex = 0
-                root.authorRequestQueue = []
-                root.authorRequestInFlight = false
-                root.authorPrefetchPending = parseInt(message.totalCount || 0) > 0
-                root.fetchPayloadComplete = false
-                root.unreadCount = parseInt(message.unreadCount || 0)
-                root.errorMessage = ""
-                root.lastUpdated = Date.now()
-                root.isLoading = true
-
-                if (parseInt(message.totalCount || 0) === 0) {
-                    root.fetchPayloadComplete = true
-                    root.isLoading = false
-                    if (root.fetchQueued) {
-                        root.fetchQueued = false
-                        Qt.callLater(root.fetchNotifications)
-                    }
-                }
-                return
-            }
-
-            if (message.phase === "chunk") {
-                var chunk = message.items || []
-                if (chunk.length > 0) {
-                    var nextNotifications = root.notifications.slice(0)
-                    for (var index = 0; index < chunk.length; index++)
-                        nextNotifications.push(chunk[index])
-                    root.notifications = nextNotifications
-                    root.notificationsForView = nextNotifications
-                    root.queueAvatarPreloadFromNotifications(chunk)
-                    root.queueAuthorPrefetchForNotifications(chunk)
-                }
-
-                if (message.isLast) {
-                    root.lastUpdated = Date.now()
-                    root.fetchPayloadComplete = true
-                    root.finalizeAuthorPrefetchState()
-                }
-                return
-            }
-
-            root.notifications = message.items || []
-            root.unreadCount = parseInt(message.unreadCount || 0)
-            root.queueViewNotifications(root.notifications)
-            root.queueAvatarPreloadFromNotifications(root.notifications)
-            root.authorPrefetchPending = root.notifications.length > 0
-            root.queueAuthorPrefetchForNotifications(root.notifications)
-            root.errorMessage = ""
-            root.lastUpdated = Date.now()
-            root.fetchPayloadComplete = true
-            root.finalizeAuthorPrefetchState()
-        }
-    }
-
-    // -- Process-based API calls ----------------------------------------------
-    Component {
-        id: fetchComponent
-
-        Process {
-            property var _chunks: []
-
-            stdout: SplitParser {
-                onRead: line => _chunks.push(line)
-            }
-
-            stderr: SplitParser {
-                onRead: line => {
-                    if (line.trim())
-                        console.warn("[GitHubInbox] fetch:", line)
-                }
-            }
-
-            onExited: exitCode => {
-                if (exitCode !== 0) {
-                    root.isLoading = false
-                    root.errorMessage = "Request failed. Check token or network."
-                    if (root.fetchQueued) {
-                        root.fetchQueued = false
-                        Qt.callLater(root.fetchNotifications)
-                    }
-                    destroy()
-                    return
-                }
-
-                var nextSeq = root.parseRequestSeq + 1
-                root.parseRequestSeq = nextSeq
-                parseWorker.sendMessage({
-                    seq: nextSeq,
-                    payloadText: _chunks.join("\n") + "\n",
-                    separator: root.fetchSplitToken,
-                    allSegmentCount: root.fetchPageCount,
-                    doneThreadState: root.doneThreadState,
-                    chunkSize: 80
-                })
-
-                destroy()
-            }
-        }
-    }
-
-    Component {
-        id: authorFetchComponent
-
-        Process {
-            property string threadId: ""
-            property var requestedUrls: []
-            property string updatedAt: ""
-            property string _buffer: ""
-
-            stdout: SplitParser {
-                onRead: line => _buffer += line + "\n"
-            }
-
-            stderr: SplitParser {
-                onRead: line => {
-                    if (line.trim())
-                        console.warn("[GitHubInbox] author:", line)
-                }
-            }
-
-            onExited: exitCode => {
-                if (!root.loadAuthorInfo) {
-                    root.authorRequestInFlight = false
-                    root.finalizeAuthorPrefetchState()
-                    Qt.callLater(root.processAuthorQueue)
-                    destroy()
-                    return
-                }
-
-                root.markThreadUrlsFetched(threadId, requestedUrls || [])
-
-                var fetchedAuthors = []
-                if (exitCode === 0)
-                    fetchedAuthors = root.parseSubjectAuthorsMulti(_buffer, root.authorSplitToken)
-
-                var nextAuthors = root.cloneAuthorsByThread()
-                var existingAuthors = nextAuthors[threadId] || []
-                var mergedAuthors = root.mergeAuthorLists(existingAuthors, fetchedAuthors)
-                nextAuthors[threadId] = mergedAuthors
-                root.authorsByThread = nextAuthors
-                root.queueAvatarPreloadFromAuthors(mergedAuthors)
-
-                // Only cache the updatedAt when we actually resolved at least one
-                // author.  An empty result (permission error, bot-only PR, etc.)
-                // is not recorded, so the next poll will retry rather than
-                // permanently skipping the thread for its current version.
-                if (threadId && mergedAuthors.length > 0) {
-                    var nextFetchedUpdatedAt = {}
-                    for (var atKey in root.authorFetchedAtUpdatedAt)
-                        nextFetchedUpdatedAt[atKey] = root.authorFetchedAtUpdatedAt[atKey]
-                    nextFetchedUpdatedAt[threadId] = updatedAt
-                    root.authorFetchedAtUpdatedAt = nextFetchedUpdatedAt
-                }
-
-                if (exitCode === 0 && root.shouldExpandFromRequestedUrls(requestedUrls || [])) {
-                    var expansionRoots = root.parseSubjectExpansionUrls(_buffer, root.authorSplitToken)
-                    if (expansionRoots.length > 0) {
-                        var expansionUrls = []
-                        for (var rootIndex = 0; rootIndex < expansionRoots.length; rootIndex++) {
-                            var parentUrl = expansionRoots[rootIndex]
-                            var builtUrls = root.buildAuthorFetchUrls(parentUrl, "")
-                            for (var urlIndex = 0; urlIndex < builtUrls.length; urlIndex++)
-                                expansionUrls.push(builtUrls[urlIndex])
-                        }
-                        root.enqueueAuthorUrls(threadId, expansionUrls)
-                    }
-                }
-
-                root.authorRequestInFlight = false
-                root.finalizeAuthorPrefetchState()
-                Qt.callLater(root.processAuthorQueue)
-                destroy()
-            }
-        }
-    }
-
-    Component {
-        id: mutationComponent
-
-        Process {
-            property string _buffer: ""
-            property string actionType: "thread_read"   // thread_read | thread_done | repo_read | all_read
-            property string threadId: ""
-            property string repositoryFullName: ""
-
-            stdout: SplitParser {
-                onRead: line => _buffer += line
-            }
-
-            stderr: SplitParser {
-                onRead: line => {
-                    if (line.trim())
-                        console.warn("[GitHubInbox] mutate:", line)
-                }
-            }
-
-            onExited: exitCode => {
-                root.isMutating = false
-
-                if (exitCode !== 0) {
-                    root.errorMessage = "Action failed. Check token permissions."
-                    destroy()
-                    return
-                }
-
-                var statusCode = parseInt((_buffer || "").trim())
-                if (!isNaN(statusCode) && statusCode >= 200 && statusCode < 300) {
-                    root.applyMutationResult(actionType, threadId, repositoryFullName)
-                    root.errorMessage = ""
-                    root.lastUpdated = Date.now()
-                } else {
-                    root.errorMessage = "Action failed (HTTP " + (isNaN(statusCode) ? "?" : statusCode) + ")."
-                }
-
-                Qt.callLater(root.processPendingThreadDoneQueue)
-                destroy()
-            }
-        }
-    }
-
-    function fetchNotifications() {
-        if (!token || isMutating)
-            return
-
-        if (isLoading) {
-            fetchQueued = true
-            return
-        }
-
-        isLoading = true
-        errorMessage = ""
-
-        // Canonical data source from GitHub:
-        // - full inbox (all=true), multiple pages
-        // participation is now derived locally from the notification `reason` field,
-        // eliminating the second participating=true request set entirely.
-        var apiPageSize = 50
-        var pages = Math.max(1, fetchPageCount)
-        var baseQuery = "per_page=" + apiPageSize + "&all=true"
-        var allBaseUrl = "https://api.github.com/notifications?" + baseQuery
-        var command = ["curl"]
-
-        function appendRequest(url) {
-            if (command.length > 1)
-                command.push("--next")
-            command.push(
-                "-sS",
-                "--connect-timeout", "10",
-                "--max-time", "20",
-                "-H", "Accept: application/vnd.github+json",
-                "-H", "X-GitHub-Api-Version: 2022-11-28",
-                "-H", "Authorization: token " + token,
-                "-w", "\n" + root.fetchSplitToken + "\n",
-                url
-            )
-        }
-
-        for (var page = 1; page <= pages; page++)
-            appendRequest(allBaseUrl + "&page=" + page)
-
-        var process = fetchComponent.createObject(root)
-        process.command = command
-        process.running = true
-    }
-
-    function runMutation(method, url, actionType, threadId, repositoryFullName, payloadJson) {
-        if (!token || isMutating || isLoading)
-            return
-
-        isMutating = true
-
-        var process = mutationComponent.createObject(root, {
-            actionType: actionType || "thread_read",
-            threadId: threadId || "",
-            repositoryFullName: repositoryFullName || ""
-        })
-        process.command = [
-            "curl",
-            "-sS",
-            "-o", "/dev/null",
-            "-w", "%{http_code}",
-            "--connect-timeout", "10",
-            "--max-time", "20",
-            "-X", method,
-            "-H", "Accept: application/vnd.github+json",
-            "-H", "X-GitHub-Api-Version: 2022-11-28",
-            "-H", "Authorization: token " + token,
-            url
-        ]
-        if (payloadJson) {
-            process.command.splice(process.command.length - 1, 0, "-H", "Content-Type: application/json", "-d", payloadJson)
-        }
-        process.running = true
-    }
-
-    function refreshNow() {
-        if (!token) {
-            errorMessage = "Set your GitHub token in Settings."
-            return
-        }
-        fetchNotifications()
-    }
-
-    function _markAsReadItem(item) {
-        var copy = {}
-        for (var key in item)
-            copy[key] = item[key]
-        copy.unread = false
-        return copy
-    }
-
-    function applyMutationResult(actionType, threadId, repositoryFullName) {
-        var updated = []
-        var doneCopy = {}
-        for (var doneKey in doneThreadState) doneCopy[doneKey] = doneThreadState[doneKey]
-
-        if (actionType === "thread_done_sync")
-            return
-
-        if (actionType === "all_read") {
-            for (var allIndex = 0; allIndex < notifications.length; allIndex++)
-                updated.push(_markAsReadItem(notifications[allIndex]))
-            notifications = updated
-            queueViewNotifications(notifications)
-            unreadCount = 0
-            return
-        }
-
-        if (actionType === "repo_read") {
-            for (var repoIndex = 0; repoIndex < notifications.length; repoIndex++) {
-                var repoItem = notifications[repoIndex]
-                if (repoItem.repository === repositoryFullName) {
-                    updated.push(_markAsReadItem(repoItem))
-                    continue
-                }
-                updated.push(repoItem)
-            }
-            notifications = updated
-            queueViewNotifications(notifications)
-            unreadCount = recalculateUnread(updated)
-            return
-        }
-
-        if (actionType === "thread_done") {
-            doneCopy[threadId] = true
-            doneThreadState = doneCopy
-            for (var doneIndex = 0; doneIndex < notifications.length; doneIndex++) {
-                var doneItem = notifications[doneIndex]
-                if (doneItem.threadId !== threadId)
-                    updated.push(doneItem)
-            }
-            notifications = updated
-            queueViewNotifications(notifications)
-            unreadCount = recalculateUnread(updated)
-            return
-        }
-
-        if (actionType === "thread_unread") {
-            if (doneCopy[threadId]) {
-                delete doneCopy[threadId]
-                doneThreadState = doneCopy
-            }
-            for (var unreadIndex = 0; unreadIndex < notifications.length; unreadIndex++) {
-                var unreadItem = notifications[unreadIndex]
-                if (unreadItem.threadId === threadId) {
-                    var unreadCopy = {}
-                    for (var unreadKey in unreadItem)
-                        unreadCopy[unreadKey] = unreadItem[unreadKey]
-                    unreadCopy.unread = true
-                    updated.push(unreadCopy)
-                    continue
-                }
-                updated.push(unreadItem)
-            }
-            notifications = updated
-            queueViewNotifications(notifications)
-            unreadCount = recalculateUnread(updated)
-            return
-        }
-
-        // actionType === "thread_read"
-        if (doneCopy[threadId]) {
-            delete doneCopy[threadId]
-            doneThreadState = doneCopy
-        }
-        for (var index = 0; index < notifications.length; index++) {
-            var item = notifications[index]
-            if (item.threadId === threadId) {
-                var readCopy = _markAsReadItem(item)
-                updated.push(readCopy)
-                continue
-            }
-            updated.push(item)
-        }
-
-        notifications = updated
-        queueViewNotifications(notifications)
-        unreadCount = recalculateUnread(updated)
-    }
-
-    function recalculateUnread(items) {
-        var count = 0
-        for (var index = 0; index < items.length; index++) {
-            if (items[index].unread)
-                count++
-        }
-        return count
-    }
-
-    function markThreadAsRead(threadId) {
-        if (!threadId)
-            return
-        runMutation(
-            "PATCH",
-            "https://api.github.com/notifications/threads/" + threadId,
-            "thread_read",
-            threadId,
-            "",
-            ""
-        )
-    }
-
-    function markThreadAsUnread(threadId) {
-        if (!threadId)
-            return
-        runMutation(
-            "PATCH",
-            "https://api.github.com/notifications/threads/" + threadId,
-            "thread_unread",
-            threadId,
-            "",
-            "{\"read\":false}"
-        )
-    }
-
-    function markThreadDone(threadId) {
-        if (!threadId)
-            return
-        runMutation(
-            "DELETE",
-            "https://api.github.com/notifications/threads/" + threadId,
-            "thread_done",
-            threadId,
-            "",
-            ""
-        )
-    }
-
-    function markRepoDone(repositoryFullName) {
-        if (!repositoryFullName)
-            return
-
-        var doneCopy = {}
-        for (var doneKey in doneThreadState)
-            doneCopy[doneKey] = doneThreadState[doneKey]
-
-        var updated = []
-        var threadIds = []
-
-        for (var index = 0; index < notifications.length; index++) {
-            var item = notifications[index]
-            if (item.repository === repositoryFullName && item.threadId) {
-                doneCopy[item.threadId] = true
-                threadIds.push(item.threadId)
-                continue
-            }
-            updated.push(item)
-        }
-
-        if (threadIds.length === 0)
-            return
-
-        doneThreadState = doneCopy
-        notifications = updated
-        queueViewNotifications(notifications)
-        unreadCount = recalculateUnread(updated)
-        queueThreadDoneSync(threadIds)
-    }
-
-    function markRepoAsRead(repositoryFullName) {
-        if (!repositoryFullName)
-            return
-
-        var parts = repositoryFullName.split("/")
-        if (parts.length !== 2)
-            return
-
-        var owner = encodeURIComponent(parts[0])
-        var repo = encodeURIComponent(parts[1])
-        runMutation(
-            "PUT",
-            "https://api.github.com/repos/" + owner + "/" + repo + "/notifications",
-            "repo_read",
-            "",
-            repositoryFullName,
-            ""
-        )
-    }
-
-    function markAllAsRead() {
-        runMutation(
-            "PUT",
-            "https://api.github.com/notifications",
-            "all_read",
-            "",
-            "",
-            ""
-        )
-    }
-
-    Item {
-        id: avatarPreloadHost
-        visible: false
-        width: 0
-        height: 0
-
-        Repeater {
-            model: root.avatarPreloadEntries
-
-            delegate: Image {
-                required property var modelData
-                source: modelData.source || ""
-                asynchronous: true
-                cache: true
-                sourceSize.width: 48
-                sourceSize.height: 48
-                visible: false
-            }
-        }
-    }
-
-    // =======================================================================
+    // =========================================================================
     //  BAR PILLS
-    // =======================================================================
+    // =========================================================================
 
     horizontalBarPill: Component {
         Row {
@@ -1571,9 +532,9 @@ PluginComponent {
         }
     }
 
-    // =======================================================================
+    // =========================================================================
     //  POPOUT
-    // =======================================================================
+    // =========================================================================
 
     popoutContent: Component {
         PopoutComponent {
@@ -1593,8 +554,8 @@ PluginComponent {
                 notifications: root.notificationsForView
                 unreadCount: root.unreadCount
                 tokenConfigured: root.token !== ""
-                isLoading: root.isLoading
-                isMutating: root.isMutating
+                isLoading: fetcher.isLoading
+                isMutating: mutator.isMutating
                 errorMessage: root.errorMessage
                 headerOffset: popout.headerHeight + popout.detailsHeight
                 titleLines: root.titleLines
@@ -1603,15 +564,16 @@ PluginComponent {
                 authorsByThread: root.authorsByThread
                 showAuthorInfo: root.loadAuthorInfo
 
-                onRefreshNow: root.refreshNow()
-                onMarkAllRead: root.markAllAsRead()
-                onMarkRepoDone: function(repositoryFullName) { root.markRepoDone(repositoryFullName) }
-                onMarkThreadRead: function(threadId) { root.markThreadAsRead(threadId) }
-                onMarkThreadUnread: function(threadId) { root.markThreadAsUnread(threadId) }
-                onMarkThreadDone: function(threadId) { root.markThreadDone(threadId) }
+                onRefreshNow: root._refreshNow()
+                onMarkAllRead: mutator.markAllAsRead()
+                onMarkRepoDone: function(repositoryFullName) {
+                    mutator.markRepoDone(repositoryFullName, root.notifications)
+                }
+                onMarkThreadRead: function(threadId) { mutator.markThreadAsRead(threadId) }
+                onMarkThreadUnread: function(threadId) { mutator.markThreadAsUnread(threadId) }
+                onMarkThreadDone: function(threadId) { mutator.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
-                    if (!root.loadAuthorInfo)
-                        return
+                    if (!root.loadAuthorInfo) return
                     var notifUpdatedAt = ""
                     for (var ni = 0; ni < root.notifications.length; ni++) {
                         if (root.notifications[ni].threadId === threadId) {
@@ -1619,20 +581,22 @@ PluginComponent {
                             break
                         }
                     }
-                    root.enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, notifUpdatedAt)
+                    authorFetch.enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, notifUpdatedAt)
                 }
                 onClosePopout: root.closePopout()
-                onPersistExpandedRepos: function(state) { root.expandedReposState = root.cloneExpandedState(state) }
+                onPersistExpandedRepos: function(state) {
+                    root.expandedReposState = root._cloneExpandedState(state)
+                }
             }
         }
     }
 
-    popoutWidth: Math.round(560 * 0.85)
+    popoutWidth: Math.round(Constants.popoutBaseWidthPx * Constants.popoutWidthScale)
     popoutHeight: {
-        var groups = Math.max(5, popupHeightUnits)
-        var groupHeaderHeight = 38
-        var lineContribution = Math.max(1, titleLines) * 6
-        var estimated = (groups * (groupHeaderHeight + lineContribution)) + 180
-        return Math.max(260, Math.min(1200, estimated))
+        var groups = Math.max(Constants.minPopupHeightUnits, popupHeightUnits)
+        var groupHeaderHeight = Constants.popoutGroupHeaderHeightPx
+        var lineContribution = Math.max(1, titleLines) * Constants.popoutTitleLineHeightContributionPx
+        var estimated = (groups * (groupHeaderHeight + lineContribution)) + Constants.popoutHeightBasePaddingPx
+        return Math.max(Constants.popoutMinHeightPx, Math.min(Constants.popoutMaxHeightPx, estimated))
     }
 }

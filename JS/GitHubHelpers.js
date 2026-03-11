@@ -3,6 +3,13 @@
 // Usage:
 //   import "../JS/GitHubHelpers.js" as GitHub
 
+// Local mirrors of QML/Constants.qml values.
+// This file uses .pragma library and cannot importScripts, so constants are inlined here.
+var _DEFAULT_POLL_INTERVAL_SECONDS = 120
+var _MIN_POLL_INTERVAL_SECONDS     = 60
+var _UNREAD_COUNT_DISPLAY_MAX      = 999
+var _GITHUB_NOTIFICATIONS_FALLBACK_URL = "https://github.com/notifications"
+
 function pluginDataBool(value, defaultValue) {
     if (value === undefined || value === "")
         return !!defaultValue
@@ -13,9 +20,9 @@ function pluginDataBool(value, defaultValue) {
 }
 
 function pollIntervalMs(value) {
-    var seconds = parseInt(value || "120")
-    if (isNaN(seconds) || seconds < 60)
-        return 120000
+    var seconds = parseInt(value || String(_DEFAULT_POLL_INTERVAL_SECONDS))
+    if (isNaN(seconds) || seconds < _MIN_POLL_INTERVAL_SECONDS)
+        return _DEFAULT_POLL_INTERVAL_SECONDS * 1000
     return seconds * 1000
 }
 
@@ -202,7 +209,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
 
 function resolveWebUrl(notification) {
     if (!notification)
-        return "https://github.com/notifications"
+        return _GITHUB_NOTIFICATIONS_FALLBACK_URL
 
     var subject = notification.subject || {}
     var apiUrl = subject.url || ""
@@ -214,7 +221,7 @@ function resolveWebUrl(notification) {
     if (repository.html_url)
         return repository.html_url
 
-    return "https://github.com/notifications"
+    return _GITHUB_NOTIFICATIONS_FALLBACK_URL
 }
 
 function releaseTagFromSubject(subjectType, subjectTitle) {
@@ -310,8 +317,8 @@ function reasonLabel(reason) {
 
 function formatCountValue(value) {
     var safe = Math.max(0, parseInt(value || 0))
-    if (safe > 999)
-        return "999+"
+    if (safe > _UNREAD_COUNT_DISPLAY_MAX)
+        return _UNREAD_COUNT_DISPLAY_MAX + "+"
     return String(safe)
 }
 

@@ -1,10 +1,36 @@
 // NotificationParserWorker.js - background parser for GitHub notifications
 
+// Local mirrors of QML/Constants.qml values.
+// WorkerScript files cannot access QML singletons; constants are inlined here.
+var _FETCH_PAYLOAD_SPLIT_TOKEN     = "__GH_PARTICIPATING_SPLIT__"
+var _NOTIFICATIONS_PARSE_CHUNK_SIZE = 80
+
 WorkerScript.onMessage = function(message) {
+    // ---- Author JSON parsing (offloaded from Widget.qml main thread) -------
+    if (message.action === "parseAuthors") {
+        var authors = []
+        var expansionUrls = []
+        if (message.buffer) {
+            authors = parseSubjectAuthorsMulti(message.buffer, message.splitToken || "")
+            if (message.shouldExpand)
+                expansionUrls = parseSubjectExpansionUrls(message.buffer, message.splitToken || "")
+        }
+        WorkerScript.sendMessage({
+            action: "authorsResult",
+            threadId: message.threadId || "",
+            updatedAt: message.updatedAt || "",
+            requestedUrls: message.requestedUrls || [],
+            shouldExpand: !!message.shouldExpand,
+            authors: authors,
+            expansionUrls: expansionUrls
+        })
+        return
+    }
+    // -----------------------------------------------------------------------
     try {
         var parsed = parseNotificationsWithParticipationSegments(
             message.payloadText || "",
-            message.separator || "__GH_PARTICIPATING_SPLIT__",
+            message.separator || _FETCH_PAYLOAD_SPLIT_TOKEN,
             message.allSegmentCount || 1
         )
 
@@ -31,9 +57,9 @@ WorkerScript.onMessage = function(message) {
         }
 
         var seq = message.seq || 0
-        var chunkSize = parseInt(message.chunkSize || 80)
+        var chunkSize = parseInt(message.chunkSize || _NOTIFICATIONS_PARSE_CHUNK_SIZE)
         if (isNaN(chunkSize) || chunkSize < 20)
-            chunkSize = 80
+            chunkSize = _NOTIFICATIONS_PARSE_CHUNK_SIZE
 
         WorkerScript.sendMessage({
             seq: seq,
@@ -251,4 +277,186 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
         return base + "/security/code-scanning/" + tail[2]
 
     return base
+}
+
+// ---- Author parsing helpers (mirror of Widget.qml, runs in worker thread) --
+
+function defaultAvatarUrlForLogin(login) {
+    var normalized = String(login || "").trim()
+    if (!normalized) return ""
+    return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=128"
+}
+
+function authorAvatarUrl(authorLike) {
+    if (!authorLike) return ""
+    var avatarUrl = String(authorLike.avatarUrl || authorLike.avatar_url || "").trim()
+    if (avatarUrl) return avatarUrl
+    var login = String(authorLike.login || "").trim()
+    if (login) return defaultAvatarUrlForLogin(login)
+    return ""
+}
+
+function authorKey(login, htmlUrl, avatarUrl) {
+    var normalizedLogin = String(login || "").trim().toLowerCase()
+    if (normalizedLogin) return normalizedLogin
+    var normalizedHtml = String(htmlUrl || "").trim()
+    if (normalizedHtml) return normalizedHtml
+    return String(avatarUrl || "").trim()
+}
+
+function isLikelyGitHubLogin(login) {
+    var value = String(login || "").trim()
+    if (!value) return false
+    var base = value
+    if (base.slice(-5) === "[bot]") base = base.slice(0, -5)
+    return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,78}[A-Za-z0-9])?$/.test(base)
+}
+
+function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
+    if (!userLike || typeof userLike !== "object") return false
+    var normalizedLogin = String(login || "").trim()
+    if (!isLikelyGitHubLogin(normalizedLogin)) return false
+    var normalizedType = String(userLike.type || "").trim().toLowerCase()
+    if (normalizedType === "user" || normalizedType === "bot" ||
+            normalizedType === "organization" || normalizedType === "mannequin")
+        return true
+    var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
+    if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0) return true
+    if (normalizedAvatar.indexOf("https://github.com/") === 0 && normalizedAvatar.indexOf(".png") > 0) return true
+    var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
+    var lowerLogin = normalizedLogin.toLowerCase()
+    if (normalizedHtml === "https://github.com/" + lowerLogin) return true
+    if (normalizedHtml.indexOf("https://github.com/" + lowerLogin + "/") === 0) return true
+    return false
+}
+
+function pushAuthorCandidate(target, byKey, userLike) {
+    if (!userLike || typeof userLike !== "object") return
+    var login = String(userLike.login || "").trim()
+    var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
+    var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+    if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl)) return
+    htmlUrl = String(htmlUrl || "").trim()
+    if (!htmlUrl) htmlUrl = "https://github.com/" + encodeURIComponent(login)
+    avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl })
+    var key = authorKey(login, htmlUrl, avatarUrl)
+    if (!key) return
+    if (byKey.hasOwnProperty(key)) {
+        var existing = target[byKey[key]]
+        if (!existing.login && login) existing.login = login
+        if (!existing.avatarUrl && avatarUrl) existing.avatarUrl = avatarUrl
+        if (!existing.htmlUrl && htmlUrl) existing.htmlUrl = htmlUrl
+        return
+    }
+    byKey[key] = target.length
+    target.push({ login: login, avatarUrl: avatarUrl, htmlUrl: htmlUrl })
+}
+
+function parseSubjectAuthors(payloadText) {
+    var authors = []
+    var byKey = {}
+    var parsed
+    try { parsed = JSON.parse(payloadText || "{}") } catch (e) { return [] }
+
+    function walk(value, depth) {
+        if (!value || depth > 8) return
+        if (Array.isArray(value)) {
+            for (var i = 0; i < value.length; i++) walk(value[i], depth + 1)
+            return
+        }
+        if (typeof value !== "object") return
+        if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
+            pushAuthorCandidate(authors, byKey, value)
+        pushAuthorCandidate(authors, byKey, value.user)
+        pushAuthorCandidate(authors, byKey, value.author)
+        pushAuthorCandidate(authors, byKey, value.assignee)
+        pushAuthorCandidate(authors, byKey, value.sender)
+        pushAuthorCandidate(authors, byKey, value.creator)
+        pushAuthorCandidate(authors, byKey, value.merged_by)
+        pushAuthorCandidate(authors, byKey, value.closed_by)
+        pushAuthorCandidate(authors, byKey, value.dismissed_by)
+        pushAuthorCandidate(authors, byKey, value.actor)
+        for (var k in value) {
+            if (!value.hasOwnProperty(k)) continue
+            var child = value[k]
+            if (!child || typeof child !== "object") continue
+            walk(child, depth + 1)
+        }
+    }
+    walk(parsed, 0)
+    return authors
+}
+
+function parseSubjectAuthorsMulti(payloadText, splitToken) {
+    var marker = "\n" + (splitToken || "") + "\n"
+    var normalized = String(payloadText || "")
+    if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+        normalized += "\n"
+    var parts = normalized.split(marker)
+    var merged = []
+    var mergedByKey = {}
+    for (var i = 0; i < parts.length; i++) {
+        var part = String(parts[i] || "").trim()
+        if (!part) continue
+        var partAuthors = parseSubjectAuthors(part)
+        for (var j = 0; j < partAuthors.length; j++)
+            pushAuthorCandidate(merged, mergedByKey, partAuthors[j])
+    }
+    return merged
+}
+
+function normalizeApiUrlWorker(url) {
+    var normalized = String(url || "").trim()
+    if (!normalized) return ""
+    var qi = normalized.indexOf("?")
+    if (qi >= 0) normalized = normalized.substring(0, qi)
+    if (normalized.indexOf("{") >= 0) return ""
+    if (normalized.indexOf("https://api.github.com/repos/") !== 0) return ""
+    return normalized
+}
+
+function isThreadParentApiUrlWorker(url) {
+    var normalized = normalizeApiUrlWorker(url)
+    if (!normalized) return false
+    var parts = normalized.split("/")
+    if (parts.length !== 8) return false
+    if (parts[0] !== "https:" || parts[2] !== "api.github.com" || parts[3] !== "repos") return false
+    if (parts[6] !== "issues" && parts[6] !== "pulls") return false
+    return /^[0-9]+$/.test(parts[7])
+}
+
+function collectSubjectExpansionUrlsWorker(value, target, seen) {
+    if (!value || typeof value !== "object") return
+    function push(url) {
+        var normalized = normalizeApiUrlWorker(url)
+        if (!normalized || !isThreadParentApiUrlWorker(normalized) || seen[normalized]) return
+        seen[normalized] = true
+        target.push(normalized)
+    }
+    push(value.issue_url)
+    push(value.pull_request_url)
+    push(value.url)
+}
+
+function parseSubjectExpansionUrls(payloadText, splitToken) {
+    var marker = "\n" + (splitToken || "") + "\n"
+    var normalized = String(payloadText || "")
+    if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+        normalized += "\n"
+    var parts = normalized.split(marker)
+    var urls = []
+    var seen = {}
+    for (var i = 0; i < parts.length; i++) {
+        var part = String(parts[i] || "").trim()
+        if (!part) continue
+        var parsed
+        try { parsed = JSON.parse(part) } catch (e) { continue }
+        if (Array.isArray(parsed)) {
+            for (var j = 0; j < parsed.length; j++)
+                collectSubjectExpansionUrlsWorker(parsed[j], urls, seen)
+        } else {
+            collectSubjectExpansionUrlsWorker(parsed, urls, seen)
+        }
+    }
+    return urls
 }

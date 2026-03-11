@@ -35,15 +35,15 @@ Item {
 
     property var limitedAuthors: {
         var list = resolvedAuthors || []
-        if (list.length <= 3)
+        if (list.length <= Constants.maxAuthorsDisplayedPerNotification)
             return list
-        return list.slice(0, 3)
+        return list.slice(0, Constants.maxAuthorsDisplayedPerNotification)
     }
 
-    property int authorRowHeight: 22
+    property int authorRowHeight: Constants.notificationAuthorRowHeightPx
     property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
-    property int contentMinHeight: 40 + (Math.max(1, titleLines) * 16)
-    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + 8)
+    property int contentMinHeight: Constants.notificationRowContentMinHeightPx + (Math.max(1, titleLines) * Constants.notificationRowTitleLineHeightPx)
+    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Constants.notificationRowAuthorColumnPaddingPx)
 
     function openAuthorProfile(url) {
         if (url)
@@ -83,25 +83,25 @@ Item {
         var login = String(author.login || "").trim()
         if (!login)
             return ""
-        return "https://github.com/" + encodeURIComponent(login) + ".png?size=80"
+        return Constants.githubWebBaseUrl + "/" + encodeURIComponent(login) + ".png?size=128"
     }
 
     function requestAuthorsIfNeeded() {
         // Authors are pre-fetched during refresh in Widget.qml.
     }
 
-    height: Math.max(72, rowHeight)
+    height: Math.max(Constants.notificationRowMinHeightPx, rowHeight)
 
     Rectangle {
         anchors.fill: parent
         radius: Theme.cornerRadius
         color: row.unread
-               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
+               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.notificationRowUnreadBackgroundOpacity)
                : Theme.surfaceContainer
         border.color: row.unread
-                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.35)
+                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.notificationRowUnreadBorderOpacity)
                       : Theme.outlineVariant
-        border.width: 1
+        border.width: Constants.notificationRowBorderWidthPx
     }
 
     MouseArea {
@@ -122,20 +122,20 @@ Item {
 
         Item {
             id: iconSlot
-            width: 30
+            width: Constants.notificationIconSlotWidthPx
             height: parent.height
 
             Rectangle {
-                width: 26
-                height: 24
-                radius: 13
+                width: Constants.notificationIconBadgeWidthPx
+                height: Constants.notificationIconBadgeHeightPx
+                radius: Constants.notificationIconBadgeRadiusPx
                 anchors.top: parent.top
-                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, 0.22)
+                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, Constants.notificationIconBadgeBackgroundOpacity)
 
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.subjectIcon
-                    size: 17
+                    size: Constants.notificationSubjectIconSizePx
                     color: row.unread ? Theme.primary : Theme.surfaceVariantText
                 }
             }
@@ -153,10 +153,10 @@ Item {
                 Column {
                     id: mainInfo
                     width: (showAuthors && row.limitedAuthors.length > 0)
-                           ? Math.max(120, Math.floor(bodySlot.width * 0.75))
+                           ? Math.max(Constants.notificationMainInfoMinWidthPx, Math.floor(bodySlot.width * Constants.notificationMainInfoWidthRatio))
                            : bodySlot.width
                     anchors.top: parent.top
-                    spacing: 3
+                    spacing: Constants.notificationMainInfoColumnSpacingPx
 
                     StyledText {
                         width: parent.width
@@ -175,31 +175,31 @@ Item {
 
                         StyledText {
                             text: row.subjectType
-                            font.pixelSize: 10
+                            font.pixelSize: Constants.notificationMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: 10
+                            font.pixelSize: Constants.notificationMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.reason
-                            font.pixelSize: 10
+                            font.pixelSize: Constants.notificationMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: 10
+                            font.pixelSize: Constants.notificationMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.updatedText
-                            font.pixelSize: 10
+                            font.pixelSize: Constants.notificationMetadataFontSizePx
                             color: Theme.surfaceVariantText
                             elide: Text.ElideRight
                         }
@@ -208,7 +208,7 @@ Item {
 
                 Item {
                     id: authorInfo
-                    width: Math.max(72, bodySlot.width - mainInfo.width - Theme.spacingS)
+                    width: Math.max(Constants.notificationAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
                     height: parent.height
                     visible: row.showAuthors && row.limitedAuthors.length > 0
 
@@ -216,7 +216,7 @@ Item {
                         id: authorColumn
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: 2
+                        spacing: Constants.notificationAuthorColumnItemSpacingPx
 
                         Repeater {
                             model: row.limitedAuthors
@@ -233,62 +233,25 @@ Item {
 
                                     Item {
                                         id: avatarHost
-                                        width: 24
-                                        height: 24
+                                        width: Constants.authorAvatarSizePx
+                                        height: Constants.authorAvatarSizePx
 
-                                        Image {
-                                            id: avatarImage
-                                            source: row.avatarSource(modelData)
-                                            asynchronous: true
-                                            cache: true
-                                            visible: false
-                                            onStatusChanged: avatarCanvas.requestPaint()
-                                            onSourceChanged: avatarCanvas.requestPaint()
-                                        }
-
-                                        Canvas {
-                                            id: avatarCanvas
+                                        RoundedAvatar {
                                             anchors.fill: parent
-                                            antialiasing: true
-                                            renderTarget: Canvas.Image
-
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.clearRect(0, 0, width, height)
-                                                ctx.save()
-                                                ctx.beginPath()
-                                                ctx.arc(width / 2, height / 2, Math.min(width, height) / 2, 0, Math.PI * 2, false)
-                                                ctx.closePath()
-                                                ctx.clip()
-
-                                                if (avatarImage.status === Image.Ready)
-                                                    ctx.drawImage(avatarImage, 0, 0, width, height)
-                                                else {
-                                                    ctx.fillStyle = Qt.rgba(Theme.surfaceContainerHighest.r, Theme.surfaceContainerHighest.g, Theme.surfaceContainerHighest.b, 1)
-                                                    ctx.fillRect(0, 0, width, height)
-                                                }
-
-                                                ctx.restore()
-                                            }
+                                            source: row.avatarSource(modelData)
+                                            fallbackIcon: "person"
+                                            fallbackIconSize: Constants.authorAvatarFallbackIconSizePx
                                         }
-
-                                        DankIcon {
-                                            anchors.centerIn: parent
-                                            name: "person"
-                                            size: 12
-                                            color: Theme.surfaceVariantText
-                                            visible: avatarImage.status !== Image.Ready
-                                        }
-
-                                        Component.onCompleted: avatarCanvas.requestPaint()
                                     }
 
                                     StyledText {
-                                        width: Math.max(28, authorInfo.width - avatarHost.width - Theme.spacingXS)
+                                        width: Math.max(Constants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
                                         text: row.authorDisplayName(modelData)
-                                        font.pixelSize: 11
+                                        font.pixelSize: Constants.authorNameFontSizePx
                                         color: Theme.surfaceVariantText
                                         elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                        wrapMode: Text.NoWrap
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
@@ -312,10 +275,10 @@ Item {
         id: actionsHost
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.rightMargin: 4
-        anchors.topMargin: 4
-        width: 74
-        height: 24
+        anchors.rightMargin: Constants.notificationActionsHostMarginPx
+        anchors.topMargin: Constants.notificationActionsHostMarginPx
+        width: Constants.notificationActionsHostWidthPx
+        height: Constants.notificationActionsHostHeightPx
         z: 10
 
         MouseArea {
@@ -327,7 +290,7 @@ Item {
 
         Row {
             id: actionButtons
-            spacing: 4
+            spacing: Constants.notificationActionButtonsSpacingPx
             visible: rowArea.containsMouse
                      || actionsHoverArea.containsMouse
                      || openArea.containsMouse
@@ -336,14 +299,14 @@ Item {
             opacity: visible ? 1 : 0
 
             Behavior on opacity {
-                NumberAnimation { duration: 100 }
+                NumberAnimation { duration: Constants.notificationActionsFadeDurationMs }
             }
 
             Rectangle {
-                width: 22
-                height: 22
-                radius: 11
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
+                width: Constants.notificationActionButtonSizePx
+                height: Constants.notificationActionButtonSizePx
+                radius: Constants.notificationActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.notificationActionButtonBgOpacity)
 
                 MouseArea {
                     id: openArea
@@ -357,16 +320,16 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: "open_in_new"
-                    size: 13
+                    size: Constants.notificationActionButtonIconSizePx
                     color: Theme.surfaceVariantText
                 }
             }
 
             Rectangle {
-                width: 22
-                height: 22
-                radius: 11
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
+                width: Constants.notificationActionButtonSizePx
+                height: Constants.notificationActionButtonSizePx
+                radius: Constants.notificationActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.notificationActionButtonBgOpacity)
 
                 MouseArea {
                     id: readToggleArea
@@ -385,16 +348,16 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.unread ? "mark_email_read" : "mark_email_unread"
-                    size: 13
+                    size: Constants.notificationActionButtonIconSizePx
                     color: readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                 }
             }
 
             Rectangle {
-                width: 22
-                height: 22
-                radius: 11
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
+                width: Constants.notificationActionButtonSizePx
+                height: Constants.notificationActionButtonSizePx
+                radius: Constants.notificationActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.notificationActionButtonBgOpacity)
 
                 MouseArea {
                     id: doneArea
@@ -408,7 +371,7 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: "done"
-                    size: 13
+                    size: Constants.notificationActionButtonIconSizePx
                     color: doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                 }
             }

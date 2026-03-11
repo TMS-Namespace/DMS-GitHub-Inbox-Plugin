@@ -17,7 +17,7 @@ Item {
     property real headerOffset: 0
     property int titleLines: 2
     property int groupItemLimit: 25
-    property var expandedReposState: ({ "__defaultExpanded": true })
+    property var expandedReposState: ({ [Constants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
     property bool showAuthorInfo: true
 
@@ -105,13 +105,13 @@ Item {
         var source = state || {}
         for (var key in source)
             next[key] = source[key]
-        if (next.__defaultExpanded === undefined)
-            next.__defaultExpanded = true
+        if (next[Constants.expandedStateDefaultKey] === undefined)
+            next[Constants.expandedStateDefaultKey] = true
         return next
     }
 
     function defaultExpandedGroups() {
-        return expandedRepos.__defaultExpanded !== false
+        return expandedRepos[Constants.expandedStateDefaultKey] !== false
     }
 
     function _persistExpandedState(state) {
@@ -126,7 +126,7 @@ Item {
 
     function toggleRepo(repoName) {
         var nextState = normalizeExpandedState(expandedRepos)
-        var defaultState = nextState.__defaultExpanded !== false
+        var defaultState = nextState[Constants.expandedStateDefaultKey] !== false
         var nextValue = !isRepoExpanded(repoName)
 
         if (nextValue === defaultState)
@@ -139,13 +139,13 @@ Item {
     }
 
     function expandAllGroups() {
-        var nextState = { "__defaultExpanded": true }
+        var nextState = { [Constants.expandedStateDefaultKey]: true }
         expandedRepos = nextState
         _persistExpandedState(nextState)
     }
 
     function collapseAllGroups() {
-        var nextState = { "__defaultExpanded": false }
+        var nextState = { [Constants.expandedStateDefaultKey]: false }
         expandedRepos = nextState
         _persistExpandedState(nextState)
     }
@@ -170,7 +170,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: Theme.spacingXS
         y: -panel.headerOffset + Theme.spacingS
-        spacing: 6
+        spacing: Constants.popoutHeaderButtonSpacingPx
         visible: headerHoverArea.containsMouse
                  || expandAllArea.containsMouse
                  || collapseAllArea.containsMouse
@@ -181,16 +181,16 @@ Item {
         opacity: visible ? 1 : 0
 
         Behavior on opacity {
-            NumberAnimation { duration: 120 }
+            NumberAnimation { duration: Constants.popoutHeaderFadeDurationMs }
         }
 
         Rectangle {
-            width: 28
-            height: 28
-            radius: 14
+            width: Constants.popoutHeaderButtonSizePx
+            height: Constants.popoutHeaderButtonSizePx
+            radius: Constants.popoutHeaderButtonRadiusPx
             color: expandAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.85)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: expandAllArea
@@ -204,18 +204,18 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "unfold_more"
-                size: 18
+                size: Constants.popoutHeaderButtonIconSizePx
                 color: Theme.surfaceText
             }
         }
 
         Rectangle {
-            width: 28
-            height: 28
-            radius: 14
+            width: Constants.popoutHeaderButtonSizePx
+            height: Constants.popoutHeaderButtonSizePx
+            radius: Constants.popoutHeaderButtonRadiusPx
             color: collapseAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.85)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: collapseAllArea
@@ -229,19 +229,19 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "unfold_less"
-                size: 18
+                size: Constants.popoutHeaderButtonIconSizePx
                 color: Theme.surfaceText
             }
         }
 
         // -- Refresh ---------------------------------------------------
         Rectangle {
-            width: 28
-            height: 28
-            radius: 14
+            width: Constants.popoutHeaderButtonSizePx
+            height: Constants.popoutHeaderButtonSizePx
+            radius: Constants.popoutHeaderButtonRadiusPx
             color: refreshAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.85)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: refreshAllArea
@@ -256,14 +256,14 @@ Item {
                 id: refreshIcon
                 anchors.centerIn: parent
                 name: "refresh"
-                size: 18
+                size: Constants.popoutHeaderButtonIconSizePx
                 color: panel.anyBusy ? Theme.primary : Theme.surfaceText
 
                 RotationAnimation on rotation {
                     running: panel.anyBusy
                     from: 0
                     to: 360
-                    duration: 800
+                    duration: Constants.popoutRefreshIconSpinDurationMs
                     loops: Animation.Infinite
                 }
 
@@ -279,13 +279,13 @@ Item {
 
         // -- Mark all as read -----------------------------------------
         Rectangle {
-            width: 28
-            height: 28
-            radius: 14
+            width: Constants.popoutHeaderButtonSizePx
+            height: Constants.popoutHeaderButtonSizePx
+            radius: Constants.popoutHeaderButtonRadiusPx
             visible: panel.tokenConfigured && panel.unreadCount > 0
             color: markAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.85)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: markAllArea
@@ -299,19 +299,19 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "done_all"
-                size: 18
+                size: Constants.popoutHeaderButtonIconSizePx
                 color: Theme.surfaceText
             }
         }
 
         // -- Close ----------------------------------------------------
         Rectangle {
-            width: 28
-            height: 28
-            radius: 14
+            width: Constants.popoutHeaderButtonSizePx
+            height: Constants.popoutHeaderButtonSizePx
+            radius: Constants.popoutHeaderButtonRadiusPx
             color: closeArea.containsMouse
-                   ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.15)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.85)
+                   ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, Constants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: closeArea
@@ -324,7 +324,7 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "close"
-                size: 18
+                size: Constants.popoutHeaderButtonIconSizePx
                 color: closeArea.containsMouse ? Theme.error : Theme.surfaceText
             }
         }
@@ -356,183 +356,21 @@ Item {
             Repeater {
                 model: panel.groupedNotifications
 
-                delegate: Rectangle {
-                    id: groupCard
-                    property var groupData: modelData
-                    property bool expanded: panel.isRepoExpanded(groupData.repository)
-
+                delegate: NotificationGroup {
                     width: groupsColumn.width
-                    radius: Theme.cornerRadius
-                    color: Theme.surfaceContainerHigh
-                    border.width: 1
-                    border.color: Theme.outlineVariant
-                    implicitHeight: groupColumn.implicitHeight + Theme.spacingS * 2
-
-                    Column {
-                        id: groupColumn
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: Theme.spacingS
-                        spacing: Theme.spacingS
-
-                        Item {
-                            id: repoHeader
-                            width: parent.width
-                            height: 28
-
-                            MouseArea {
-                                id: repoHeaderArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: panel.toggleRepo(groupCard.groupData.repository)
-                            }
-
-                            Row {
-                                anchors.left: parent.left
-                                anchors.right: repoMeta.left
-                                anchors.rightMargin: Theme.spacingS
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: Theme.spacingXS
-
-                                Item {
-                                    width: 20
-                                    height: 20
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    Rectangle {
-                                        id: repoAvatarMask
-                                        anchors.fill: parent
-                                        radius: width / 2
-                                        clip: true
-                                        color: Theme.surfaceContainerHighest
-
-                                        Image {
-                                            id: repoAvatarImage
-                                            anchors.fill: parent
-                                            source: groupCard.groupData.repoAvatarUrl || ""
-                                            fillMode: Image.PreserveAspectCrop
-                                            asynchronous: true
-                                            cache: true
-                                            visible: status === Image.Ready
-                                        }
-
-                                        DankIcon {
-                                            anchors.centerIn: parent
-                                            name: "folder"
-                                            size: 18
-                                            color: Theme.surfaceVariantText
-                                            visible: repoAvatarImage.status !== Image.Ready
-                                        }
-                                    }
-                                }
-
-                                StyledText {
-                                    width: parent.width - 30
-                                    text: groupCard.groupData.repository
-                                    font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: Font.Medium
-                                    color: Theme.surfaceText
-                                    elide: Text.ElideRight
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            Row {
-                                id: repoMeta
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: Theme.spacingXS
-
-                                Rectangle {
-                                    width: 20
-                                    height: 20
-                                    radius: 10
-                                    visible: groupCard.groupData.items.length > 0
-                                             && (repoHeaderArea.containsMouse || repoDoneArea.containsMouse)
-                                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
-                                    z: 2
-
-                                    MouseArea {
-                                        id: repoDoneArea
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: panel.anyBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                                        enabled: !panel.anyBusy
-                                        onClicked: panel.markRepoDone(groupCard.groupData.repository)
-                                    }
-
-                                    DankIcon {
-                                        anchors.centerIn: parent
-                                        name: "done"
-                                        size: 13
-                                        color: repoDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: groupCard.groupData.items.length > 0
-                                    height: 18
-                                    radius: 9
-                                    width: groupCountText.implicitWidth + Theme.spacingS
-                                    color: groupCard.groupData.unreadCount > 0
-                                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
-                                           : Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, 0.20)
-
-                                    StyledText {
-                                        id: groupCountText
-                                        anchors.centerIn: parent
-                                        text: groupCard.groupData.unreadCount < groupCard.groupData.items.length
-                                              ? (groupCard.groupData.unreadCount + "/" + groupCard.groupData.items.length)
-                                              : String(groupCard.groupData.items.length)
-                                        font.pixelSize: 10
-                                        font.weight: Font.Medium
-                                        color: groupCard.groupData.unreadCount > 0
-                                               ? Theme.primary
-                                               : Theme.surfaceVariantText
-                                    }
-                                }
-
-                                DankIcon {
-                                    name: "expand_more"
-                                    size: 18
-                                    color: Theme.surfaceVariantText
-                                    rotation: groupCard.expanded ? 0 : -90
-
-                                    Behavior on rotation {
-                                        NumberAnimation { duration: 120 }
-                                    }
-                                }
-                            }
-                        }
-
-                        Column {
-                            id: repoItems
-                            width: parent.width
-                            spacing: Theme.spacingXS
-                            visible: groupCard.expanded
-                            height: visible ? implicitHeight : 0
-                            clip: true
-
-                            Repeater {
-                                model: groupCard.groupData.items
-
-                                delegate: NotificationRow {
-                                    width: parent.width
-                                    notificationData: modelData
-                                    authors: panel.showAuthorInfo ? (panel.authorsByThread[modelData.threadId] || []) : []
-                                    showAuthors: panel.showAuthorInfo
-                                    isBusy: panel.anyBusy
-                                    titleLines: panel.titleLines
-                                    onMarkRead: function(threadId) { panel.markThreadRead(threadId) }
-                                    onMarkUnread: function(threadId) { panel.markThreadUnread(threadId) }
-                                    onMarkDone: function(threadId) { panel.markThreadDone(threadId) }
-                                    onRequestAuthors: function(threadId, subjectApiUrl, subjectType) {
-                                        panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
-                                    }
-                                }
-                            }
-                        }
+                    groupData: modelData
+                    expanded: panel.isRepoExpanded(modelData.repository)
+                    authorsByThread: panel.authorsByThread
+                    showAuthorInfo: panel.showAuthorInfo
+                    isBusy: panel.anyBusy
+                    titleLines: panel.titleLines
+                    onToggleExpanded: panel.toggleRepo(modelData.repository)
+                    onMarkRepoDone: panel.markRepoDone(modelData.repository)
+                    onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                    onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
+                    onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
+                    onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
+                        panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
                     }
                 }
             }
@@ -561,12 +399,12 @@ Item {
             property int segmentWidth: {
                 var available = width - readLabel.width - participatedLabel.width - groupGap - filterRow.spacing * 4
                 var fit = Math.floor(available / 2)
-                return Math.max(96, Math.min(132, fit))
+                return Math.max(Constants.popoutFilterSegmentMinWidthPx, Math.min(Constants.popoutFilterSegmentMaxWidthPx, fit))
             }
 
             StyledText {
                 id: readLabel
-                width: 34
+                width: Constants.popoutFilterReadLabelWidthPx
                 text: "Read"
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceVariantText
@@ -575,9 +413,9 @@ Item {
 
             Rectangle {
                 width: filterRow.segmentWidth
-                height: 24
+                height: Constants.popoutFilterSegmentHeightPx
                 radius: Theme.cornerRadius
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.80)
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
                 border.width: 1
                 border.color: Theme.outlineVariant
 
@@ -599,7 +437,7 @@ Item {
                             height: parent.height
                             radius: Theme.cornerRadius
                             color: panel.readFilter === modelData.value
-                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
+                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
                                    : "transparent"
                             border.width: panel.readFilter === modelData.value ? 1 : 0
                             border.color: Theme.primary
@@ -628,7 +466,7 @@ Item {
 
             StyledText {
                 id: participatedLabel
-                width: 72
+                width: Constants.popoutFilterParticipatedLabelWidthPx
                 text: "Participated"
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceVariantText
@@ -637,9 +475,9 @@ Item {
 
             Rectangle {
                 width: filterRow.segmentWidth
-                height: 24
+                height: Constants.popoutFilterSegmentHeightPx
                 radius: Theme.cornerRadius
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.80)
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
                 border.width: 1
                 border.color: Theme.outlineVariant
 
@@ -661,7 +499,7 @@ Item {
                             height: parent.height
                             radius: Theme.cornerRadius
                             color: panel.participationFilter === modelData.value
-                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
+                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
                                    : "transparent"
                             border.width: panel.participationFilter === modelData.value ? 1 : 0
                             border.color: Theme.primary
@@ -692,22 +530,22 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
-        width: 4
+        width: Constants.popoutScrollIndicatorWidthPx
         color: "transparent"
 
         Rectangle {
             width: parent.width
-            radius: 2
+            radius: Constants.popoutScrollIndicatorRadiusPx
             color: Theme.outlineVariant
-            opacity: groupedFlick.moving ? 0.8 : 0.4
+            opacity: groupedFlick.moving ? Constants.popoutScrollIndicatorActiveOpacity : Constants.popoutScrollIndicatorIdleOpacity
 
             property real ratio: groupedFlick.height / groupedFlick.contentHeight
-            height: Math.max(20, parent.height * ratio)
+            height: Math.max(Constants.popoutScrollIndicatorMinHeightPx, parent.height * ratio)
             y: groupedFlick.contentHeight > groupedFlick.height
                ? (groupedFlick.contentY / (groupedFlick.contentHeight - groupedFlick.height)) * (parent.height - height)
                : 0
 
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: Constants.popoutScrollIndicatorFadeDurationMs } }
         }
     }
 
