@@ -26,12 +26,12 @@ var GHC = (function() {
         /// Root URL of the GitHub web interface.
         githubWebBaseUrl: "https://github.com",
 
-        /// Canonical GitHub notifications list endpoint.
-        githubNotificationsFallbackUrl: "https://github.com/notifications",
+        /// Canonical GitHub inbox page URL.
+        githubInboxFallbackUrl: "https://github.com/notifications",
 
         // -- Payload Splitting Tokens ----------------------------------------
 
-        /// Sentinel injected between successive notification page responses.
+        /// Sentinel injected between successive inbox message page responses.
         fetchPayloadSplitToken: "__GH_PARTICIPATING_SPLIT__",
 
         /// Sentinel injected between successive author-detail API responses.
@@ -39,8 +39,8 @@ var GHC = (function() {
 
         // -- API Request Sizing ----------------------------------------------
 
-        /// Number of notification items sent in each worker-script chunk message.
-        notificationsParseChunkSize: 80,
+        /// Number of inbox message items sent in each worker-script chunk message.
+        messagesParseChunkSize: 80,
 
         // -- Poll Settings - Defaults & Bounds -------------------------------
 

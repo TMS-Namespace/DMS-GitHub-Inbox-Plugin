@@ -1,8 +1,9 @@
-// NotificationGroup.qml - Grouped notification list card for a single repository
+// InboxMessageGroup.qml - Grouped inbox message list card for a single repository
 
 import QtQuick
 import qs.Common
 import qs.Widgets
+import ".."
 
 Rectangle {
     id: groupCard
@@ -162,9 +163,9 @@ Rectangle {
             Repeater {
                 model: groupCard.groupData.items || []
 
-                delegate: NotificationRow {
+                delegate: InboxMessageRow {
                     width: parent.width
-                    notificationData: modelData
+                    messageData: modelData
                     authors: groupCard.showAuthorInfo ? (groupCard.authorsByThread[modelData.threadId] || []) : []
                     showAuthors: groupCard.showAuthorInfo
                     isBusy: groupCard.isBusy

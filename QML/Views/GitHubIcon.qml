@@ -6,7 +6,7 @@ Item {
     id: root
 
     property url sourcePrimary: "https://github.com/favicon.ico"
-    property url sourceFallback: Qt.resolvedUrl("../Images/github-mark.svg")
+    property url sourceFallback: Qt.resolvedUrl("../../Images/github-mark.svg")
     property int size: 14
     property real iconOpacity: 0.60
 

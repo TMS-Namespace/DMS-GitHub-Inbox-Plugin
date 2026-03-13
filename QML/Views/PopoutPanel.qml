@@ -1,18 +1,22 @@
-// PopoutPanel.qml - Popup content for GitHub notifications list
+// PopoutPanel.qml - Popup content for GitHub inbox messages list
+//
+// Pure visual component.  All filtering, grouping and expanded-state
+// management lives in InboxGroupModel.
 
 import QtQuick
 import qs.Common
 import qs.Widgets
+import ".."
 
 Item {
     id: panel
 
     // -- Inputs ---------------------------------------------------------------
-    property var notifications: []
+    property var messages: []
     property int unreadCount: 0
     property bool tokenConfigured: false
     property bool isLoading: false
-    property bool isMutating: false
+    property bool isOperating: false
     property string errorMessage: ""
     property real headerOffset: 0
     property int titleLines: 2
@@ -32,122 +36,15 @@ Item {
     signal closePopout()
     signal persistExpandedRepos(var state)
 
-    property bool anyBusy: isLoading || isMutating
-    property var expandedRepos: ({})
+    property bool anyBusy: isLoading || isOperating
 
-    Component.onCompleted: {
-        expandedRepos = normalizeExpandedState(expandedReposState)
-    }
-
-    onExpandedReposStateChanged: {
-        expandedRepos = normalizeExpandedState(expandedReposState)
-    }
-    property string readFilter: "both"                // yes(read) | no(unread) | both
-    property string participationFilter: "both"       // yes | no | both
-
-    property var filteredNotifications: {
-        var result = []
-        for (var index = 0; index < notifications.length; index++) {
-            var item = notifications[index]
-            var participated = !!item.participated
-
-            if (readFilter === "yes" && item.unread) continue
-            if (readFilter === "no" && !item.unread) continue
-
-            if (participationFilter === "yes" && !participated) continue
-            if (participationFilter === "no" && participated) continue
-
-            result.push(item)
-        }
-        return result
-    }
-
-    property var groupedNotifications: {
-        var groupsByRepo = {}
-        var repoOrder = []
-
-        for (var index = 0; index < filteredNotifications.length; index++) {
-            var item = filteredNotifications[index]
-            var repo = item.repository || "Unknown repository"
-
-            if (!groupsByRepo[repo]) {
-                groupsByRepo[repo] = {
-                    repository: repo,
-                    unreadCount: 0,
-                    repoOwnerLogin: "",
-                    repoAvatarUrl: "",
-                    items: []
-                }
-                repoOrder.push(repo)
-            }
-
-            if (!groupsByRepo[repo].repoAvatarUrl) {
-                groupsByRepo[repo].repoOwnerLogin = item.repositoryOwnerLogin || ""
-                groupsByRepo[repo].repoAvatarUrl = item.repositoryOwnerAvatarUrl || ""
-            }
-
-            if (groupsByRepo[repo].items.length >= groupItemLimit)
-                continue
-
-            groupsByRepo[repo].items.push(item)
-            if (item.unread)
-                groupsByRepo[repo].unreadCount++
-        }
-
-        var result = []
-        for (var repoIndex = 0; repoIndex < repoOrder.length; repoIndex++)
-            result.push(groupsByRepo[repoOrder[repoIndex]])
-        return result
-    }
-
-    function normalizeExpandedState(state) {
-        var next = {}
-        var source = state || {}
-        for (var key in source)
-            next[key] = source[key]
-        if (next[Constants.expandedStateDefaultKey] === undefined)
-            next[Constants.expandedStateDefaultKey] = true
-        return next
-    }
-
-    function defaultExpandedGroups() {
-        return expandedRepos[Constants.expandedStateDefaultKey] !== false
-    }
-
-    function _persistExpandedState(state) {
-        persistExpandedRepos(normalizeExpandedState(state))
-    }
-
-    function isRepoExpanded(repoName) {
-        if (expandedRepos.hasOwnProperty(repoName))
-            return expandedRepos[repoName] !== false
-        return defaultExpandedGroups()
-    }
-
-    function toggleRepo(repoName) {
-        var nextState = normalizeExpandedState(expandedRepos)
-        var defaultState = nextState[Constants.expandedStateDefaultKey] !== false
-        var nextValue = !isRepoExpanded(repoName)
-
-        if (nextValue === defaultState)
-            delete nextState[repoName]
-        else
-            nextState[repoName] = nextValue
-
-        expandedRepos = nextState
-        _persistExpandedState(nextState)
-    }
-
-    function expandAllGroups() {
-        var nextState = { [Constants.expandedStateDefaultKey]: true }
-        expandedRepos = nextState
-        _persistExpandedState(nextState)
-    }
-
-    function collapseAllGroups() {
-        var nextState = { [Constants.expandedStateDefaultKey]: false }
-        expandedRepos = nextState
-        _persistExpandedState(nextState)
+    // -- Model ----------------------------------------------------------------
+    InboxGroupModel {
+        id: groupModel
+        messages: panel.messages
+        groupItemLimit: panel.groupItemLimit
+        expandedReposState: panel.expandedReposState
+        onPersistExpandedRepos: function(state) { panel.persistExpandedRepos(state) }
     }
 
     // =========================================================================
@@ -198,7 +95,7 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 enabled: panel.tokenConfigured
-                onClicked: panel.expandAllGroups()
+                onClicked: groupModel.expandAllGroups()
             }
 
             DankIcon {
@@ -223,7 +120,7 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 enabled: panel.tokenConfigured
-                onClicked: panel.collapseAllGroups()
+                onClicked: groupModel.collapseAllGroups()
             }
 
             DankIcon {
@@ -331,7 +228,7 @@ Item {
     }
 
     // =========================================================================
-    //  GROUPED NOTIFICATION LIST
+    //  GROUPED INBOX MESSAGE LIST
     // =========================================================================
 
     Flickable {
@@ -346,7 +243,7 @@ Item {
         contentHeight: groupsColumn.implicitHeight
         visible: panel.tokenConfigured
                  && panel.errorMessage === ""
-                 && (panel.filteredNotifications.length > 0 || panel.isLoading)
+                 && (groupModel.filteredMessages.length > 0 || panel.isLoading)
 
         Column {
             id: groupsColumn
@@ -354,17 +251,17 @@ Item {
             spacing: Theme.spacingS
 
             Repeater {
-                model: panel.groupedNotifications
+                model: groupModel.groupedMessages
 
-                delegate: NotificationGroup {
+                delegate: InboxMessageGroup {
                     width: groupsColumn.width
                     groupData: modelData
-                    expanded: panel.isRepoExpanded(modelData.repository)
+                    expanded: groupModel.isRepoExpanded(modelData.repository)
                     authorsByThread: panel.authorsByThread
                     showAuthorInfo: panel.showAuthorInfo
                     isBusy: panel.anyBusy
                     titleLines: panel.titleLines
-                    onToggleExpanded: panel.toggleRepo(modelData.repository)
+                    onToggleExpanded: groupModel.toggleRepo(modelData.repository)
                     onMarkRepoDone: panel.markRepoDone(modelData.repository)
                     onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
                     onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
@@ -436,24 +333,24 @@ Item {
                             width: (parent.width - 2) / 3
                             height: parent.height
                             radius: Theme.cornerRadius
-                            color: panel.readFilter === modelData.value
+                            color: groupModel.readFilter === modelData.value
                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
                                    : "transparent"
-                            border.width: panel.readFilter === modelData.value ? 1 : 0
+                            border.width: groupModel.readFilter === modelData.value ? 1 : 0
                             border.color: Theme.primary
 
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: panel.readFilter = modelData.value
+                                onClicked: groupModel.readFilter = modelData.value
                             }
 
                             StyledText {
                                 anchors.centerIn: parent
                                 text: modelData.label
                                 font.pixelSize: Theme.fontSizeSmall
-                                font.weight: panel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                color: panel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                font.weight: groupModel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                color: groupModel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
                             }
                         }
                     }
@@ -498,24 +395,24 @@ Item {
                             width: (parent.width - 2) / 3
                             height: parent.height
                             radius: Theme.cornerRadius
-                            color: panel.participationFilter === modelData.value
+                            color: groupModel.participationFilter === modelData.value
                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
                                    : "transparent"
-                            border.width: panel.participationFilter === modelData.value ? 1 : 0
+                            border.width: groupModel.participationFilter === modelData.value ? 1 : 0
                             border.color: Theme.primary
 
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: panel.participationFilter = modelData.value
+                                onClicked: groupModel.participationFilter = modelData.value
                             }
 
                             StyledText {
                                 anchors.centerIn: parent
                                 text: modelData.label
                                 font.pixelSize: Theme.fontSizeSmall
-                                font.weight: panel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                color: panel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                font.weight: groupModel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                color: groupModel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
                             }
                         }
                     }
@@ -607,7 +504,7 @@ Item {
     Column {
         visible: panel.tokenConfigured
                  && panel.errorMessage === ""
-                 && panel.filteredNotifications.length === 0
+                 && groupModel.filteredMessages.length === 0
                  && panel.isLoading
         anchors.centerIn: parent
         spacing: Theme.spacingM
@@ -620,7 +517,7 @@ Item {
         }
 
         StyledText {
-            text: "Loading notifications..."
+            text: "Loading messages..."
             font.pixelSize: Theme.fontSizeSmall
             color: Theme.surfaceVariantText
             anchors.horizontalCenter: parent.horizontalCenter
@@ -630,7 +527,7 @@ Item {
     Column {
         visible: panel.tokenConfigured
                  && panel.errorMessage === ""
-                 && panel.filteredNotifications.length === 0
+                 && groupModel.filteredMessages.length === 0
                  && !panel.isLoading
         anchors.centerIn: parent
         spacing: Theme.spacingM
@@ -643,7 +540,7 @@ Item {
         }
 
         StyledText {
-            text: "No notifications"
+            text: "No messages"
             font.pixelSize: Theme.fontSizeMedium
             color: Theme.surfaceVariantText
             anchors.horizontalCenter: parent.horizontalCenter

@@ -1,7 +1,7 @@
 // AuthorFetcher.qml - Manages author data fetching and queue processing
 //
 // Handles URL-level deduplication, queue management, curl-based fetching,
-// and offloading JSON parsing to a WorkerScript (via NotificationFetcher).
+// and offloading JSON parsing to a WorkerScript (via InboxFetcher).
 
 import QtQuick
 import Quickshell.Io
@@ -16,7 +16,7 @@ Item {
     property string authorSplitToken: Constants.authorPayloadSplitToken
 
     // -- External dependency: fetcher provides sendWorkerMessage()  -----------
-    property var workerSendMessage: null   // bind to notificationFetcher.sendWorkerMessage
+    property var workerSendMessage: null   // bind to inboxFetcher.sendWorkerMessage
 
     // -- State ----------------------------------------------------------------
     property var requestQueue: []
@@ -106,7 +106,7 @@ Item {
         processQueue()
     }
 
-    function prefetchForNotifications(items) {
+    function prefetchForMessages(items) {
         if (!loadAuthorInfo || !token || !items || items.length === 0)
             return
 
@@ -123,7 +123,7 @@ Item {
             if (lastFetchedUpdatedAt === item.updatedAt)
                 continue
 
-            // Notification updated since last fetch — clear URL-level state
+            // Message updated since last fetch — clear URL-level state
             if (lastFetchedUpdatedAt !== "" && fetchedUrlsByThread.hasOwnProperty(item.threadId)) {
                 var nextFetchedState = _cloneFetchedUrlsByThread()
                 delete nextFetchedState[item.threadId]
@@ -175,7 +175,7 @@ Item {
     }
 
     // =========================================================================
-    //  AUTHOR RESULT HANDLING (called from NotificationFetcher signal)
+    //  AUTHOR RESULT HANDLING (called from InboxFetcher signal)
     // =========================================================================
 
     function handleAuthorResult(message) {

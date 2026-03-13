@@ -8,7 +8,7 @@
 var _DEFAULT_POLL_INTERVAL_SECONDS = 120
 var _MIN_POLL_INTERVAL_SECONDS     = 60
 var _UNREAD_COUNT_DISPLAY_MAX      = 999
-var _GITHUB_NOTIFICATIONS_FALLBACK_URL = "https://github.com/notifications"
+var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
 
 function pluginDataBool(value, defaultValue) {
     if (value === undefined || value === "")
@@ -26,7 +26,7 @@ function pollIntervalMs(value) {
     return seconds * 1000
 }
 
-function parseNotificationsPayload(payloadText) {
+function parseMessagesPayload(payloadText) {
     var payload
     try {
         payload = JSON.parse(payloadText || "[]")
@@ -68,7 +68,7 @@ function parseNotificationsPayload(payloadText) {
             repositoryUrl: repository.html_url || "",
             repositoryOwnerLogin: (repository.owner && repository.owner.login) || "",
             repositoryOwnerAvatarUrl: (repository.owner && repository.owner.avatar_url) || "",
-            subjectType: subject.type || "Notification",
+            subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
             webUrl: resolveWebUrl(item)
@@ -90,14 +90,14 @@ function parseNotificationsPayload(payloadText) {
     }
 }
 
-function parseNotificationsWithParticipation(payloadText, separator) {
+function parseMessagesWithParticipation(payloadText, separator) {
     var splitToken = separator || "__GH_PARTICIPATING_SPLIT__"
     var marker = "\n" + splitToken + "\n"
     var splitIndex = payloadText.indexOf(marker)
 
     // Backward compatibility: if only one payload is present, parse normally.
     if (splitIndex < 0) {
-        var single = parseNotificationsPayload(payloadText)
+        var single = parseMessagesPayload(payloadText)
         if (single.error)
             return single
         for (var singleIndex = 0; singleIndex < single.items.length; singleIndex++)
@@ -108,11 +108,11 @@ function parseNotificationsWithParticipation(payloadText, separator) {
     var allText = payloadText.substring(0, splitIndex)
     var participatingText = payloadText.substring(splitIndex + marker.length)
 
-    var allParsed = parseNotificationsPayload(allText)
+    var allParsed = parseMessagesPayload(allText)
     if (allParsed.error)
         return allParsed
 
-    var participatingParsed = parseNotificationsPayload(participatingText)
+    var participatingParsed = parseMessagesPayload(participatingText)
     if (participatingParsed.error)
         return participatingParsed
 
@@ -131,7 +131,7 @@ function parseNotificationsWithParticipation(payloadText, separator) {
     return allParsed
 }
 
-function parseNotificationsWithParticipationSegments(payloadText, separator, allSegmentCount) {
+function parseMessagesWithParticipationSegments(payloadText, separator, allSegmentCount) {
     var splitToken = separator || "__GH_PARTICIPATING_SPLIT__"
     var marker = "\n" + splitToken + "\n"
     var normalizedPayload = String(payloadText || "")
@@ -160,7 +160,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
     var participationMap = {}
 
     for (var allIndex = 0; allIndex < allSegments.length; allIndex++) {
-        var allParsed = parseNotificationsPayload(allSegments[allIndex])
+        var allParsed = parseMessagesPayload(allSegments[allIndex])
         if (allParsed.error)
             return allParsed
         for (var allItemIndex = 0; allItemIndex < allParsed.items.length; allItemIndex++) {
@@ -173,7 +173,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
     }
 
     for (var partIndex = 0; partIndex < participatingSegments.length; partIndex++) {
-        var partParsed = parseNotificationsPayload(participatingSegments[partIndex])
+        var partParsed = parseMessagesPayload(participatingSegments[partIndex])
         if (partParsed.error)
             return partParsed
         for (var partItemIndex = 0; partItemIndex < partParsed.items.length; partItemIndex++) {
@@ -209,7 +209,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
 
 function resolveWebUrl(notification) {
     if (!notification)
-        return _GITHUB_NOTIFICATIONS_FALLBACK_URL
+        return _GITHUB_INBOX_FALLBACK_URL
 
     var subject = notification.subject || {}
     var apiUrl = subject.url || ""
@@ -221,7 +221,7 @@ function resolveWebUrl(notification) {
     if (repository.html_url)
         return repository.html_url
 
-    return _GITHUB_NOTIFICATIONS_FALLBACK_URL
+    return _GITHUB_INBOX_FALLBACK_URL
 }
 
 function releaseTagFromSubject(subjectType, subjectTitle) {

@@ -34,8 +34,8 @@ QtObject {
     /// Value sent as the "X-GitHub-Api-Version" HTTP request header.
     readonly property string githubApiVersionHeader: "2022-11-28"
 
-    /// Canonical GitHub notifications list endpoint.
-    readonly property string githubNotificationsApiUrl: "https://api.github.com/notifications"
+    /// Canonical GitHub inbox messages list endpoint.
+    readonly property string githubInboxApiUrl: "https://api.github.com/notifications"
 
     /// GitHub settings page where users create classic personal-access tokens.
     readonly property string githubTokenSettingsUrl: "https://github.com/settings/tokens"
@@ -48,7 +48,7 @@ QtObject {
     // Payload Splitting Tokens
     // =========================================================================
 
-    /// Sentinel string injected by curl (via -w) between successive notification
+    /// Sentinel string injected by curl (via -w) between successive inbox message
     /// page responses so the parser can split them without a boundary marker in
     /// the JSON itself.
     readonly property string fetchPayloadSplitToken: "__GH_PARTICIPATING_SPLIT__"
@@ -109,8 +109,8 @@ QtObject {
     // API Request Sizing
     // =========================================================================
 
-    /// Number of notifications requested per page from the GitHub API.
-    readonly property int notificationsApiPageSize: 50
+    /// Number of inbox messages requested per page from the GitHub API.
+    readonly property int messagesApiPageSize: 50
 
     /// Query string appended to author-detail sub-requests to fetch up to 100
     /// items per page and avoid unnecessary pagination.
@@ -120,9 +120,9 @@ QtObject {
     /// invocation.  Limits the size of a single outbound network batch.
     readonly property int maxAuthorUrlsPerThreadFetch: 16
 
-    /// Number of notification items sent in each worker-script chunk message
+    /// Number of inbox message items sent in each worker-script chunk message
     /// so that the main thread processes results incrementally.
-    readonly property int notificationsParseChunkSize: 80
+    readonly property int messagesParseChunkSize: 80
 
 
     // =========================================================================
@@ -180,16 +180,16 @@ QtObject {
     /// to this floor to avoid hammering the GitHub API.
     readonly property int minPollIntervalSeconds: 60
 
-    /// Default maximum number of notifications shown per repository group.
+    /// Default maximum number of inbox messages shown per repository group.
     readonly property int defaultGroupItemLimit: 25
 
     /// Default number of API pages fetched per refresh cycle.
     readonly property int defaultFetchPageCount: 3
 
-    /// Default popup height expressed in notification-row "height units".
+    /// Default popup height expressed in message-row "height units".
     readonly property int defaultPopupHeightUnits: 10
 
-    /// Default maximum number of lines rendered for a notification title.
+    /// Default maximum number of lines rendered for an inbox message title.
     readonly property int defaultTitleLines: 2
 
 
@@ -248,7 +248,7 @@ QtObject {
     readonly property string expandedStateDefaultKey: "__defaultExpanded"
 
     /// How often (ms) the view-apply timer ticks while draining pending
-    /// notification chunks into the visible list.
+    /// inbox message chunks into the visible list.
     readonly property int viewApplyTimerIntervalMs: 8
 
     /// Maximum unread count displayed as a plain number; anything higher shows
@@ -304,7 +304,7 @@ QtObject {
     readonly property int popoutHeaderFadeDurationMs: 120
 
     /// Duration (ms) of one complete rotation of the refresh-spinner icon
-    /// while a fetch or mutation is in progress.
+    /// while a fetch or operation is in progress.
     readonly property int popoutRefreshIconSpinDurationMs: 800
 
     /// Pixel size of the icon glyph placed inside each header action button.
@@ -357,10 +357,10 @@ QtObject {
     /// Size of the icon inside the "mark repo done" button.
     readonly property int popoutRepoDoneIconSizePx: 13
 
-    /// Background opacity of the unread-notification count badge.
+    /// Background opacity of the unread-count badge.
     readonly property real popoutRepoCountBadgeUnreadOpacity: 0.18
 
-    /// Background opacity of the read-notification count badge.
+    /// Background opacity of the read-count badge.
     readonly property real popoutRepoCountBadgeReadOpacity: 0.20
 
 
@@ -416,81 +416,81 @@ QtObject {
 
 
     // =========================================================================
-    // Notification Row Layout
+    // Inbox Message Row Layout
     // =========================================================================
 
     /// Minimum row height regardless of content, ensuring tap targets stay
     /// large enough on touch displays.
-    readonly property int notificationRowMinHeightPx: 72
+    readonly property int messageRowMinHeightPx: 72
 
     /// Minimum pixel height of the title/metadata content area inside a row.
-    readonly property int notificationRowContentMinHeightPx: 40
+    readonly property int messageRowContentMinHeightPx: 40
 
     /// Pixel height contribution added per title line when sizing a row.
-    readonly property int notificationRowTitleLineHeightPx: 16
+    readonly property int messageRowTitleLineHeightPx: 16
 
     /// Extra vertical padding applied below the author column when calculating
     /// the total row height.
-    readonly property int notificationRowAuthorColumnPaddingPx: 14
+    readonly property int messageRowAuthorColumnPaddingPx: 14
 
-    /// Height of each individual author entry row within a notification row.
-    readonly property int notificationAuthorRowHeightPx: 26
+    /// Height of each individual author entry row within an inbox message row.
+    readonly property int messageAuthorRowHeightPx: 26
 
     /// Width of the left icon slot that contains the subject-type badge.
-    readonly property int notificationIconSlotWidthPx: 26
+    readonly property int messageIconSlotWidthPx: 26
 
     /// Width of the rounded-rectangle badge behind the subject-type icon.
-    readonly property int notificationIconBadgeWidthPx: 24
+    readonly property int messageIconBadgeWidthPx: 24
 
     /// Height of the rounded-rectangle badge behind the subject-type icon.
-    readonly property int notificationIconBadgeHeightPx: 24
+    readonly property int messageIconBadgeHeightPx: 24
 
     /// Corner radius of the subject-type icon badge.
-    readonly property int notificationIconBadgeRadiusPx: 13
+    readonly property int messageIconBadgeRadiusPx: 13
 
     /// Pixel size of the subject-type icon glyph.
-    readonly property int notificationSubjectIconSizePx: 17
+    readonly property int messageSubjectIconSizePx: 17
 
     /// Fraction of the row body (0-1) devoted to the title/metadata column.
-    readonly property real notificationMainInfoWidthRatio: 0.7
+    readonly property real messageMainInfoWidthRatio: 0.7
 
     /// Absolute minimum pixel width of the title/metadata column so it never
     /// becomes smaller than a comfortable reading width.
-    readonly property int notificationMainInfoMinWidthPx: 120
+    readonly property int messageMainInfoMinWidthPx: 120
 
     /// Font pixel size of the subject-type, reason, and timestamp labels.
-    readonly property int notificationMetadataFontSizePx: 12
+    readonly property int messageMetadataFontSizePx: 12
 
     /// Vertical spacing (px) between items in the title/metadata column.
-    readonly property int notificationMainInfoColumnSpacingPx: 3
+    readonly property int messageMainInfoColumnSpacingPx: 3
 
     /// Minimum pixel width of the author-list column to the right of the main
     /// info area.
-    readonly property int notificationAuthorColumnMinWidthPx: 72
+    readonly property int messageAuthorColumnMinWidthPx: 72
 
     /// Vertical spacing between individual author entry rows.
-    readonly property int notificationAuthorColumnItemSpacingPx: 2
+    readonly property int messageAuthorColumnItemSpacingPx: 2
 
-    /// Fill opacity of the background tint applied to unread notification rows.
-    readonly property real notificationRowUnreadBackgroundOpacity: 0.10
+    /// Fill opacity of the background tint applied to unread inbox message rows.
+    readonly property real messageRowUnreadBackgroundOpacity: 0.10
 
-    /// Opacity of the border drawn around unread notification rows.
-    readonly property real notificationRowUnreadBorderOpacity: 0.35
+    /// Opacity of the border drawn around unread inbox message rows.
+    readonly property real messageRowUnreadBorderOpacity: 0.35
 
-    /// Width of the border rectangle drawn around each notification row card.
-    readonly property int notificationRowBorderWidthPx: 1
+    /// Width of the border rectangle drawn around each inbox message row card.
+    readonly property int messageRowBorderWidthPx: 1
 
     /// Fill opacity of the subject-type icon badge background tint.
-    readonly property real notificationIconBadgeBackgroundOpacity: 0.4
+    readonly property real messageIconBadgeBackgroundOpacity: 0.4
 
 
     // =========================================================================
     // Author Avatar & Label
     // =========================================================================
 
-    /// Maximum number of authors shown in the author column per notification.
+    /// Maximum number of authors shown in the author column per inbox message.
     /// Additional authors beyond this limit are silently dropped.
-    readonly property int maxAuthorsDisplayedPerNotification: 3
+    readonly property int maxAuthorsDisplayedPerMessage: 3
 
     /// Width and height (square) of the circular author avatar canvas.
     readonly property int authorAvatarSizePx: 24
@@ -507,38 +507,38 @@ QtObject {
 
 
     // =========================================================================
-    // Notification Row Hover Action Buttons
+    // Inbox Message Row Hover Action Buttons
     // =========================================================================
 
     /// Total pixel width of the action-button overlay host item that sits in
-    /// the top-right corner of a notification row.
-    readonly property int notificationActionsHostWidthPx: 74
+    /// the top-right corner of an inbox message row.
+    readonly property int messageActionsHostWidthPx: 74
 
     /// Total pixel height of the action-button overlay host item.
-    readonly property int notificationActionsHostHeightPx: 24
+    readonly property int messageActionsHostHeightPx: 24
 
     /// Right and top margin (px) between the action-button overlay and the
-    /// notification-row border.
-    readonly property int notificationActionsHostMarginPx: 4
+    /// inbox message row border.
+    readonly property int messageActionsHostMarginPx: 4
 
     /// Width and height (square) of each individual action button.
-    readonly property int notificationActionButtonSizePx: 22
+    readonly property int messageActionButtonSizePx: 22
 
     /// Corner radius of each action button rectangle.
-    readonly property int notificationActionButtonRadiusPx: 11
+    readonly property int messageActionButtonRadiusPx: 11
 
     /// Pixel size of the icon glyph inside each action button.
-    readonly property int notificationActionButtonIconSizePx: 13
+    readonly property int messageActionButtonIconSizePx: 13
 
     /// Gap (px) between adjacent action buttons.
-    readonly property int notificationActionButtonsSpacingPx: 4
+    readonly property int messageActionButtonsSpacingPx: 4
 
     /// Background opacity of action button rectangles at rest.
-    readonly property real notificationActionButtonBgOpacity: 0.9
+    readonly property real messageActionButtonBgOpacity: 0.9
 
     /// Duration (ms) of the fade-in / fade-out animation for the action-button
-    /// row triggered by hovering a notification row.
-    readonly property int notificationActionsFadeDurationMs: 100
+    /// row triggered by hovering an inbox message row.
+    readonly property int messageActionsFadeDurationMs: 100
 
 
     // =========================================================================

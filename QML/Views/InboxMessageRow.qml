@@ -1,14 +1,15 @@
-// NotificationRow.qml - Single GitHub notification row for popout list
+// InboxMessageRow.qml - Single GitHub inbox message row for popout list
 
 import QtQuick
 import qs.Common
 import qs.Widgets
-import "../JS/GitHubHelpers.js" as GitHub
+import ".."
+import "../../JS/GitHubHelpers.js" as GitHub
 
 Item {
     id: row
 
-    property var notificationData: ({})
+    property var messageData: ({})
     property bool isBusy: false
     property int titleLines: 2
     property var authors: []
@@ -19,14 +20,14 @@ Item {
     signal markDone(string threadId)
     signal requestAuthors(string threadId, string subjectApiUrl, string subjectType)
 
-    property string threadId: notificationData.threadId || ""
-    property bool unread: notificationData.unread || false
-    property string title: notificationData.title || "(untitled)"
-    property string subjectType: notificationData.subjectType || "Notification"
-    property string subjectApiUrl: notificationData.subjectApiUrl || ""
-    property string reason: GitHub.reasonLabel(notificationData.reason)
-    property string updatedAt: notificationData.updatedAt || ""
-    property string webUrl: notificationData.webUrl || ""
+    property string threadId: messageData.threadId || ""
+    property bool unread: messageData.unread || false
+    property string title: messageData.title || "(untitled)"
+    property string subjectType: messageData.subjectType || "Message"
+    property string subjectApiUrl: messageData.subjectApiUrl || ""
+    property string reason: GitHub.reasonLabel(messageData.reason)
+    property string updatedAt: messageData.updatedAt || ""
+    property string webUrl: messageData.webUrl || ""
     property string updatedText: GitHub.relativeTimeFromIso(updatedAt)
     property string subjectIcon: GitHub.subjectIconName(subjectType)
     property bool authorRequestSent: false
@@ -35,15 +36,15 @@ Item {
 
     property var limitedAuthors: {
         var list = resolvedAuthors || []
-        if (list.length <= Constants.maxAuthorsDisplayedPerNotification)
+        if (list.length <= Constants.maxAuthorsDisplayedPerMessage)
             return list
-        return list.slice(0, Constants.maxAuthorsDisplayedPerNotification)
+        return list.slice(0, Constants.maxAuthorsDisplayedPerMessage)
     }
 
-    property int authorRowHeight: Constants.notificationAuthorRowHeightPx
+    property int authorRowHeight: Constants.messageAuthorRowHeightPx
     property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
-    property int contentMinHeight: Constants.notificationRowContentMinHeightPx + (Math.max(1, titleLines) * Constants.notificationRowTitleLineHeightPx)
-    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Constants.notificationRowAuthorColumnPaddingPx)
+    property int contentMinHeight: Constants.messageRowContentMinHeightPx + (Math.max(1, titleLines) * Constants.messageRowTitleLineHeightPx)
+    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Constants.messageRowAuthorColumnPaddingPx)
 
     function openAuthorProfile(url) {
         if (url)
@@ -90,18 +91,18 @@ Item {
         // Authors are pre-fetched during refresh in Widget.qml.
     }
 
-    height: Math.max(Constants.notificationRowMinHeightPx, rowHeight)
+    height: Math.max(Constants.messageRowMinHeightPx, rowHeight)
 
     Rectangle {
         anchors.fill: parent
         radius: Theme.cornerRadius
         color: row.unread
-               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.notificationRowUnreadBackgroundOpacity)
+               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.messageRowUnreadBackgroundOpacity)
                : Theme.surfaceContainer
         border.color: row.unread
-                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.notificationRowUnreadBorderOpacity)
+                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.messageRowUnreadBorderOpacity)
                       : Theme.outlineVariant
-        border.width: Constants.notificationRowBorderWidthPx
+        border.width: Constants.messageRowBorderWidthPx
     }
 
     MouseArea {
@@ -122,20 +123,20 @@ Item {
 
         Item {
             id: iconSlot
-            width: Constants.notificationIconSlotWidthPx
+            width: Constants.messageIconSlotWidthPx
             height: parent.height
 
             Rectangle {
-                width: Constants.notificationIconBadgeWidthPx
-                height: Constants.notificationIconBadgeHeightPx
-                radius: Constants.notificationIconBadgeRadiusPx
+                width: Constants.messageIconBadgeWidthPx
+                height: Constants.messageIconBadgeHeightPx
+                radius: Constants.messageIconBadgeRadiusPx
                 anchors.top: parent.top
-                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, Constants.notificationIconBadgeBackgroundOpacity)
+                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, Constants.messageIconBadgeBackgroundOpacity)
 
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.subjectIcon
-                    size: Constants.notificationSubjectIconSizePx
+                    size: Constants.messageSubjectIconSizePx
                     color: row.unread ? Theme.primary : Theme.surfaceVariantText
                 }
             }
@@ -153,10 +154,10 @@ Item {
                 Column {
                     id: mainInfo
                     width: (showAuthors && row.limitedAuthors.length > 0)
-                           ? Math.max(Constants.notificationMainInfoMinWidthPx, Math.floor(bodySlot.width * Constants.notificationMainInfoWidthRatio))
+                           ? Math.max(Constants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * Constants.messageMainInfoWidthRatio))
                            : bodySlot.width
                     anchors.top: parent.top
-                    spacing: Constants.notificationMainInfoColumnSpacingPx
+                    spacing: Constants.messageMainInfoColumnSpacingPx
 
                     StyledText {
                         width: parent.width
@@ -175,31 +176,31 @@ Item {
 
                         StyledText {
                             text: row.subjectType
-                            font.pixelSize: Constants.notificationMetadataFontSizePx
+                            font.pixelSize: Constants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: Constants.notificationMetadataFontSizePx
+                            font.pixelSize: Constants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.reason
-                            font.pixelSize: Constants.notificationMetadataFontSizePx
+                            font.pixelSize: Constants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: Constants.notificationMetadataFontSizePx
+                            font.pixelSize: Constants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.updatedText
-                            font.pixelSize: Constants.notificationMetadataFontSizePx
+                            font.pixelSize: Constants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                             elide: Text.ElideRight
                         }
@@ -208,7 +209,7 @@ Item {
 
                 Item {
                     id: authorInfo
-                    width: Math.max(Constants.notificationAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
+                    width: Math.max(Constants.messageAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
                     height: parent.height
                     visible: row.showAuthors && row.limitedAuthors.length > 0
 
@@ -216,7 +217,7 @@ Item {
                         id: authorColumn
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: Constants.notificationAuthorColumnItemSpacingPx
+                        spacing: Constants.messageAuthorColumnItemSpacingPx
 
                         Repeater {
                             model: row.limitedAuthors
@@ -275,10 +276,10 @@ Item {
         id: actionsHost
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.rightMargin: Constants.notificationActionsHostMarginPx
-        anchors.topMargin: Constants.notificationActionsHostMarginPx
-        width: Constants.notificationActionsHostWidthPx
-        height: Constants.notificationActionsHostHeightPx
+        anchors.rightMargin: Constants.messageActionsHostMarginPx
+        anchors.topMargin: Constants.messageActionsHostMarginPx
+        width: Constants.messageActionsHostWidthPx
+        height: Constants.messageActionsHostHeightPx
         z: 10
 
         MouseArea {
@@ -290,7 +291,7 @@ Item {
 
         Row {
             id: actionButtons
-            spacing: Constants.notificationActionButtonsSpacingPx
+            spacing: Constants.messageActionButtonsSpacingPx
             visible: rowArea.containsMouse
                      || actionsHoverArea.containsMouse
                      || openArea.containsMouse
@@ -299,14 +300,14 @@ Item {
             opacity: visible ? 1 : 0
 
             Behavior on opacity {
-                NumberAnimation { duration: Constants.notificationActionsFadeDurationMs }
+                NumberAnimation { duration: Constants.messageActionsFadeDurationMs }
             }
 
             Rectangle {
-                width: Constants.notificationActionButtonSizePx
-                height: Constants.notificationActionButtonSizePx
-                radius: Constants.notificationActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.notificationActionButtonBgOpacity)
+                width: Constants.messageActionButtonSizePx
+                height: Constants.messageActionButtonSizePx
+                radius: Constants.messageActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: openArea
@@ -320,16 +321,16 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: "open_in_new"
-                    size: Constants.notificationActionButtonIconSizePx
+                    size: Constants.messageActionButtonIconSizePx
                     color: Theme.surfaceVariantText
                 }
             }
 
             Rectangle {
-                width: Constants.notificationActionButtonSizePx
-                height: Constants.notificationActionButtonSizePx
-                radius: Constants.notificationActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.notificationActionButtonBgOpacity)
+                width: Constants.messageActionButtonSizePx
+                height: Constants.messageActionButtonSizePx
+                radius: Constants.messageActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: readToggleArea
@@ -348,16 +349,16 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.unread ? "mark_email_read" : "mark_email_unread"
-                    size: Constants.notificationActionButtonIconSizePx
+                    size: Constants.messageActionButtonIconSizePx
                     color: readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                 }
             }
 
             Rectangle {
-                width: Constants.notificationActionButtonSizePx
-                height: Constants.notificationActionButtonSizePx
-                radius: Constants.notificationActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.notificationActionButtonBgOpacity)
+                width: Constants.messageActionButtonSizePx
+                height: Constants.messageActionButtonSizePx
+                radius: Constants.messageActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: doneArea
@@ -371,7 +372,7 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: "done"
-                    size: Constants.notificationActionButtonIconSizePx
+                    size: Constants.messageActionButtonIconSizePx
                     color: doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                 }
             }

@@ -1,3 +1,18 @@
-singleton ApiCallStats 1.0 ApiCallStats.qml
-singleton AuthorUtils 1.0 AuthorUtils.qml
-singleton Constants 1.0 Constants.qml
+singleton ApiCallStats 1.0 Tools/ApiCallStats.qml
+singleton AuthorUtils 1.0 Tools/AuthorUtils.qml
+singleton Constants 1.0 Tools/Constants.qml
+
+AuthorFetcher 1.0 Tools/AuthorFetcher.qml
+AvatarPreloader 1.0 Tools/AvatarPreloader.qml
+CacheCoordinator 1.0 Tools/CacheCoordinator.qml
+InboxCache 1.0 Tools/InboxCache.qml
+InboxFetcher 1.0 Tools/InboxFetcher.qml
+InboxGroupModel 1.0 Tools/InboxGroupModel.qml
+InboxOperations 1.0 Tools/InboxOperations.qml
+
+GitHubIcon 1.0 Views/GitHubIcon.qml
+InboxMessageGroup 1.0 Views/InboxMessageGroup.qml
+InboxMessageRow 1.0 Views/InboxMessageRow.qml
+PopoutPanel 1.0 Views/PopoutPanel.qml
+RoundedAvatar 1.0 Views/RoundedAvatar.qml
+Settings 1.0 Views/Settings.qml

@@ -1,11 +1,11 @@
-// NotificationFetcher.qml - Fetches GitHub notifications via curl, parses in background
+// InboxFetcher.qml - Fetches GitHub inbox messages via curl, parses in background
 //
 // Encapsulates the multi-page curl fetch and WorkerScript-based JSON parsing.
 // Emits signals for each phase of the result so the parent can update state.
 
 import QtQuick
 import Quickshell.Io
-import "../JS/GitHubHelpers.js" as GitHub
+import "../../JS/GitHubHelpers.js" as GitHub
 
 Item {
     id: fetcher
@@ -45,8 +45,8 @@ Item {
         ApiCallStats.resetSession()
 
         var pages = Math.max(1, fetchPageCount)
-        var baseQuery = "per_page=" + Constants.notificationsApiPageSize + "&all=true"
-        var allBaseUrl = Constants.githubNotificationsApiUrl + "?" + baseQuery
+        var baseQuery = "per_page=" + Constants.messagesApiPageSize + "&all=true"
+        var allBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery
         var command = ["curl"]
 
         for (var page = 1; page <= pages; page++) {
@@ -122,7 +122,7 @@ Item {
                     separator: fetcher.fetchSplitToken,
                     allSegmentCount: fetcher.fetchPageCount,
                     doneThreadState: fetcher.doneThreadState,
-                    chunkSize: Constants.notificationsParseChunkSize
+                    chunkSize: Constants.messagesParseChunkSize
                 })
 
                 destroy()
@@ -138,7 +138,7 @@ Item {
 
     WorkerScript {
         id: parseWorker
-        source: Qt.resolvedUrl("../JS/NotificationParserWorker.js")
+        source: Qt.resolvedUrl("../../JS/InboxParserWorker.js")
 
         onMessage: function(message) {
             // Author parse results are forwarded to the parent (AuthorFetcher

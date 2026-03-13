@@ -1,6 +1,6 @@
-// NotificationCache.qml - Disk-backed cache for notifications, authors, and avatars
+// InboxCache.qml - Disk-backed cache for inbox messages, authors, and avatars
 //
-// Stores a single JSON file (notifications + author data + avatar map) and
+// Stores a single JSON file (messages + author data + avatar map) and
 // individual avatar image files under a configurable XDG-compatible cache dir.
 // All writes are debounced so rapid updates are batched into one disk flush.
 
@@ -16,7 +16,7 @@ Item {
     property int cacheTtlMinutes: Constants.defaultCacheTtlMinutes
 
     // -- Exposed cached state -------------------------------------------------
-    property var cachedNotifications: []
+    property var cachedMessages: []
     property var cachedAuthorsByThread: ({})
     property var cachedAuthorFetchedAt: ({})
     property var avatarLocalPaths: ({})     // login -> "file:///abs/path.png"
@@ -134,10 +134,10 @@ Item {
         return (Date.now() - cachedTimestamp) < cacheTtlMinutes * 60 * 1000
     }
 
-    // -- Notifications --------------------------------------------------------
+    // -- Inbox Messages -------------------------------------------------------
 
-    function updateNotifications(items) {
-        cachedNotifications = items || []
+    function updateMessages(items) {
+        cachedMessages = items || []
         cachedTimestamp = Date.now()
         _queueSave()
     }
@@ -232,7 +232,7 @@ Item {
     // -- Clear ----------------------------------------------------------------
 
     function clearCache() {
-        cachedNotifications = []
+        cachedMessages = []
         cachedAuthorsByThread = ({})
         cachedAuthorFetchedAt = ({})
         avatarLocalPaths = ({})
@@ -296,7 +296,7 @@ Item {
         if ((data.version || 0) !== Constants.cacheFormatVersion)
             data = {}
 
-        cachedNotifications = data.notifications || []
+        cachedMessages = data.notifications || []
         cachedAuthorsByThread = data.authorsByThread || ({})
         cachedAuthorFetchedAt = data.authorFetchedAt || ({})
         cachedTimestamp = data.lastFetched || 0
@@ -336,7 +336,7 @@ Item {
         var payload = {
             version: Constants.cacheFormatVersion,
             lastFetched: cachedTimestamp,
-            notifications: cachedNotifications,
+            notifications: cachedMessages,
             authorsByThread: cachedAuthorsByThread,
             authorFetchedAt: cachedAuthorFetchedAt,
             avatarMap: avatarMap

@@ -1,4 +1,4 @@
-// NotificationMutator.qml - Handles GitHub notification mutation operations
+// InboxOperations.qml - Handles GitHub inbox message operations
 //
 // Encapsulates mark-as-read, mark-as-unread, mark-done, repo-read, and
 // mark-all-read operations. Applies optimistic local state updates and
@@ -8,21 +8,21 @@ import QtQuick
 import Quickshell.Io
 
 Item {
-    id: mutator
+    id: operations
     visible: false
 
     // -- Configuration --------------------------------------------------------
     property string token: ""
 
     // -- State ----------------------------------------------------------------
-    property bool isMutating: false
-    property bool isLoading: false    // bound from outside — blocks mutations
+    property bool isOperating: false
+    property bool isLoading: false    // bound from outside — blocks operations
     property var doneThreadState: ({})
     property var pendingThreadDoneQueue: []
 
     // -- Signals --------------------------------------------------------------
-    signal mutationApplied(string actionType, string threadId, string repositoryFullName)
-    signal mutationError(string errorMessage)
+    signal operationApplied(string actionType, string threadId, string repositoryFullName)
+    signal operationError(string errorMessage)
     signal stateUpdated()
 
     // =========================================================================
@@ -56,14 +56,14 @@ Item {
         )
     }
 
-    function markRepoDone(repositoryFullName, notifications) {
+    function markRepoDone(repositoryFullName, messages) {
         if (!repositoryFullName) return
 
         var doneCopy = _cloneMap(doneThreadState)
         var threadIds = []
 
-        for (var index = 0; index < notifications.length; index++) {
-            var item = notifications[index]
+        for (var index = 0; index < messages.length; index++) {
+            var item = messages[index]
             if (item.repository === repositoryFullName && item.threadId) {
                 doneCopy[item.threadId] = true
                 threadIds.push(item.threadId)
@@ -73,7 +73,7 @@ Item {
         if (threadIds.length === 0) return
 
         doneThreadState = doneCopy
-        mutationApplied("repo_done", "", repositoryFullName)
+        operationApplied("repo_done", "", repositoryFullName)
         _queueThreadDoneSync(threadIds)
     }
 
@@ -95,28 +95,28 @@ Item {
     function markAllAsRead() {
         _runMutation(
             "PUT",
-            Constants.githubNotificationsApiUrl,
+            Constants.githubInboxApiUrl,
             "all_read", "", "", ""
         )
     }
 
-    /// Apply mutation result to a notifications list and return updated state.
-    function applyResult(actionType, threadId, repositoryFullName, notifications) {
+    /// Apply operation result to a messages list and return updated state.
+    function applyResult(actionType, threadId, repositoryFullName, messages) {
         var updated = []
         var doneCopy = _cloneMap(doneThreadState)
 
         if (actionType === "thread_done_sync")
-            return { items: notifications, unreadChanged: false }
+            return { items: messages, unreadChanged: false }
 
         if (actionType === "all_read") {
-            for (var allIndex = 0; allIndex < notifications.length; allIndex++)
-                updated.push(_markAsReadItem(notifications[allIndex]))
+            for (var allIndex = 0; allIndex < messages.length; allIndex++)
+                updated.push(_markAsReadItem(messages[allIndex]))
             return { items: updated, unreadChanged: true }
         }
 
         if (actionType === "repo_read") {
-            for (var repoIndex = 0; repoIndex < notifications.length; repoIndex++) {
-                var repoItem = notifications[repoIndex]
+            for (var repoIndex = 0; repoIndex < messages.length; repoIndex++) {
+                var repoItem = messages[repoIndex]
                 if (repoItem.repository === repositoryFullName)
                     updated.push(_markAsReadItem(repoItem))
                 else
@@ -126,8 +126,8 @@ Item {
         }
 
         if (actionType === "repo_done") {
-            for (var repoDoneIndex = 0; repoDoneIndex < notifications.length; repoDoneIndex++) {
-                var repoDoneItem = notifications[repoDoneIndex]
+            for (var repoDoneIndex = 0; repoDoneIndex < messages.length; repoDoneIndex++) {
+                var repoDoneItem = messages[repoDoneIndex]
                 if (repoDoneItem.repository === repositoryFullName && repoDoneItem.threadId
                         && doneCopy[repoDoneItem.threadId])
                     continue
@@ -139,8 +139,8 @@ Item {
         if (actionType === "thread_done") {
             doneCopy[threadId] = true
             doneThreadState = doneCopy
-            for (var doneIndex = 0; doneIndex < notifications.length; doneIndex++) {
-                var doneItem = notifications[doneIndex]
+            for (var doneIndex = 0; doneIndex < messages.length; doneIndex++) {
+                var doneItem = messages[doneIndex]
                 if (doneItem.threadId !== threadId)
                     updated.push(doneItem)
             }
@@ -152,8 +152,8 @@ Item {
                 delete doneCopy[threadId]
                 doneThreadState = doneCopy
             }
-            for (var unreadIndex = 0; unreadIndex < notifications.length; unreadIndex++) {
-                var unreadItem = notifications[unreadIndex]
+            for (var unreadIndex = 0; unreadIndex < messages.length; unreadIndex++) {
+                var unreadItem = messages[unreadIndex]
                 if (unreadItem.threadId === threadId) {
                     var unreadCopy = _cloneItem(unreadItem)
                     unreadCopy.unread = true
@@ -170,8 +170,8 @@ Item {
             delete doneCopy[threadId]
             doneThreadState = doneCopy
         }
-        for (var index = 0; index < notifications.length; index++) {
-            var item = notifications[index]
+        for (var index = 0; index < messages.length; index++) {
+            var item = messages[index]
             if (item.threadId === threadId)
                 updated.push(_markAsReadItem(item))
             else
@@ -181,7 +181,7 @@ Item {
     }
 
     function processPendingDoneQueue() {
-        if (!token || isMutating || isLoading)
+        if (!token || isOperating || isLoading)
             return
         if (pendingThreadDoneQueue.length === 0)
             return
@@ -198,7 +198,7 @@ Item {
     }
 
     function resetState() {
-        isMutating = false
+        isOperating = false
         pendingThreadDoneQueue = []
         doneThreadState = ({})
     }
@@ -208,12 +208,12 @@ Item {
     // =========================================================================
 
     function _runMutation(method, url, actionType, threadId, repositoryFullName, payloadJson) {
-        if (!token || isMutating || isLoading)
+        if (!token || isOperating || isLoading)
             return
 
-        isMutating = true
+        isOperating = true
 
-        var process = mutationComponentDef.createObject(mutator, {
+        var process = operationComponentDef.createObject(operations, {
             actionType: actionType || "thread_read",
             threadId: threadId || "",
             repositoryFullName: repositoryFullName || ""
@@ -283,7 +283,7 @@ Item {
     // =========================================================================
 
     Component {
-        id: mutationComponentDef
+        id: operationComponentDef
 
         Process {
             property string _buffer: ""
@@ -298,15 +298,15 @@ Item {
             stderr: SplitParser {
                 onRead: line => {
                     if (line.trim())
-                        console.warn("[GitHubInbox] mutate:", line)
+                        console.warn("[GitHubInbox] operate:", line)
                 }
             }
 
             onExited: exitCode => {
-                mutator.isMutating = false
+                operations.isOperating = false
 
                 if (exitCode !== 0) {
-                    mutator.mutationError("Action failed. Check token permissions.")
+                    operations.operationError("Action failed. Check token permissions.")
                     destroy()
                     return
                 }
@@ -315,13 +315,13 @@ Item {
                 if (!isNaN(statusCode)
                         && statusCode >= Constants.httpSuccessMin
                         && statusCode < Constants.httpSuccessMax) {
-                    mutator.mutationApplied(actionType, threadId, repositoryFullName)
+                    operations.operationApplied(actionType, threadId, repositoryFullName)
                 } else {
-                    mutator.mutationError("Action failed (HTTP "
+                    operations.operationError("Action failed (HTTP "
                                           + (isNaN(statusCode) ? "?" : statusCode) + ").")
                 }
 
-                Qt.callLater(mutator.processPendingDoneQueue)
+                Qt.callLater(operations.processPendingDoneQueue)
                 destroy()
             }
         }

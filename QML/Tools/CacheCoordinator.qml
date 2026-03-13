@@ -1,6 +1,6 @@
 // CacheCoordinator.qml - Bridges disk cache with runtime state
 //
-// Owns the NotificationCache instance and provides high-level operations:
+// Owns the InboxCache instance and provides high-level operations:
 // resolving avatar URLs, loading cached state, persisting updates, and
 // handling clear-cache requests from the settings panel.
 
@@ -14,7 +14,7 @@ Item {
     property int cacheTtlMinutes: Constants.defaultCacheTtlMinutes
 
     // -- Sub-components -------------------------------------------------------
-    NotificationCache {
+    InboxCache {
         id: diskCache
         cacheTtlMinutes: coordinator.cacheTtlMinutes
 
@@ -45,10 +45,10 @@ Item {
 
     // -- Load cached data into runtime structures -----------------------------
 
-    /// Returns { notifications, authorsByThread, authorFetchedAt, timestamp }
+    /// Returns { messages, authorsByThread, authorFetchedAt, timestamp }
     function loadCachedState() {
         return {
-            notifications: diskCache.cachedNotifications || [],
+            messages: diskCache.cachedMessages || [],
             authorsByThread: diskCache.cachedAuthorsByThread || ({}),
             authorFetchedAt: diskCache.cachedAuthorFetchedAt || ({}),
             timestamp: diskCache.cachedTimestamp || 0
@@ -57,7 +57,7 @@ Item {
 
     // -- Avatar resolution ----------------------------------------------------
 
-    function resolveNotificationAvatars(items) {
+    function resolveMessageAvatars(items) {
         if (!diskCache.initialized) return
         for (var i = 0; i < items.length; i++) {
             var item = items[i]
@@ -89,8 +89,8 @@ Item {
 
     // -- Persistence ----------------------------------------------------------
 
-    function updateNotifications(items) {
-        diskCache.updateNotifications(items)
+    function updateMessages(items) {
+        diskCache.updateMessages(items)
     }
 
     function bulkUpdateAuthors(authorsMap) {

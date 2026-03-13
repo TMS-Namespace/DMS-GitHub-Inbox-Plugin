@@ -2,12 +2,12 @@
 //
 // This file is the top-level PluginComponent that wires together the
 // extracted sub-components.  Business logic lives in the delegates:
-//   - NotificationFetcher  — curl-based notification fetching + WorkerScript
-//   - AuthorFetcher        — author data queue, dedup, fetching
-//   - NotificationMutator  — mark read/done/unread mutations
-//   - AvatarPreloader      — hidden Image warm-up cache
-//   - CacheCoordinator     — disk cache bridge (notifications, authors, avatars)
-//   - AuthorUtils          — pure helper functions (singleton)
+//   - InboxFetcher        — curl-based inbox message fetching + WorkerScript
+//   - AuthorFetcher       — author data queue, dedup, fetching
+//   - InboxOperations     — mark read/done/unread operations
+//   - AvatarPreloader     — hidden Image warm-up cache
+//   - CacheCoordinator    — disk cache bridge (messages, authors, avatars)
+//   - AuthorUtils         — pure helper functions (singleton)
 
 import QtQuick
 import QtQml
@@ -68,9 +68,9 @@ PluginComponent {
     //  RUNTIME STATE
     // =========================================================================
 
-    property var notifications: []
-    property var notificationsForView: []
-    property var pendingViewNotifications: []
+    property var inboxMessages: []
+    property var messagesForView: []
+    property var pendingViewMessages: []
     property int pendingViewIndex: 0
     property int unreadCount: 0
     property string errorMessage: ""
@@ -82,9 +82,9 @@ PluginComponent {
     property url githubIconFallback: Qt.resolvedUrl("../Images/github-mark.svg")
 
     // -- Computed properties --------------------------------------------------
-    property int totalCount: notifications.length
-    property int readCount: Math.max(0, notifications.length - unreadCount)
-    property int shownCount: notificationsForView.length
+    property int totalCount: inboxMessages.length
+    property int readCount: Math.max(0, inboxMessages.length - unreadCount)
+    property int shownCount: messagesForView.length
     property string barCountText: unreadCount > 0 ? GitHub.formatCountValue(unreadCount) : ""
 
     property string popoutDetails: {
@@ -92,8 +92,8 @@ PluginComponent {
             return "Set your GitHub classic token in Settings"
         if (errorMessage)
             return errorMessage
-        if (fetcher.isLoading && notifications.length === 0)
-            return "Loading notifications..."
+        if (fetcher.isLoading && inboxMessages.length === 0)
+            return "Loading messages..."
 
         var counts = unreadCount + " unread / " + readCount + " read / " + totalCount + " total"
         var summary = counts + " - showing " + shownCount
@@ -115,16 +115,16 @@ PluginComponent {
         }
     }
 
-    NotificationFetcher {
+    InboxFetcher {
         id: fetcher
         token: root.token
         fetchPageCount: root.fetchPageCount
-        doneThreadState: mutator.doneThreadState
+        doneThreadState: operations.doneThreadState
 
         onFetchBegin: function(totalCount, unreadCount) {
-            root.notifications = []
-            root.notificationsForView = []
-            root.pendingViewNotifications = []
+            root.inboxMessages = []
+            root.messagesForView = []
+            root.pendingViewMessages = []
             root.pendingViewIndex = 0
             authorFetch.resetState()
             authorFetch.prefetchPending = totalCount > 0
@@ -138,48 +138,48 @@ PluginComponent {
 
         onFetchChunk: function(chunk, isLast) {
             if (chunk.length > 0) {
-                cacheCoord.resolveNotificationAvatars(chunk)
-                var nextNotifications = root.notifications.slice(0)
+                cacheCoord.resolveMessageAvatars(chunk)
+                var nextMessages = root.inboxMessages.slice(0)
                 for (var index = 0; index < chunk.length; index++)
-                    nextNotifications.push(chunk[index])
-                root.notifications = nextNotifications
-                root.notificationsForView = nextNotifications
-                avatarPreloader.queueFromNotifications(chunk)
-                authorFetch.prefetchForNotifications(chunk)
+                    nextMessages.push(chunk[index])
+                root.inboxMessages = nextMessages
+                root.messagesForView = nextMessages
+                avatarPreloader.queueFromMessages(chunk)
+                authorFetch.prefetchForMessages(chunk)
             }
 
             if (isLast) {
                 root.lastUpdated = Date.now()
-                cacheCoord.updateNotifications(root.notifications)
+                cacheCoord.updateMessages(root.inboxMessages)
                 _tryFinalizeAuthorPrefetch()
             }
         }
 
         onFetchComplete: function(items, unreadCount) {
-            cacheCoord.resolveNotificationAvatars(items)
-            root.notifications = items
+            cacheCoord.resolveMessageAvatars(items)
+            root.inboxMessages = items
             root.unreadCount = unreadCount
-            root._queueViewNotifications(root.notifications)
-            avatarPreloader.queueFromNotifications(root.notifications)
-            authorFetch.prefetchPending = root.notifications.length > 0
-            authorFetch.prefetchForNotifications(root.notifications)
+            root._queueViewMessages(root.inboxMessages)
+            avatarPreloader.queueFromMessages(root.inboxMessages)
+            authorFetch.prefetchPending = root.inboxMessages.length > 0
+            authorFetch.prefetchForMessages(root.inboxMessages)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
-            cacheCoord.updateNotifications(root.notifications)
+            cacheCoord.updateMessages(root.inboxMessages)
             _tryFinalizeAuthorPrefetch()
         }
 
         onFetchError: function(errorMessage) {
-            root.notifications = []
-            root.notificationsForView = []
-            root.pendingViewNotifications = []
+            root.inboxMessages = []
+            root.messagesForView = []
+            root.pendingViewMessages = []
             root.pendingViewIndex = 0
             viewApplyTimer.stop()
             authorFetch.resetState()
             root.unreadCount = 0
             root.errorMessage = errorMessage
             root.lastUpdated = Date.now()
-            Qt.callLater(mutator.processPendingDoneQueue)
+            Qt.callLater(operations.processPendingDoneQueue)
         }
 
         onAuthorResultReceived: function(message) {
@@ -217,22 +217,22 @@ PluginComponent {
         onPrefetchMaybeComplete: root._tryFinalizeAuthorPrefetch()
     }
 
-    NotificationMutator {
-        id: mutator
+    InboxOperations {
+        id: operations
         token: root.token
         isLoading: fetcher.isLoading
 
-        onMutationApplied: function(actionType, threadId, repositoryFullName) {
-            var result = mutator.applyResult(actionType, threadId, repositoryFullName, root.notifications)
-            root.notifications = result.items
-            root._queueViewNotifications(root.notifications)
+        onOperationApplied: function(actionType, threadId, repositoryFullName) {
+            var result = operations.applyResult(actionType, threadId, repositoryFullName, root.inboxMessages)
+            root.inboxMessages = result.items
+            root._queueViewMessages(root.inboxMessages)
             if (result.unreadChanged)
-                root.unreadCount = _recalculateUnread(root.notifications)
+                root.unreadCount = _recalculateUnread(root.inboxMessages)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
         }
 
-        onMutationError: function(errorMessage) {
+        onOperationError: function(errorMessage) {
             root.errorMessage = errorMessage
         }
     }
@@ -250,7 +250,7 @@ PluginComponent {
         interval: root.pollIntervalMs
         running: root.token !== ""
         repeat: true
-        onTriggered: root._fetchNotifications()
+        onTriggered: root._fetchInbox()
     }
 
     Timer {
@@ -264,8 +264,8 @@ PluginComponent {
     //  ORCHESTRATION LOGIC
     // =========================================================================
 
-    function _fetchNotifications() {
-        if (!token || mutator.isMutating)
+    function _fetchInbox() {
+        if (!token || operations.isOperating)
             return
         fetcher.fetch()
     }
@@ -275,7 +275,7 @@ PluginComponent {
             errorMessage = "Set your GitHub token in Settings."
             return
         }
-        _fetchNotifications()
+        _fetchInbox()
     }
 
     function _onCacheReady() {
@@ -283,12 +283,12 @@ PluginComponent {
 
         var cached = cacheCoord.loadCachedState()
 
-        // Load notifications for immediate display
-        if (cached.notifications.length > 0) {
-            cacheCoord.resolveNotificationAvatars(cached.notifications)
-            notifications = cached.notifications
-            unreadCount = _recalculateUnread(cached.notifications)
-            _queueViewNotifications(cached.notifications)
+        // Load messages for immediate display
+        if (cached.messages.length > 0) {
+            cacheCoord.resolveMessageAvatars(cached.messages)
+            inboxMessages = cached.messages
+            unreadCount = _recalculateUnread(cached.messages)
+            _queueViewMessages(cached.messages)
             lastUpdated = cached.timestamp
         }
 
@@ -314,7 +314,7 @@ PluginComponent {
         }
 
         // Queue preload for all known avatars from cache
-        avatarPreloader.queueFromNotifications(cached.notifications)
+        avatarPreloader.queueFromMessages(cached.messages)
         var allAuthors = []
         for (var atid in resolvedAuthors) {
             var authorList = resolvedAuthors[atid] || []
@@ -324,7 +324,7 @@ PluginComponent {
         if (allAuthors.length > 0)
             avatarPreloader.queueFromAuthors(allAuthors)
 
-        _fetchNotifications()
+        _fetchInbox()
     }
 
     function _tryFinalizeAuthorPrefetch() {
@@ -339,7 +339,7 @@ PluginComponent {
         ApiCallStats.recordRefreshComplete()
         authorFetch.prefetchPending = false
 
-        Qt.callLater(mutator.processPendingDoneQueue)
+        Qt.callLater(operations.processPendingDoneQueue)
         fetcher.retryIfQueued()
     }
 
@@ -350,8 +350,8 @@ PluginComponent {
 
     function _pruneAuthorCaches() {
         var keep = {}
-        for (var index = 0; index < notifications.length; index++) {
-            var threadId = notifications[index].threadId
+        for (var index = 0; index < inboxMessages.length; index++) {
+            var threadId = inboxMessages[index].threadId
             if (threadId)
                 keep[threadId] = true
         }
@@ -386,11 +386,11 @@ PluginComponent {
 
     // -- View helpers ---------------------------------------------------------
 
-    function _queueViewNotifications(items) {
+    function _queueViewMessages(items) {
         var nextItems = (items || []).slice(0)
-        pendingViewNotifications = nextItems
+        pendingViewMessages = nextItems
         pendingViewIndex = nextItems.length
-        notificationsForView = nextItems
+        messagesForView = nextItems
         viewApplyTimer.stop()
     }
 
@@ -429,9 +429,9 @@ PluginComponent {
 
     onTokenChanged: {
         if (!token) {
-            notifications = []
-            notificationsForView = []
-            pendingViewNotifications = []
+            inboxMessages = []
+            messagesForView = []
+            pendingViewMessages = []
             pendingViewIndex = 0
             viewApplyTimer.stop()
             unreadCount = 0
@@ -439,14 +439,14 @@ PluginComponent {
             lastUpdated = 0
             fetcher.cancel()
             authorFetch.clearAllState()
-            mutator.resetState()
+            operations.resetState()
             avatarPreloader.reset()
             authorsByThread = ({})
             expandedReposState = ({ [Constants.expandedStateDefaultKey]: true })
             return
         }
         if (cacheCoord.initialized)
-            _fetchNotifications()
+            _fetchInbox()
         else
             cacheCoord.initialize()
     }
@@ -461,18 +461,18 @@ PluginComponent {
             return
         }
 
-        if (token && notifications.length > 0)
-            authorFetch.prefetchForNotifications(notifications)
+        if (token && inboxMessages.length > 0)
+            authorFetch.prefetchForMessages(inboxMessages)
     }
 
     onGroupItemLimitChanged: {
         if (token)
-            _fetchNotifications()
+            _fetchInbox()
     }
 
     onFetchPageCountChanged: {
         if (token)
-            _fetchNotifications()
+            _fetchInbox()
     }
 
     Component.onCompleted: {
@@ -551,11 +551,11 @@ PluginComponent {
                                 - popout.detailsHeight
                                 - Theme.spacingXL
 
-                notifications: root.notificationsForView
+                messages: root.messagesForView
                 unreadCount: root.unreadCount
                 tokenConfigured: root.token !== ""
                 isLoading: fetcher.isLoading
-                isMutating: mutator.isMutating
+                isOperating: operations.isOperating
                 errorMessage: root.errorMessage
                 headerOffset: popout.headerHeight + popout.detailsHeight
                 titleLines: root.titleLines
@@ -565,19 +565,19 @@ PluginComponent {
                 showAuthorInfo: root.loadAuthorInfo
 
                 onRefreshNow: root._refreshNow()
-                onMarkAllRead: mutator.markAllAsRead()
+                onMarkAllRead: operations.markAllAsRead()
                 onMarkRepoDone: function(repositoryFullName) {
-                    mutator.markRepoDone(repositoryFullName, root.notifications)
+                    operations.markRepoDone(repositoryFullName, root.inboxMessages)
                 }
-                onMarkThreadRead: function(threadId) { mutator.markThreadAsRead(threadId) }
-                onMarkThreadUnread: function(threadId) { mutator.markThreadAsUnread(threadId) }
-                onMarkThreadDone: function(threadId) { mutator.markThreadDone(threadId) }
+                onMarkThreadRead: function(threadId) { operations.markThreadAsRead(threadId) }
+                onMarkThreadUnread: function(threadId) { operations.markThreadAsUnread(threadId) }
+                onMarkThreadDone: function(threadId) { operations.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
                     if (!root.loadAuthorInfo) return
                     var notifUpdatedAt = ""
-                    for (var ni = 0; ni < root.notifications.length; ni++) {
-                        if (root.notifications[ni].threadId === threadId) {
-                            notifUpdatedAt = root.notifications[ni].updatedAt || ""
+                    for (var ni = 0; ni < root.inboxMessages.length; ni++) {
+                        if (root.inboxMessages[ni].threadId === threadId) {
+                            notifUpdatedAt = root.inboxMessages[ni].updatedAt || ""
                             break
                         }
                     }

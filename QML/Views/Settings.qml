@@ -4,6 +4,7 @@ import QtQuick
 import qs.Common
 import qs.Modules.Plugins
 import qs.Widgets
+import ".."
 
 PluginSettings {
     id: root
@@ -107,7 +108,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Show GitHub notifications directly in DankBar and a popup list.\nUse a GitHub classic personal access token with the 'notifications' scope."
+        text: "Show GitHub inbox messages directly in DankBar and a popup list.\nUse a GitHub classic personal access token with the 'notifications' scope."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
@@ -235,7 +236,7 @@ PluginSettings {
     SelectionSetting {
         settingKey: "pollInterval"
         label: "Refresh Interval"
-        description: "How often the widget checks GitHub notifications"
+        description: "How often the widget checks GitHub inbox"
         options: [
             { label: "1 minute", value: "60" },
             { label: "2 minutes", value: "120" },
@@ -249,13 +250,13 @@ PluginSettings {
     ToggleSetting {
         settingKey: "loadAuthorInfo"
         label: "Load Author Details"
-        description: "Load author avatars and profile names for each notification"
+        description: "Load author avatars and profile names for each message"
         defaultValue: true
     }
 
     StyledText {
         width: parent.width
-        text: "Note: This will considerably increase notification loading time."
+        text: "Note: This will considerably increase message loading time."
         font.pixelSize: Theme.fontSizeSmall
         font.weight: Font.Bold
         color: Theme.surfaceVariantText
@@ -541,7 +542,7 @@ PluginSettings {
     SelectionSetting {
         settingKey: "titleLines"
         label: "Max Rows for Title"
-        description: "How many lines each notification title can use"
+        description: "How many lines each message title can use"
         options: [
             { label: "1 line", value: "1" },
             { label: "2 lines", value: "2" },
@@ -570,7 +571,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Notifications, author details, and avatars are cached locally for faster loading.\nAvatars are stored as image files so they load instantly when the popup reopens."
+        text: "Inbox messages, author details, and avatars are cached locally for faster loading.\nAvatars are stored as image files so they load instantly when the popup reopens."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap

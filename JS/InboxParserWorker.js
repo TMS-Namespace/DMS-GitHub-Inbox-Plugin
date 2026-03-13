@@ -1,9 +1,9 @@
-// NotificationParserWorker.js - background parser for GitHub notifications
+// InboxParserWorker.js - background parser for GitHub inbox messages
 
 // Local mirrors of QML/Constants.qml values.
 // WorkerScript files cannot access QML singletons; constants are inlined here.
 var _FETCH_PAYLOAD_SPLIT_TOKEN     = "__GH_PARTICIPATING_SPLIT__"
-var _NOTIFICATIONS_PARSE_CHUNK_SIZE = 80
+var _MESSAGES_PARSE_CHUNK_SIZE = 80
 
 WorkerScript.onMessage = function(message) {
     // ---- Author JSON parsing (offloaded from Widget.qml main thread) -------
@@ -28,7 +28,7 @@ WorkerScript.onMessage = function(message) {
     }
     // -----------------------------------------------------------------------
     try {
-        var parsed = parseNotificationsWithParticipationSegments(
+        var parsed = parseMessagesWithParticipationSegments(
             message.payloadText || "",
             message.separator || _FETCH_PAYLOAD_SPLIT_TOKEN,
             message.allSegmentCount || 1
@@ -57,9 +57,9 @@ WorkerScript.onMessage = function(message) {
         }
 
         var seq = message.seq || 0
-        var chunkSize = parseInt(message.chunkSize || _NOTIFICATIONS_PARSE_CHUNK_SIZE)
+        var chunkSize = parseInt(message.chunkSize || _MESSAGES_PARSE_CHUNK_SIZE)
         if (isNaN(chunkSize) || chunkSize < 20)
-            chunkSize = _NOTIFICATIONS_PARSE_CHUNK_SIZE
+            chunkSize = _MESSAGES_PARSE_CHUNK_SIZE
 
         WorkerScript.sendMessage({
             seq: seq,
@@ -90,12 +90,12 @@ WorkerScript.onMessage = function(message) {
     } catch (error) {
         WorkerScript.sendMessage({
             seq: message.seq || 0,
-            error: "Failed to parse notifications payload."
+            error: "Failed to parse inbox messages payload."
         })
     }
 }
 
-function parseNotificationsWithParticipationSegments(payloadText, separator, allSegmentCount) {
+function parseMessagesWithParticipationSegments(payloadText, separator, allSegmentCount) {
     var splitToken = separator || "__GH_PARTICIPATING_SPLIT__"
     var marker = "\n" + splitToken + "\n"
     var normalizedPayload = String(payloadText || "")
@@ -124,7 +124,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
     var participationMap = {}
 
     for (var allIndex = 0; allIndex < allSegments.length; allIndex++) {
-        var allParsed = parseNotificationsPayload(allSegments[allIndex])
+        var allParsed = parseMessagesPayload(allSegments[allIndex])
         if (allParsed.error)
             return allParsed
         for (var allItemIndex = 0; allItemIndex < allParsed.items.length; allItemIndex++) {
@@ -137,7 +137,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
     }
 
     for (var partIndex = 0; partIndex < participatingSegments.length; partIndex++) {
-        var partParsed = parseNotificationsPayload(participatingSegments[partIndex])
+        var partParsed = parseMessagesPayload(participatingSegments[partIndex])
         if (partParsed.error)
             return partParsed
         for (var partItemIndex = 0; partItemIndex < partParsed.items.length; partItemIndex++) {
@@ -165,7 +165,7 @@ function parseNotificationsWithParticipationSegments(payloadText, separator, all
     return { items: mergedItems }
 }
 
-function parseNotificationsPayload(payloadText) {
+function parseMessagesPayload(payloadText) {
     var payload
     try {
         payload = JSON.parse(payloadText || "[]")
@@ -201,7 +201,7 @@ function parseNotificationsPayload(payloadText) {
             repositoryUrl: repository.html_url || "",
             repositoryOwnerLogin: (repository.owner && repository.owner.login) || "",
             repositoryOwnerAvatarUrl: (repository.owner && repository.owner.avatar_url) || "",
-            subjectType: subject.type || "Notification",
+            subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
             webUrl: resolveWebUrl(item)

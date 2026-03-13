@@ -2,7 +2,7 @@
 //
 // Maintains a map of avatar URLs and a Repeater of hidden Image elements
 // that warm QML's image provider. Provides methods to queue avatars from
-// notification owners and author lists.
+// inbox message owners and author lists.
 
 import QtQuick
 
@@ -51,7 +51,7 @@ Item {
         }
     }
 
-    function queueFromNotifications(items) {
+    function queueFromMessages(items) {
         if (!items || items.length === 0)
             return
 
