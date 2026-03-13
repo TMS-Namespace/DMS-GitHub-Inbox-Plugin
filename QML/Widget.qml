@@ -84,7 +84,6 @@ PluginComponent {
     // -- Computed properties --------------------------------------------------
     property int totalCount: inboxMessages.length
     property int readCount: Math.max(0, inboxMessages.length - unreadCount)
-    property int shownCount: messagesForView.length
     property string barCountText: unreadCount > 0 ? GitHub.formatCountValue(unreadCount) : ""
 
     property string popoutDetails: {
@@ -96,10 +95,7 @@ PluginComponent {
             return "Loading messages..."
 
         var counts = unreadCount + " unread / " + readCount + " read / " + totalCount + " total"
-        var summary = counts + " - showing " + shownCount
-        if (lastUpdated > 0)
-            summary += " - updated " + GitHub.relativeTimeFromIso(new Date(lastUpdated).toISOString())
-        return summary
+        return counts
     }
 
     // =========================================================================
@@ -556,6 +552,7 @@ PluginComponent {
                 tokenConfigured: root.token !== ""
                 isLoading: fetcher.isLoading
                 isOperating: operations.isOperating
+                isDownloadingAvatars: cacheCoord.isDownloadingAvatars
                 errorMessage: root.errorMessage
                 headerOffset: popout.headerHeight + popout.detailsHeight
                 titleLines: root.titleLines

@@ -17,6 +17,7 @@ Item {
     property bool tokenConfigured: false
     property bool isLoading: false
     property bool isOperating: false
+    property bool isDownloadingAvatars: false
     property string errorMessage: ""
     property real headerOffset: 0
     property int titleLines: 2
@@ -36,7 +37,13 @@ Item {
     signal closePopout()
     signal persistExpandedRepos(var state)
 
-    property bool anyBusy: isLoading || isOperating
+    property bool anyBusy: isLoading || isOperating || isDownloadingAvatars
+    property bool _headerHovered: headerHoverArea.containsMouse
+                                  || expandAllArea.containsMouse
+                                  || collapseAllArea.containsMouse
+                                  || refreshAllArea.containsMouse
+                                  || markAllArea.containsMouse
+                                  || closeArea.containsMouse
 
     // -- Model ----------------------------------------------------------------
     InboxGroupModel {
@@ -68,12 +75,7 @@ Item {
         anchors.rightMargin: Theme.spacingXS
         y: -panel.headerOffset + Theme.spacingS
         spacing: Constants.popoutHeaderButtonSpacingPx
-        visible: headerHoverArea.containsMouse
-                 || expandAllArea.containsMouse
-                 || collapseAllArea.containsMouse
-                 || refreshAllArea.containsMouse
-                 || markAllArea.containsMouse
-                 || closeArea.containsMouse
+        visible: panel.anyBusy || panel._headerHovered
         z: 101
         opacity: visible ? 1 : 0
 
@@ -82,6 +84,7 @@ Item {
         }
 
         Rectangle {
+            visible: panel._headerHovered
             width: Constants.popoutHeaderButtonSizePx
             height: Constants.popoutHeaderButtonSizePx
             radius: Constants.popoutHeaderButtonRadiusPx
@@ -107,6 +110,7 @@ Item {
         }
 
         Rectangle {
+            visible: panel._headerHovered
             width: Constants.popoutHeaderButtonSizePx
             height: Constants.popoutHeaderButtonSizePx
             radius: Constants.popoutHeaderButtonRadiusPx
@@ -179,7 +183,7 @@ Item {
             width: Constants.popoutHeaderButtonSizePx
             height: Constants.popoutHeaderButtonSizePx
             radius: Constants.popoutHeaderButtonRadiusPx
-            visible: panel.tokenConfigured && panel.unreadCount > 0
+            visible: panel._headerHovered && panel.tokenConfigured && panel.unreadCount > 0
             color: markAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
@@ -203,6 +207,7 @@ Item {
 
         // -- Close ----------------------------------------------------
         Rectangle {
+            visible: panel._headerHovered
             width: Constants.popoutHeaderButtonSizePx
             height: Constants.popoutHeaderButtonSizePx
             radius: Constants.popoutHeaderButtonRadiusPx

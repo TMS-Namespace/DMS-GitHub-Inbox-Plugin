@@ -26,6 +26,7 @@ Item {
 
     // -- Exposed state --------------------------------------------------------
     readonly property bool initialized: diskCache.initialized
+    readonly property bool isDownloadingAvatars: diskCache.isDownloadingAvatars
 
     // -- Signals --------------------------------------------------------------
     signal cacheReady()

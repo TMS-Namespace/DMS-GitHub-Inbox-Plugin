@@ -49,6 +49,7 @@ Item {
     }
 
     // -- Avatar download queue ------------------------------------------------
+    readonly property bool isDownloadingAvatars: _avatarBusy || _avatarQueue.length > 0
     property var _avatarQueue: []
     property bool _avatarBusy: false
 
