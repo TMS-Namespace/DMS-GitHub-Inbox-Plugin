@@ -490,8 +490,8 @@ PluginComponent {
             spacing: Theme.spacingXS
 
             GitHubIcon {
-                size: Math.max(12, root.iconSize - 4)
-                iconOpacity: 0.74
+                size: Math.max(Constants.barIconMinSizePx, root.iconSize - Constants.barIconSizeReductionPx)
+                iconOpacity: Constants.githubIconBarOpacity
                 sourcePrimary: root.githubIconPrimary
                 sourceFallback: root.githubIconFallback
                 anchors.verticalCenter: parent.verticalCenter
@@ -513,8 +513,8 @@ PluginComponent {
             spacing: Theme.spacingXS
 
             GitHubIcon {
-                size: Math.max(12, root.iconSize - 4)
-                iconOpacity: 0.74
+                size: Math.max(Constants.barIconMinSizePx, root.iconSize - Constants.barIconSizeReductionPx)
+                iconOpacity: Constants.githubIconBarOpacity
                 sourcePrimary: root.githubIconPrimary
                 sourceFallback: root.githubIconFallback
                 anchors.horizontalCenter: parent.horizontalCenter

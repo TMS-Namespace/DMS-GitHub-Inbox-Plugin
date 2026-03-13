@@ -42,6 +42,10 @@ var GHC = (function() {
         /// Number of inbox message items sent in each worker-script chunk message.
         messagesParseChunkSize: 80,
 
+        /// Pixel size appended to GitHub avatar URLs to control the fetched
+        /// image resolution (e.g. ".png?size=128").
+        avatarDefaultSizePx: 128,
+
         // -- Poll Settings - Defaults & Bounds -------------------------------
 
         /// Default poll interval in seconds when no setting is persisted.

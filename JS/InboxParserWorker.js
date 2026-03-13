@@ -4,6 +4,8 @@
 // WorkerScript files cannot access QML singletons; constants are inlined here.
 var _FETCH_PAYLOAD_SPLIT_TOKEN     = "__GH_PARTICIPATING_SPLIT__"
 var _MESSAGES_PARSE_CHUNK_SIZE = 80
+var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
+var _AVATAR_DEFAULT_SIZE_PX = 128
 
 WorkerScript.onMessage = function(message) {
     // ---- Author JSON parsing (offloaded from Widget.qml main thread) -------
@@ -213,7 +215,7 @@ function parseMessagesPayload(payloadText) {
 
 function resolveWebUrl(notification) {
     if (!notification)
-        return "https://github.com/notifications"
+        return _GITHUB_INBOX_FALLBACK_URL
 
     var subject = notification.subject || {}
     var apiUrl = subject.url || ""
@@ -225,7 +227,7 @@ function resolveWebUrl(notification) {
     if (repository.html_url)
         return repository.html_url
 
-    return "https://github.com/notifications"
+    return _GITHUB_INBOX_FALLBACK_URL
 }
 
 function releaseTagFromSubject(subjectType, subjectTitle) {
@@ -284,7 +286,7 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
 function defaultAvatarUrlForLogin(login) {
     var normalized = String(login || "").trim()
     if (!normalized) return ""
-    return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=128"
+    return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=" + _AVATAR_DEFAULT_SIZE_PX
 }
 
 function authorAvatarUrl(authorLike) {

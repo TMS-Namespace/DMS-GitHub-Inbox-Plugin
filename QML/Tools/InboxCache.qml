@@ -29,7 +29,7 @@ Item {
     // -- FileView for the JSON cache file -------------------------------------
     FileView {
         id: cacheFileView
-        path: cache.cacheDir ? (cache.cacheDir + "/cache.json") : ""
+        path: cache.cacheDir ? (cache.cacheDir + "/" + Constants.cacheFileName) : ""
         preload: false
         blockLoading: false
         atomicWrites: true
@@ -243,9 +243,9 @@ Item {
             var proc = clearCacheComponent.createObject(cache)
             proc.command = [
                 "sh", "-c",
-                "rm -f " + _shellQuote(cacheDir + "/cache.json")
-                + " && rm -rf " + _shellQuote(cacheDir + "/avatars")
-                + " && mkdir -p " + _shellQuote(cacheDir + "/avatars")
+                "rm -f " + _shellQuote(cacheDir + "/" + Constants.cacheFileName)
+                + " && rm -rf " + _shellQuote(cacheDir + "/" + Constants.cacheAvatarsSubdirectory)
+                + " && mkdir -p " + _shellQuote(cacheDir + "/" + Constants.cacheAvatarsSubdirectory)
             ]
             proc.running = true
         }
@@ -258,7 +258,7 @@ Item {
     function _onDirResolved(resolvedPath) {
         if (!resolvedPath) {
             console.warn("[GitHubInbox] Could not resolve cache directory, using fallback")
-            resolvedPath = "/tmp/github-inbox-cache"
+            resolvedPath = Constants.cacheFallbackDirPath
         }
         cacheDir = resolvedPath
         _createDirs()
@@ -266,7 +266,7 @@ Item {
 
     function _createDirs() {
         var proc = initDirComponent.createObject(cache)
-        proc.command = ["mkdir", "-p", cacheDir + "/avatars"]
+        proc.command = ["mkdir", "-p", cacheDir + "/" + Constants.cacheAvatarsSubdirectory]
         proc.running = true
     }
 
@@ -282,7 +282,7 @@ Item {
         if (cacheFileView.path)
             cacheFileView.reload()
         else
-            cacheFileView.path = cacheDir + "/cache.json"
+            cacheFileView.path = cacheDir + "/" + Constants.cacheFileName
     }
 
     function _onCacheLoaded() {
@@ -307,7 +307,7 @@ Item {
         for (var login in avatarMap) {
             var localFile = avatarMap[login].localFile || ""
             if (localFile)
-                paths[login] = "file://" + cacheDir + "/avatars/" + localFile
+                paths[login] = "file://" + cacheDir + "/" + Constants.cacheAvatarsSubdirectory + "/" + localFile
         }
         avatarLocalPaths = paths
 
@@ -360,7 +360,7 @@ Item {
         }
 
         _avatarBusy = true
-        var localPath = cacheDir + "/avatars/" + item.login + ".png"
+        var localPath = cacheDir + "/" + Constants.cacheAvatarsSubdirectory + "/" + item.login + ".png"
 
         var proc = avatarDlComponent.createObject(cache, {
             login: item.login,

@@ -84,7 +84,7 @@ Item {
         var login = String(author.login || "").trim()
         if (!login)
             return ""
-        return Constants.githubWebBaseUrl + "/" + encodeURIComponent(login) + ".png?size=128"
+        return Constants.githubWebBaseUrl + "/" + encodeURIComponent(login) + ".png?size=" + Constants.avatarDefaultSizePx
     }
 
     function requestAuthorsIfNeeded() {

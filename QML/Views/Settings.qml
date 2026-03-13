@@ -150,7 +150,7 @@ PluginSettings {
 
     Item {
         width: parent.width
-        height: 72
+        height: Constants.settingsTokenItemHeightPx
 
         Column {
             anchors.fill: parent
@@ -166,7 +166,7 @@ PluginSettings {
             Rectangle {
                 id: tokenField
                 width: parent.width
-                height: 42
+                height: Constants.settingsTokenFieldHeightPx
                 radius: Theme.cornerRadius
                 color: Theme.surfaceContainerHigh
                 border.width: 1
@@ -211,7 +211,7 @@ PluginSettings {
                     height: Constants.settingsVisibilityButtonSizePx
                     radius: Constants.settingsVisibilityButtonRadiusPx
                     color: visibilityArea.containsMouse
-                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.16)
+                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.settingsButtonHoverOpacity)
                            : "transparent"
 
                     MouseArea {

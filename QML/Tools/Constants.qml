@@ -168,6 +168,17 @@ QtObject {
     /// max-time (seconds) for avatar image downloads via curl.
     readonly property string avatarDownloadMaxTimeSeconds: "30"
 
+    /// Name of the JSON metadata file stored inside the cache directory.
+    readonly property string cacheFileName: "cache.json"
+
+    /// Name of the sub-directory inside the cache directory where avatar image
+    /// files are stored.
+    readonly property string cacheAvatarsSubdirectory: "avatars"
+
+    /// Fallback cache directory path used when XDG_CACHE_HOME cannot be
+    /// resolved at runtime.
+    readonly property string cacheFallbackDirPath: "/tmp/github-inbox-cache"
+
 
     // =========================================================================
     // Settings - Default Values
@@ -612,4 +623,32 @@ QtObject {
 
     /// Fraction of the stats table width allocated to the "Refreshes" column.
     readonly property real settingsStatsRefreshesColumnWidthRatio: 0.21
+
+
+    // =========================================================================
+    // Status Bar Icon
+    // =========================================================================
+
+    /// Opacity applied to the GitHub favicon/SVG icon in the bar pill.
+    readonly property real githubIconBarOpacity: 0.74
+
+    /// Minimum pixel size of the bar-pill icon regardless of configured icon
+    /// size.
+    readonly property int barIconMinSizePx: 12
+
+    /// Number of pixels subtracted from the configured icon size to size the
+    /// bar-pill icon slightly smaller than surrounding text.
+    readonly property int barIconSizeReductionPx: 4
+
+
+    // =========================================================================
+    // Settings Page - Additional Values
+    // =========================================================================
+
+    /// Height of the outer Item container wrapping the token-field column
+    /// (label + input field).
+    readonly property int settingsTokenItemHeightPx: 72
+
+    /// Background-fill opacity of the token-visibility toggle button on hover.
+    readonly property real settingsButtonHoverOpacity: 0.16
 }
