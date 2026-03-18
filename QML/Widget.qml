@@ -57,6 +57,7 @@ PluginComponent {
         return Math.max(Constants.minTitleLines, Math.min(Constants.maxTitleLines, value))
     }
     property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
+    property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, Constants.defaultEnableNotifications)
     property int cacheTtlMinutes: {
         var value = parseInt(pluginData.cacheTtlMinutes || Constants.defaultCacheTtlMinutes)
         if (isNaN(value))
@@ -77,6 +78,7 @@ PluginComponent {
     property real lastUpdated: 0
     property var expandedReposState: ({ [Constants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
+    property var _previousThreadIds: ({})
 
     property url githubIconPrimary: Constants.githubFaviconUrl
     property url githubIconFallback: Qt.resolvedUrl("../Images/github-mark.svg")
@@ -118,6 +120,7 @@ PluginComponent {
         doneThreadState: operations.doneThreadState
 
         onFetchBegin: function(totalCount, unreadCount) {
+            root._saveCurrentThreadIds()
             root.inboxMessages = []
             root.messagesForView = []
             root.pendingViewMessages = []
@@ -147,6 +150,7 @@ PluginComponent {
             if (isLast) {
                 root.lastUpdated = Date.now()
                 cacheCoord.updateMessages(root.inboxMessages)
+                root._detectAndNotifyNewMessages(root.inboxMessages)
                 _tryFinalizeAuthorPrefetch()
             }
         }
@@ -162,6 +166,7 @@ PluginComponent {
             root.errorMessage = ""
             root.lastUpdated = Date.now()
             cacheCoord.updateMessages(root.inboxMessages)
+            root._detectAndNotifyNewMessages(root.inboxMessages)
             _tryFinalizeAuthorPrefetch()
         }
 
@@ -237,6 +242,14 @@ PluginComponent {
         id: avatarPreloader
     }
 
+    Component {
+        id: notifyProcessDef
+
+        Process {
+            onExited: destroy()
+        }
+    }
+
     // =========================================================================
     //  TIMERS
     // =========================================================================
@@ -273,6 +286,83 @@ PluginComponent {
         }
         _fetchInbox()
     }
+
+    // -- Notification helpers -------------------------------------------------
+
+    function _saveCurrentThreadIds() {
+        var ids = {}
+        for (var i = 0; i < inboxMessages.length; i++) {
+            var tid = inboxMessages[i].threadId
+            if (tid)
+                ids[tid] = true
+        }
+        _previousThreadIds = ids
+    }
+
+    function _detectAndNotifyNewMessages(items) {
+        if (!enableNotifications)
+            return
+
+        var prevIds = _previousThreadIds
+        var hasPrev = false
+        for (var k in prevIds) { hasPrev = true; break }
+        if (!hasPrev)
+            return
+
+        var newMessages = []
+        for (var i = 0; i < items.length; i++) {
+            var tid = items[i].threadId
+            if (tid && !prevIds[tid])
+                newMessages.push(items[i])
+        }
+
+        if (newMessages.length === 0)
+            return
+
+        _sendDesktopNotification(newMessages)
+    }
+
+    function _sendDesktopNotification(newMessages) {
+        var body = ""
+        var maxLines = Constants.notificationMaxLines
+
+        if (newMessages.length === 1) {
+            var lines = (newMessages[0].title || "").split("\n")
+            var trimmed = []
+            for (var i = 0; i < Math.min(maxLines, lines.length); i++) {
+                var line = lines[i].trim()
+                if (line)
+                    trimmed.push(line)
+            }
+            body = trimmed.join("\n") || "New inbox message"
+        } else {
+            var count = Math.min(maxLines, newMessages.length)
+            var parts = []
+            for (var j = 0; j < count; j++) {
+                var title = (newMessages[j].title || "").split("\n")[0].trim()
+                parts.push(title || "New message")
+            }
+            body = parts.join("\n")
+            if (newMessages.length > maxLines)
+                body += "\n\u2026 and " + (newMessages.length - maxLines) + " more"
+        }
+
+        var summary = newMessages.length === 1
+            ? "New GitHub Inbox Message"
+            : newMessages.length + " New GitHub Inbox Messages"
+
+        var proc = notifyProcessDef.createObject(root)
+        proc.command = [
+            "notify-send",
+            "-a", Constants.notificationAppName,
+            "-t", String(Constants.notificationExpireMs),
+            summary,
+            body
+        ]
+        proc.running = true
+    }
+
+    // -- Cache ready ----------------------------------------------------------
 
     function _onCacheReady() {
         if (!token) return
@@ -439,6 +529,7 @@ PluginComponent {
             avatarPreloader.reset()
             authorsByThread = ({})
             expandedReposState = ({ [Constants.expandedStateDefaultKey]: true })
+            _previousThreadIds = ({})
             return
         }
         if (cacheCoord.initialized)

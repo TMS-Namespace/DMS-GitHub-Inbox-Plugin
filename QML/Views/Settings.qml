@@ -272,6 +272,13 @@ PluginSettings {
         wrapMode: Text.WordWrap
     }
 
+    ToggleSetting {
+        settingKey: "enableNotifications"
+        label: "Desktop Notifications"
+        description: "Show a system notification when new inbox messages arrive"
+        defaultValue: Constants.defaultEnableNotifications
+    }
+
     Item {
         width: parent.width
         height: Constants.settingsSliderItemHeightPx

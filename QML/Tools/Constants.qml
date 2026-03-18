@@ -651,4 +651,22 @@ QtObject {
 
     /// Background-fill opacity of the token-visibility toggle button on hover.
     readonly property real settingsButtonHoverOpacity: 0.16
+
+
+    // =========================================================================
+    // Desktop Notifications
+    // =========================================================================
+
+    /// Whether desktop notifications for new inbox messages are enabled by
+    /// default (before the user toggles them off in settings).
+    readonly property bool defaultEnableNotifications: true
+
+    /// Application name passed to notify-send via the -a flag.
+    readonly property string notificationAppName: "GitHub Inbox"
+
+    /// Maximum number of message lines shown in a single notification body.
+    readonly property int notificationMaxLines: 3
+
+    /// Notification expiry timeout in milliseconds passed to notify-send -t.
+    readonly property int notificationExpireMs: 10000
 }
