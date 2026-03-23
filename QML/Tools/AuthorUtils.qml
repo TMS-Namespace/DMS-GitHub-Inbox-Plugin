@@ -77,7 +77,20 @@ QtObject {
         if (directUrl)
             return directUrl
 
-        return normalizeApiUrl(apiUrlFromWebUrl(item.webUrl || ""))
+        var fromWeb = normalizeApiUrl(apiUrlFromWebUrl(item.webUrl || ""))
+        if (fromWeb)
+            return fromWeb
+
+        return buildCiApiUrl(item.repository || "", item.subjectType || "")
+    }
+
+    function buildCiApiUrl(repoFullName, subjectType) {
+        if (!repoFullName)
+            return ""
+        var normalizedType = String(subjectType || "").toLowerCase()
+        if (normalizedType !== "checksuite" && normalizedType !== "workflowrun")
+            return ""
+        return Constants.githubApiReposPrefix + repoFullName + "/actions/runs"
     }
 
     function isThreadParentApiUrl(url) {
@@ -137,6 +150,16 @@ QtObject {
 
         if (subjectApiUrl.indexOf("/commits/") >= 0)
             push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
+
+        if (subjectApiUrl.indexOf("/check-suites/") >= 0)
+            push(appendAuthorQuery(subjectApiUrl + "/check-runs", perPageQuery))
+
+        if (subjectApiUrl.indexOf("/actions/runs") >= 0
+                && subjectApiUrl.indexOf("/actions/runs/") < 0)
+            push(appendAuthorQuery(subjectApiUrl, "per_page=5"))
+
+        if (subjectApiUrl.indexOf("/actions/runs/") >= 0)
+            push(appendAuthorQuery(subjectApiUrl + "/jobs", perPageQuery))
 
         return urls
     }

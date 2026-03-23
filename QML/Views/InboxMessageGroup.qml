@@ -21,6 +21,7 @@ Rectangle {
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
+    signal closePopout()
 
     radius: Theme.cornerRadius
     color: Theme.surfaceContainerHigh
@@ -176,6 +177,7 @@ Rectangle {
                     onRequestAuthors: function(threadId, subjectApiUrl, subjectType) {
                         groupCard.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
                     }
+                    onClosePopout: groupCard.closePopout()
                 }
             }
         }

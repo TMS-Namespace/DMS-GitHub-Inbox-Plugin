@@ -160,7 +160,9 @@ Item {
                 size: Constants.popoutHeaderButtonIconSizePx
                 color: panel.anyBusy ? Theme.primary : Theme.surfaceText
 
-                RotationAnimation on rotation {
+                RotationAnimation {
+                    target: refreshIcon
+                    property: "rotation"
                     running: panel.anyBusy
                     from: 0
                     to: 360
@@ -274,6 +276,7 @@ Item {
                     onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
                         panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
                     }
+                    onClosePopout: panel.closePopout()
                 }
             }
         }

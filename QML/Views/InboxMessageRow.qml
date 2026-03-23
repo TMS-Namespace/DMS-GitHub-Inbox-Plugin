@@ -19,6 +19,7 @@ Item {
     signal markUnread(string threadId)
     signal markDone(string threadId)
     signal requestAuthors(string threadId, string subjectApiUrl, string subjectType)
+    signal closePopout()
 
     property string threadId: messageData.threadId || ""
     property bool unread: messageData.unread || false
@@ -47,8 +48,10 @@ Item {
     property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Constants.messageRowAuthorColumnPaddingPx)
 
     function openAuthorProfile(url) {
-        if (url)
+        if (url) {
+            row.closePopout()
             Qt.openUrlExternally(url)
+        }
     }
 
     function authorDisplayName(author) {
@@ -111,8 +114,10 @@ Item {
         hoverEnabled: true
         cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
-            if (webUrl)
+            if (webUrl) {
+                row.closePopout()
                 Qt.openUrlExternally(webUrl)
+            }
         }
     }
 
@@ -315,7 +320,10 @@ Item {
                     hoverEnabled: true
                     cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
                     enabled: webUrl !== ""
-                    onClicked: Qt.openUrlExternally(webUrl)
+                    onClicked: {
+                        row.closePopout()
+                        Qt.openUrlExternally(webUrl)
+                    }
                 }
 
                 DankIcon {
