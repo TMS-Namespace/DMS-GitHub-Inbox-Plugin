@@ -351,15 +351,42 @@ PluginComponent {
             ? "New GitHub Inbox Message"
             : newMessages.length + " New GitHub Inbox Messages"
 
+        var iconPath = _resolveNotificationIcon(newMessages)
+
         var proc = notifyProcessDef.createObject(root)
-        proc.command = [
-            "notify-send",
+        var cmd = ["notify-send",
             "-a", Constants.notificationAppName,
-            "-t", String(Constants.notificationExpireMs),
-            summary,
-            body
-        ]
+            "-t", String(Constants.notificationExpireMs)]
+        if (iconPath)
+            cmd.push("-i", iconPath)
+        cmd.push(summary, body)
+        proc.command = cmd
         proc.running = true
+    }
+
+    function _resolveNotificationIcon(newMessages) {
+        // If all messages are from a single repo and we have a cached avatar, use it
+        var firstRepo = (newMessages[0].repositoryOwnerLogin || "").trim()
+        if (firstRepo) {
+            var singleRepo = true
+            for (var i = 1; i < newMessages.length; i++) {
+                if ((newMessages[i].repositoryOwnerLogin || "").trim() !== firstRepo) {
+                    singleRepo = false
+                    break
+                }
+            }
+            if (singleRepo) {
+                var avatarUrl = (newMessages[0].repositoryOwnerAvatarUrl || "").toString()
+                if (avatarUrl.indexOf("file://") === 0)
+                    return avatarUrl.substring(7)
+            }
+        }
+
+        // Fall back to the bundled GitHub icon
+        var fallback = githubIconFallback.toString()
+        if (fallback.indexOf("file://") === 0)
+            return fallback.substring(7)
+        return ""
     }
 
     // -- Cache ready ----------------------------------------------------------
