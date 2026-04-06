@@ -288,139 +288,140 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: panel.tokenConfigured && panel.errorMessage === ""
-        height: filterRow.implicitHeight
+        height: filterRow.implicitHeight + Constants.popoutFilterBarVerticalPaddingPx
         z: 5
 
-        Row {
+        Item {
             id: filterRow
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.leftMargin: Theme.spacingXS
             anchors.rightMargin: Theme.spacingXS
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.spacingXS
+            anchors.top: parent.top
+            anchors.topMargin: Constants.popoutFilterBarVerticalPaddingPx
+            implicitHeight: Constants.popoutFilterSegmentHeightPx
 
-            property int groupGap: Theme.spacingM
             property int segmentWidth: {
-                var available = width - readLabel.width - participatedLabel.width - groupGap - filterRow.spacing * 4
-                var fit = Math.floor(available / 2)
-                return Math.max(Constants.popoutFilterSegmentMinWidthPx, Math.min(Constants.popoutFilterSegmentMaxWidthPx, fit))
+                var available = (width - readLabel.implicitWidth - participatedLabel.implicitWidth - Theme.spacingXS * 4) / 2
+                return Math.max(Constants.popoutFilterSegmentMinWidthPx, Math.min(Constants.popoutFilterSegmentMaxWidthPx, Math.floor(available)))
             }
 
-            StyledText {
-                id: readLabel
-                width: Constants.popoutFilterReadLabelWidthPx
-                text: "Read"
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceVariantText
+            // -- Read filter (left-aligned) -----------------------------------
+            Row {
+                id: readGroup
+                anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-            }
+                spacing: Theme.spacingXS
 
-            Rectangle {
-                width: filterRow.segmentWidth
-                height: Constants.popoutFilterSegmentHeightPx
-                radius: Theme.cornerRadius
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
-                border.width: 1
-                border.color: Theme.outlineVariant
+                StyledText {
+                    id: readLabel
+                    text: "Read"
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceVariantText
+                    anchors.verticalCenter: parent.verticalCenter
+                }
 
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 0
-                    spacing: 1
+                Rectangle {
+                    width: filterRow.segmentWidth
+                    height: Constants.popoutFilterSegmentHeightPx
+                    radius: Theme.cornerRadius
+                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
 
-                    Repeater {
-                        model: [
-                            { label: "Yes", value: "yes" },
-                            { label: "No", value: "no" },
-                            { label: "Both", value: "both" }
-                        ]
+                    Row {
+                        anchors.fill: parent
+                        anchors.margins: 0
+                        spacing: 1
 
-                        delegate: Rectangle {
-                            required property var modelData
-                            width: (parent.width - 2) / 3
-                            height: parent.height
-                            radius: Theme.cornerRadius
-                            color: groupModel.readFilter === modelData.value
-                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
-                                   : "transparent"
-                            border.width: groupModel.readFilter === modelData.value ? 1 : 0
-                            border.color: Theme.primary
+                        Repeater {
+                            model: [
+                                { label: "Yes", value: "yes" },
+                                { label: "No", value: "no" },
+                                { label: "Both", value: "both" }
+                            ]
 
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: groupModel.readFilter = modelData.value
-                            }
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: (parent.width - 2) / 3
+                                height: parent.height
+                                radius: Theme.cornerRadius
+                                color: groupModel.readFilter === modelData.value
+                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
+                                       : "transparent"
 
-                            StyledText {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: groupModel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                color: groupModel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: groupModel.readFilter = modelData.value
+                                }
+
+                                StyledText {
+                                    anchors.centerIn: parent
+                                    text: modelData.label
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: groupModel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                    color: groupModel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                }
                             }
                         }
                     }
                 }
             }
-            Item {
-                width: filterRow.groupGap
-                height: 1
-            }
 
-            StyledText {
-                id: participatedLabel
-                width: Constants.popoutFilterParticipatedLabelWidthPx
-                text: "Participated"
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceVariantText
+            // -- Participated filter (right-aligned) --------------------------
+            Row {
+                id: participatedGroup
+                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-            }
+                spacing: Theme.spacingXS
 
-            Rectangle {
-                width: filterRow.segmentWidth
-                height: Constants.popoutFilterSegmentHeightPx
-                radius: Theme.cornerRadius
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
-                border.width: 1
-                border.color: Theme.outlineVariant
+                StyledText {
+                    id: participatedLabel
+                    text: "Participated"
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceVariantText
+                    anchors.verticalCenter: parent.verticalCenter
+                }
 
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 0
-                    spacing: 1
+                Rectangle {
+                    width: filterRow.segmentWidth
+                    height: Constants.popoutFilterSegmentHeightPx
+                    radius: Theme.cornerRadius
+                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
 
-                    Repeater {
-                        model: [
-                            { label: "Yes", value: "yes" },
-                            { label: "No", value: "no" },
-                            { label: "Both", value: "both" }
-                        ]
+                    Row {
+                        anchors.fill: parent
+                        anchors.margins: 0
+                        spacing: 1
 
-                        delegate: Rectangle {
-                            required property var modelData
-                            width: (parent.width - 2) / 3
-                            height: parent.height
-                            radius: Theme.cornerRadius
-                            color: groupModel.participationFilter === modelData.value
-                                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
-                                   : "transparent"
-                            border.width: groupModel.participationFilter === modelData.value ? 1 : 0
-                            border.color: Theme.primary
+                        Repeater {
+                            model: [
+                                { label: "Yes", value: "yes" },
+                                { label: "No", value: "no" },
+                                { label: "Both", value: "both" }
+                            ]
 
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: groupModel.participationFilter = modelData.value
-                            }
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: (parent.width - 2) / 3
+                                height: parent.height
+                                radius: Theme.cornerRadius
+                                color: groupModel.participationFilter === modelData.value
+                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
+                                       : "transparent"
 
-                            StyledText {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: groupModel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                color: groupModel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: groupModel.participationFilter = modelData.value
+                                }
+
+                                StyledText {
+                                    anchors.centerIn: parent
+                                    text: modelData.label
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: groupModel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                    color: groupModel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                }
                             }
                         }
                     }

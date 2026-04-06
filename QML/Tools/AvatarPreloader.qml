@@ -21,7 +21,14 @@ Item {
     //  PUBLIC API
     // =========================================================================
 
+    // -- Perf logging helper --------------------------------------------------
+    function _perfLog(label) {
+        if (!Constants.debugPerformanceLogging) return
+        console.warn("[GitHubInbox PERF] AvatarPreloader: " + label)
+    }
+
     function queueFromAuthors(authors) {
+        _perfLog("queueFromAuthors — input=" + (authors ? authors.length : 0) + " existing=" + entries.length)
         if (!authors || authors.length === 0 || entries.length >= limit)
             return
 
@@ -48,6 +55,7 @@ Item {
         if (changed) {
             entryMap = nextMap
             entries = nextEntries
+            _perfLog("queueFromAuthors — done, entries now=" + nextEntries.length)
         }
     }
 

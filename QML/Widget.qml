@@ -69,6 +69,8 @@ PluginComponent {
     //  RUNTIME STATE
     // =========================================================================
 
+    property real _perfStartMs: 0
+
     property var inboxMessages: []
     property var messagesForView: []
     property var pendingViewMessages: []
@@ -110,6 +112,7 @@ PluginComponent {
         onCacheReady: root._onCacheReady()
         onAvatarCachedLocally: function(login, localUrl) {
             avatarPreloader.updateEntrySource(login, localUrl)
+            root._propagateLocalAvatar(login, localUrl)
         }
     }
 
@@ -120,6 +123,7 @@ PluginComponent {
         doneThreadState: operations.doneThreadState
 
         onFetchBegin: function(totalCount, unreadCount) {
+            root._perfLog("onFetchBegin — total=" + totalCount + " unread=" + unreadCount)
             root._saveCurrentThreadIds()
             root.inboxMessages = []
             root.messagesForView = []
@@ -136,6 +140,7 @@ PluginComponent {
         }
 
         onFetchChunk: function(chunk, isLast) {
+            root._perfLog("onFetchChunk — size=" + chunk.length + " isLast=" + isLast)
             if (chunk.length > 0) {
                 cacheCoord.resolveMessageAvatars(chunk)
                 var nextMessages = root.inboxMessages.slice(0)
@@ -156,6 +161,7 @@ PluginComponent {
         }
 
         onFetchComplete: function(items, unreadCount) {
+            root._perfLog("onFetchComplete — items=" + items.length + " unread=" + unreadCount)
             cacheCoord.resolveMessageAvatars(items)
             root.inboxMessages = items
             root.unreadCount = unreadCount
@@ -171,6 +177,7 @@ PluginComponent {
         }
 
         onFetchError: function(errorMessage) {
+            root._perfLog("onFetchError — " + errorMessage)
             root.inboxMessages = []
             root.messagesForView = []
             root.pendingViewMessages = []
@@ -195,10 +202,13 @@ PluginComponent {
         authorsByThreadRef: root.authorsByThread
         workerSendMessage: fetcher.sendWorkerMessage
 
-        onAuthorsMerged: function(mergedAuthors, preloadAuthors) {
-            // Resolve avatar URLs from local cache before storing
-            for (var resolveId in mergedAuthors)
-                cacheCoord.resolveAuthorAvatars(mergedAuthors[resolveId])
+        onAuthorsMerged: function(mergedAuthors, preloadAuthors, changedThreadIds) {
+            // Only resolve avatar URLs for threads that actually changed
+            for (var i = 0; i < changedThreadIds.length; i++) {
+                var cid = changedThreadIds[i]
+                if (mergedAuthors[cid])
+                    cacheCoord.resolveAuthorAvatars(mergedAuthors[cid])
+            }
 
             root.authorsByThread = mergedAuthors
             cacheCoord.bulkUpdateAuthors(mergedAuthors)
@@ -273,10 +283,18 @@ PluginComponent {
     //  ORCHESTRATION LOGIC
     // =========================================================================
 
+    function _perfLog(label) {
+        if (!Constants.debugPerformanceLogging) return
+        var elapsed = (Date.now() - _perfStartMs).toFixed(0)
+        console.warn("[GitHubInbox PERF] +" + elapsed + "ms  " + label)
+    }
+
     function _fetchInbox() {
+        _perfLog("_fetchInbox — called")
         if (!token || operations.isOperating)
             return
         fetcher.fetch()
+        _perfLog("_fetchInbox — fetch() dispatched")
     }
 
     function _refreshNow() {
@@ -288,6 +306,50 @@ PluginComponent {
     }
 
     // -- Notification helpers -------------------------------------------------
+
+    /// When an avatar is downloaded to disk, update all live data that still
+    /// holds remote URLs for that login so the view switches to the local file.
+    function _propagateLocalAvatar(login, localUrl) {
+        if (!login || !localUrl)
+            return
+
+        // 1. Update repositoryOwnerAvatarUrl in inboxMessages
+        var messagesChanged = false
+        for (var mi = 0; mi < inboxMessages.length; mi++) {
+            var msg = inboxMessages[mi]
+            if ((msg.repositoryOwnerLogin || "") === login
+                    && msg.repositoryOwnerAvatarUrl !== localUrl) {
+                msg.repositoryOwnerAvatarUrl = localUrl
+                messagesChanged = true
+            }
+        }
+        if (messagesChanged) {
+            // Force binding re-evaluation by reassigning the array
+            inboxMessages = inboxMessages.slice(0)
+            messagesForView = inboxMessages
+        }
+
+        // 2. Update author avatarUrl in authorsByThread
+        var authorsChanged = false
+        for (var tid in authorsByThread) {
+            var authors = authorsByThread[tid]
+            if (!authors)
+                continue
+            for (var ai = 0; ai < authors.length; ai++) {
+                if ((authors[ai].login || "") === login
+                        && authors[ai].avatarUrl !== localUrl) {
+                    authors[ai].avatarUrl = localUrl
+                    authorsChanged = true
+                }
+            }
+        }
+        if (authorsChanged) {
+            var nextAuthors = {}
+            for (var copyTid in authorsByThread)
+                nextAuthors[copyTid] = authorsByThread[copyTid]
+            authorsByThread = nextAuthors
+        }
+    }
 
     function _saveCurrentThreadIds() {
         var ids = {}
@@ -391,12 +453,17 @@ PluginComponent {
 
     // -- Cache ready ----------------------------------------------------------
 
+    // Temporary state for deferred cache-load phases
+    property var _pendingCacheState: null
+
     function _onCacheReady() {
+        _perfLog("_onCacheReady (Phase 1) — start")
         if (!token) return
 
         var cached = cacheCoord.loadCachedState()
+        _perfLog("_onCacheReady — loadCachedState done, msgs=" + cached.messages.length)
 
-        // Load messages for immediate display
+        // Phase 1: Load messages for immediate bar-pill display
         if (cached.messages.length > 0) {
             cacheCoord.resolveMessageAvatars(cached.messages)
             inboxMessages = cached.messages
@@ -405,7 +472,18 @@ PluginComponent {
             lastUpdated = cached.timestamp
         }
 
-        // Load cached authors
+        // Defer heavier work (author resolution, preloader) to separate frames
+        _pendingCacheState = cached
+        _perfLog("_onCacheReady (Phase 1) — end")
+        Qt.callLater(_onCacheReadyPhase2)
+    }
+
+    function _onCacheReadyPhase2() {
+        _perfLog("_onCacheReadyPhase2 — start")
+        var cached = _pendingCacheState
+        if (!cached) return
+
+        // Phase 2: Load cached authors and resolve their avatars
         var resolvedAuthors = {}
         var cachedAuthors = cached.authorsByThread
         if (cachedAuthors && typeof cachedAuthors === "object") {
@@ -426,24 +504,50 @@ PluginComponent {
                 authorFetch.fetchedAtUpdatedAt[fid] = cachedFetchedAt[fid]
         }
 
-        // Queue preload for all known avatars from cache
-        avatarPreloader.queueFromMessages(cached.messages)
-        var allAuthors = []
+        // Defer preloader + fetch to yet another frame
+        _pendingCacheState = { messages: cached.messages, resolvedAuthors: resolvedAuthors }
+        _perfLog("_onCacheReadyPhase2 — end")
+        Qt.callLater(_onCacheReadyPhase3)
+    }
+
+    function _onCacheReadyPhase3() {
+        _perfLog("_onCacheReadyPhase3 — start")
+        var state = _pendingCacheState
+        _pendingCacheState = null
+        if (!state) return
+
+        // Phase 3: Populate avatar preloader in one batch
+        var messages = state.messages || []
+        var resolvedAuthors = state.resolvedAuthors || {}
+        var allPreloadAuthors = []
+        for (var mi = 0; mi < messages.length; mi++) {
+            var msg = messages[mi]
+            allPreloadAuthors.push({
+                login: msg.repositoryOwnerLogin || "",
+                avatarUrl: msg.repositoryOwnerAvatarUrl || "",
+                htmlUrl: msg.repositoryOwnerLogin
+                    ? (Constants.githubWebBaseUrl + "/" + encodeURIComponent(msg.repositoryOwnerLogin))
+                    : ""
+            })
+        }
         for (var atid in resolvedAuthors) {
             var authorList = resolvedAuthors[atid] || []
             for (var ai = 0; ai < authorList.length; ai++)
-                allAuthors.push(authorList[ai])
+                allPreloadAuthors.push(authorList[ai])
         }
-        if (allAuthors.length > 0)
-            avatarPreloader.queueFromAuthors(allAuthors)
+        _perfLog("_onCacheReadyPhase3 — preload authors count=" + allPreloadAuthors.length)
+        if (allPreloadAuthors.length > 0)
+            avatarPreloader.queueFromAuthors(allPreloadAuthors)
 
-        _fetchInbox()
+        _perfLog("_onCacheReadyPhase3 — end, scheduling _fetchInbox")
+        // Finally, start the network fetch
+        Qt.callLater(_fetchInbox)
     }
 
     function _tryFinalizeAuthorPrefetch() {
         if (!authorFetch.prefetchPending)
             return
-        if (authorFetch.requestInFlight || authorFetch.requestQueue.length > 0)
+        if (authorFetch.requestsInFlight > 0 || authorFetch.requestQueue.length > 0)
             return
         if (fetcher.isLoading)
             return
@@ -541,6 +645,7 @@ PluginComponent {
     }
 
     onTokenChanged: {
+        _perfLog("onTokenChanged — token=" + (token ? "set" : "empty") + " cacheCoord.initialized=" + cacheCoord.initialized)
         if (!token) {
             inboxMessages = []
             messagesForView = []
@@ -580,19 +685,22 @@ PluginComponent {
     }
 
     onGroupItemLimitChanged: {
-        if (token)
+        if (token && cacheCoord.initialized)
             _fetchInbox()
     }
 
     onFetchPageCountChanged: {
-        if (token)
+        if (token && cacheCoord.initialized)
             _fetchInbox()
     }
 
     Component.onCompleted: {
+        _perfStartMs = Date.now()
+        _perfLog("Component.onCompleted — start")
         cacheCoord.handleClearCacheRequest(pluginData, pluginService)
         if (token)
             cacheCoord.initialize()
+        _perfLog("Component.onCompleted — end (cache init requested)")
     }
 
     // =========================================================================

@@ -32,7 +32,14 @@ Item {
     //  PUBLIC API
     // =========================================================================
 
+    // -- Perf logging helper --------------------------------------------------
+    function _perfLog(label) {
+        if (!Constants.debugPerformanceLogging) return
+        console.warn("[GitHubInbox PERF] InboxFetcher: " + label)
+    }
+
     function fetch() {
+        _perfLog("fetch — called")
         if (!token)
             return
 
@@ -45,10 +52,12 @@ Item {
         ApiCallStats.resetSession()
 
         var pages = Math.max(1, fetchPageCount)
-        var baseQuery = "per_page=" + Constants.messagesApiPageSize + "&all=true"
-        var allBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery
+        var baseQuery = "per_page=" + Constants.messagesApiPageSize
+        var allBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
+        var participatingBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
         var command = ["curl"]
 
+        // Fetch "all" pages first
         for (var page = 1; page <= pages; page++) {
             if (command.length > 1)
                 command.push("--next")
@@ -64,7 +73,23 @@ Item {
             )
         }
 
-        ApiCallStats.recordCalls(pages)
+        // Fetch "participating" pages to resolve the participation flag
+        for (var pPage = 1; pPage <= pages; pPage++) {
+            command.push("--next")
+            command.push(
+                "-sS",
+                "--connect-timeout", Constants.curlConnectTimeoutSeconds,
+                "--max-time", Constants.curlMaxTimeSeconds,
+                "-H", "Accept: " + Constants.httpAcceptHeader,
+                "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                "-H", "Authorization: token " + token,
+                "-w", "\n" + fetchSplitToken + "\n",
+                participatingBaseUrl + "&page=" + pPage
+            )
+        }
+
+        ApiCallStats.recordCalls(pages * 2)
+        _perfLog("fetch — spawning curl, pages=" + pages)
         var process = fetchComponentDef.createObject(fetcher)
         process.command = command
         process.running = true
@@ -116,6 +141,7 @@ Item {
 
                 var nextSeq = fetcher.parseRequestSeq + 1
                 fetcher.parseRequestSeq = nextSeq
+                fetcher._perfLog("curl done, sending payload to WorkerScript (len=" + (_chunks.join("\n").length) + ")")
                 parseWorker.sendMessage({
                     seq: nextSeq,
                     payloadText: _chunks.join("\n") + "\n",
@@ -141,6 +167,7 @@ Item {
         source: Qt.resolvedUrl("../../JS/InboxParserWorker.js")
 
         onMessage: function(message) {
+            fetcher._perfLog("WorkerScript message: action=" + (message.action || "inbox") + " phase=" + (message.phase || "n/a"))
             // Author parse results are forwarded to the parent (AuthorFetcher
             // will connect to the authorResultReceived signal).
             if (message.action === "authorsResult") {

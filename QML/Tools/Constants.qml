@@ -31,6 +31,10 @@ QtObject {
     /// Root URL of the GitHub web interface.
     readonly property string githubWebBaseUrl: "https://github.com"
 
+    /// Base URL for GitHub avatar images. Works for both regular users and
+    /// [bot] accounts (unlike github.com/LOGIN.png which 404s for bots).
+    readonly property string githubAvatarsBaseUrl: "https://avatars.githubusercontent.com"
+
     /// Value sent as the "X-GitHub-Api-Version" HTTP request header.
     readonly property string githubApiVersionHeader: "2022-11-28"
 
@@ -120,6 +124,9 @@ QtObject {
     /// invocation.  Limits the size of a single outbound network batch.
     readonly property int maxAuthorUrlsPerThreadFetch: 16
 
+    /// Maximum number of author-fetch curl requests in flight at the same time.
+    readonly property int maxConcurrentAuthorFetches: 3
+
     /// Number of inbox message items sent in each worker-script chunk message
     /// so that the main thread processes results incrementally.
     readonly property int messagesParseChunkSize: 80
@@ -136,6 +143,14 @@ QtObject {
     /// Rendered resolution (width and height) used for preloaded avatar Image
     /// items.  Kept small to reduce memory and network bandwidth.
     readonly property int avatarPreloadSourceSizePx: 64
+
+    /// Maximum number of times a RoundedAvatar retries loading after an error
+    /// (e.g. transient network failure after system wakeup).
+    readonly property int avatarImageMaxRetries: 3
+
+    /// Base delay (ms) before the first retry; doubled for each subsequent
+    /// attempt (exponential back-off).
+    readonly property int avatarImageRetryBaseDelayMs: 1500
 
 
     // =========================================================================
@@ -399,6 +414,9 @@ QtObject {
 
     /// Fill opacity of the tint shown on the currently active filter segment.
     readonly property real popoutFilterActiveTintOpacity: 0.22
+
+    /// Vertical padding (px) above the filter row inside the bar.
+    readonly property int popoutFilterBarVerticalPaddingPx: 6
 
 
     // =========================================================================
@@ -669,4 +687,11 @@ QtObject {
 
     /// Notification expiry timeout in milliseconds passed to notify-send -t.
     readonly property int notificationExpireMs: 10000
+
+    // =========================================================================
+    // Performance Debugging
+    // =========================================================================
+
+    /// Set to true to emit timing breadcrumbs to journalctl during startup.
+    readonly property bool debugPerformanceLogging: false
 }

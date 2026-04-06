@@ -2,12 +2,12 @@
 
 // Local mirrors of QML/Constants.qml values.
 // WorkerScript files cannot access QML singletons; constants are inlined here.
-var _FETCH_PAYLOAD_SPLIT_TOKEN     = "__GH_PARTICIPATING_SPLIT__"
+var _FETCH_PAYLOAD_SPLIT_TOKEN = "__GH_PARTICIPATING_SPLIT__"
 var _MESSAGES_PARSE_CHUNK_SIZE = 80
 var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
 var _AVATAR_DEFAULT_SIZE_PX = 128
 
-WorkerScript.onMessage = function(message) {
+WorkerScript.onMessage = function (message) {
     // ---- Author JSON parsing (offloaded from Widget.qml main thread) -------
     if (message.action === "parseAuthors") {
         var authors = []
@@ -156,7 +156,7 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
         mergedItems.push(mergedItem)
     }
 
-    mergedItems.sort(function(a, b) {
+    mergedItems.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
         var tA = Date.parse(a.updatedAt) || 0
@@ -320,7 +320,7 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     if (!isLikelyGitHubLogin(normalizedLogin)) return false
     var normalizedType = String(userLike.type || "").trim().toLowerCase()
     if (normalizedType === "user" || normalizedType === "bot" ||
-            normalizedType === "organization" || normalizedType === "mannequin")
+        normalizedType === "organization" || normalizedType === "mannequin")
         return true
     var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
     if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0) return true

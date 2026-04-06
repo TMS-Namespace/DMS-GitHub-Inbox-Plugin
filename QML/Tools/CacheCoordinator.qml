@@ -36,7 +36,14 @@ Item {
     //  PUBLIC API
     // =========================================================================
 
+    // -- Perf logging helper --------------------------------------------------
+    function _perfLog(label) {
+        if (!Constants.debugPerformanceLogging) return
+        console.warn("[GitHubInbox PERF] CacheCoord: " + label)
+    }
+
     function initialize() {
+        _perfLog("initialize")
         diskCache.initialize()
     }
 
@@ -48,6 +55,7 @@ Item {
 
     /// Returns { messages, authorsByThread, authorFetchedAt, timestamp }
     function loadCachedState() {
+        _perfLog("loadCachedState")
         return {
             messages: diskCache.cachedMessages || [],
             authorsByThread: diskCache.cachedAuthorsByThread || ({}),
@@ -59,33 +67,75 @@ Item {
     // -- Avatar resolution ----------------------------------------------------
 
     function resolveMessageAvatars(items) {
+        _perfLog("resolveMessageAvatars — count=" + (items ? items.length : 0))
         if (!diskCache.initialized) return
+        var downloads = []
         for (var i = 0; i < items.length; i++) {
             var item = items[i]
             var login = (item.repositoryOwnerLogin || "").trim()
-            if (login && item.repositoryOwnerAvatarUrl) {
-                var resolved = diskCache.resolveAvatarUrl(item.repositoryOwnerAvatarUrl, login)
-                if (resolved !== item.repositoryOwnerAvatarUrl)
-                    item.repositoryOwnerAvatarUrl = resolved
-                else
-                    diskCache.queueAvatarDownload(login, item.repositoryOwnerAvatarUrl)
-            }
+            if (!login || !item.repositoryOwnerAvatarUrl)
+                continue
+
+            var currentUrl = item.repositoryOwnerAvatarUrl
+            // Fix stale file:// URLs whose files have been removed from disk
+            if (_isStaleLocalUrl(currentUrl, login))
+                currentUrl = _remoteAvatarUrl(login)
+
+            var resolved = diskCache.resolveAvatarUrl(currentUrl, login)
+            if (resolved !== currentUrl)
+                item.repositoryOwnerAvatarUrl = resolved
+            else if (!_isLocalUrl(resolved)) {
+                item.repositoryOwnerAvatarUrl = resolved
+                downloads.push({ login: login, remoteUrl: resolved })
+            } else
+                item.repositoryOwnerAvatarUrl = resolved
         }
+        if (downloads.length > 0)
+            diskCache.batchQueueAvatarDownloads(downloads)
     }
 
     function resolveAuthorAvatars(authors) {
+        _perfLog("resolveAuthorAvatars — count=" + (authors ? authors.length : 0))
         if (!diskCache.initialized) return
+        var downloads = []
         for (var i = 0; i < authors.length; i++) {
             var author = authors[i]
             var login = (author.login || "").trim()
-            if (login && author.avatarUrl) {
-                var resolved = diskCache.resolveAvatarUrl(author.avatarUrl, login)
-                if (resolved !== author.avatarUrl)
-                    author.avatarUrl = resolved
-                else
-                    diskCache.queueAvatarDownload(login, author.avatarUrl)
-            }
+            if (!login || !author.avatarUrl)
+                continue
+
+            var currentUrl = author.avatarUrl
+            // Fix stale file:// URLs whose files have been removed from disk
+            if (_isStaleLocalUrl(currentUrl, login))
+                currentUrl = _remoteAvatarUrl(login)
+
+            var resolved = diskCache.resolveAvatarUrl(currentUrl, login)
+            if (resolved !== currentUrl)
+                author.avatarUrl = resolved
+            else if (!_isLocalUrl(resolved)) {
+                author.avatarUrl = resolved
+                downloads.push({ login: login, remoteUrl: resolved })
+            } else
+                author.avatarUrl = resolved
         }
+        if (downloads.length > 0)
+            diskCache.batchQueueAvatarDownloads(downloads)
+    }
+
+    /// Returns true if url is a file:// URL
+    function _isLocalUrl(url) {
+        return url && String(url).indexOf("file://") === 0
+    }
+
+    /// Returns true if url is a file:// URL but the login is NOT in avatarLocalPaths
+    function _isStaleLocalUrl(url, login) {
+        return _isLocalUrl(url) && !diskCache.hasLocalAvatar(login)
+    }
+
+    /// Construct a fresh remote avatar URL from a login
+    function _remoteAvatarUrl(login) {
+        return Constants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
+               + "?size=" + Constants.avatarDefaultSizePx
     }
 
     // -- Persistence ----------------------------------------------------------
