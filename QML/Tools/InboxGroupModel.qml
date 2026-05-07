@@ -5,6 +5,7 @@
 // PopoutPanel now binds to this model's outputs for a clean view/logic split.
 
 import QtQuick
+import ".."
 
 QtObject {
     id: groupModel
@@ -12,7 +13,7 @@ QtObject {
     // -- Inputs ---------------------------------------------------------------
     property var messages: []
     property int groupItemLimit: 25
-    property var expandedReposState: ({ [Constants.expandedStateDefaultKey]: true })
+    property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
 
     // -- Filter state ---------------------------------------------------------
     property string readFilter: "both"                // yes | no | both
@@ -100,13 +101,13 @@ QtObject {
         var source = state || {}
         for (var key in source)
             next[key] = source[key]
-        if (next[Constants.expandedStateDefaultKey] === undefined)
-            next[Constants.expandedStateDefaultKey] = true
+        if (next[GitHubConstants.expandedStateDefaultKey] === undefined)
+            next[GitHubConstants.expandedStateDefaultKey] = true
         return next
     }
 
     function defaultExpandedGroups() {
-        return expandedRepos[Constants.expandedStateDefaultKey] !== false
+        return expandedRepos[GitHubConstants.expandedStateDefaultKey] !== false
     }
 
     function isRepoExpanded(repoName) {
@@ -117,7 +118,7 @@ QtObject {
 
     function toggleRepo(repoName) {
         var nextState = normalizeExpandedState(expandedRepos)
-        var defaultState = nextState[Constants.expandedStateDefaultKey] !== false
+        var defaultState = nextState[GitHubConstants.expandedStateDefaultKey] !== false
         var nextValue = !isRepoExpanded(repoName)
 
         if (nextValue === defaultState)
@@ -130,13 +131,13 @@ QtObject {
     }
 
     function expandAllGroups() {
-        var nextState = { [Constants.expandedStateDefaultKey]: true }
+        var nextState = { [GitHubConstants.expandedStateDefaultKey]: true }
         expandedRepos = nextState
         _persistExpandedState(nextState)
     }
 
     function collapseAllGroups() {
-        var nextState = { [Constants.expandedStateDefaultKey]: false }
+        var nextState = { [GitHubConstants.expandedStateDefaultKey]: false }
         expandedRepos = nextState
         _persistExpandedState(nextState)
     }

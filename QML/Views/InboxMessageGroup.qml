@@ -40,7 +40,7 @@ Rectangle {
         Item {
             id: repoHeader
             width: parent.width
-            height: Constants.popoutRepoHeaderHeightPx
+            height: GitHubConstants.popoutRepoHeaderHeightPx
 
             MouseArea {
                 id: repoHeaderArea
@@ -58,15 +58,15 @@ Rectangle {
                 spacing: Theme.spacingXS
 
                 Item {
-                    width: Constants.popoutRepoAvatarSizePx
-                    height: Constants.popoutRepoAvatarSizePx
+                    width: GitHubConstants.popoutRepoAvatarSizePx
+                    height: GitHubConstants.popoutRepoAvatarSizePx
                     anchors.verticalCenter: parent.verticalCenter
 
                     RoundedAvatar {
                         anchors.fill: parent
                         source: groupCard.groupData.repoAvatarUrl || ""
                         fallbackIcon: "folder"
-                        fallbackIconSize: Constants.popoutRepoAvatarFallbackIconSizePx
+                        fallbackIconSize: GitHubConstants.popoutRepoAvatarFallbackIconSizePx
                     }
                 }
 
@@ -88,9 +88,9 @@ Rectangle {
                 spacing: Theme.spacingXS
 
                 Rectangle {
-                    width: Constants.popoutRepoDoneButtonSizePx
-                    height: Constants.popoutRepoDoneButtonSizePx
-                    radius: Constants.popoutRepoDoneButtonRadiusPx
+                    width: GitHubConstants.popoutRepoDoneButtonSizePx
+                    height: GitHubConstants.popoutRepoDoneButtonSizePx
+                    radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
                     visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
                              && (repoHeaderArea.containsMouse || repoDoneArea.containsMouse)
                     color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
@@ -108,19 +108,19 @@ Rectangle {
                     DankIcon {
                         anchors.centerIn: parent
                         name: "done"
-                        size: Constants.popoutRepoDoneIconSizePx
+                        size: GitHubConstants.popoutRepoDoneIconSizePx
                         color: repoDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                     }
                 }
 
                 Rectangle {
                     visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
-                    height: Constants.popoutRepoCountBadgeHeightPx
-                    radius: Constants.popoutRepoCountBadgeRadiusPx
+                    height: GitHubConstants.popoutRepoCountBadgeHeightPx
+                    radius: GitHubConstants.popoutRepoCountBadgeRadiusPx
                     width: groupCountText.implicitWidth + Theme.spacingS
                     color: (groupCard.groupData.unreadCount || 0) > 0
-                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutRepoCountBadgeUnreadOpacity)
-                           : Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, Constants.popoutRepoCountBadgeReadOpacity)
+                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutRepoCountBadgeUnreadOpacity)
+                           : Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, GitHubConstants.popoutRepoCountBadgeReadOpacity)
 
                     StyledText {
                         id: groupCountText
@@ -132,7 +132,7 @@ Rectangle {
                                    ? (unread + "/" + items.length)
                                    : String(items.length)
                         }
-                        font.pixelSize: Constants.popoutRepoCountFontSizePx
+                        font.pixelSize: GitHubConstants.popoutRepoCountFontSizePx
                         font.weight: Font.Medium
                         color: (groupCard.groupData.unreadCount || 0) > 0
                                ? Theme.primary
@@ -142,12 +142,12 @@ Rectangle {
 
                 DankIcon {
                     name: "expand_more"
-                    size: Constants.popoutRepoExpandIconSizePx
+                    size: GitHubConstants.popoutRepoExpandIconSizePx
                     color: Theme.surfaceVariantText
                     rotation: groupCard.expanded ? 0 : -90
 
                     Behavior on rotation {
-                        NumberAnimation { duration: Constants.popoutRepoExpandRotationDurationMs }
+                        NumberAnimation { duration: GitHubConstants.popoutRepoExpandRotationDurationMs }
                     }
                 }
             }

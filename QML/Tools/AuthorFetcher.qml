@@ -5,6 +5,7 @@
 
 import QtQuick
 import Quickshell.Io
+import ".."
 
 Item {
     id: authorFetcher
@@ -13,7 +14,7 @@ Item {
     // -- Configuration --------------------------------------------------------
     property string token: ""
     property bool loadAuthorInfo: true
-    property string authorSplitToken: Constants.authorPayloadSplitToken
+    property string authorSplitToken: GitHubConstants.authorPayloadSplitToken
 
     // -- External dependency: fetcher provides sendWorkerMessage()  -----------
     property var workerSendMessage: null   // bind to inboxFetcher.sendWorkerMessage
@@ -24,11 +25,15 @@ Item {
     property var fetchedUrlsByThread: ({})
     property var fetchedAtUpdatedAt: ({})
     property bool prefetchPending: false
+    property int requestGeneration: 0
 
     // Deferred merge batching
     property var _pendingMerges: ({})
     property bool _mergeFlushQueued: false
     property var _pendingAvatarPreloadAuthors: []
+    property var _prefetchQueue: []
+    property var _prefetchQueuedThreadIds: ({})
+    property int _prefetchAcceptedCount: 0
 
     // -- Signals --------------------------------------------------------------
 
@@ -51,20 +56,28 @@ Item {
 
     // -- Perf logging helper --------------------------------------------------
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
+        if (!GitHubConstants.debugPerformanceLogging) return
         console.warn("[GitHubInbox PERF] AuthorFetcher: " + label)
     }
 
-    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt) {
+    Timer {
+        id: prefetchTimer
+        interval: GitHubConstants.authorPrefetchBatchIntervalMs
+        repeat: true
+        onTriggered: authorFetcher._processPrefetchBatch()
+    }
+
+    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt, automaticPrefetch) {
         if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl)
             return
 
         enqueueAuthorUrls(threadId,
-            AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, subjectType || ""),
-            updatedAt || "")
+            AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, subjectType || "", !automaticPrefetch),
+            updatedAt || "",
+            !!automaticPrefetch)
     }
 
-    function enqueueAuthorUrls(threadId, urls, updatedAt) {
+    function enqueueAuthorUrls(threadId, urls, updatedAt, automaticPrefetch) {
         if (!token || !threadId || !urls || urls.length === 0)
             return
 
@@ -100,25 +113,45 @@ Item {
         if (filtered.length === 0)
             return
 
-        if (filtered.length > Constants.maxAuthorUrlsPerThreadFetch)
-            filtered = filtered.slice(0, Constants.maxAuthorUrlsPerThreadFetch)
+        if (filtered.length > GitHubConstants.maxAuthorUrlsPerThreadFetch)
+            filtered = filtered.slice(0, GitHubConstants.maxAuthorUrlsPerThreadFetch)
 
-        nextQueue.push({
+        var request = {
             threadId: threadId,
             urls: filtered,
-            updatedAt: updatedAt || ""
-        })
+            updatedAt: updatedAt || "",
+            automaticPrefetch: !!automaticPrefetch
+        }
+
+        if (automaticPrefetch && nextQueue.length >= GitHubConstants.maxAuthorRequestQueueLength)
+            return
+
+        if (automaticPrefetch)
+            nextQueue.push(request)
+        else
+            nextQueue.unshift(request)
+
         requestQueue = nextQueue
         processQueue()
     }
 
     function prefetchForMessages(items) {
         _perfLog("prefetchForMessages — items=" + (items ? items.length : 0))
+        if (!GitHubConstants.automaticAuthorPrefetchEnabled)
+            return
+
         if (!loadAuthorInfo || !token || !items || items.length === 0)
             return
 
+        var nextQueue = _prefetchQueue.slice(0)
+        var nextQueuedIds = _cloneMap(_prefetchQueuedThreadIds)
+        var accepted = _prefetchAcceptedCount
         var enqueued = 0
+
         for (var index = 0; index < items.length; index++) {
+            if (accepted >= GitHubConstants.maxAuthorPrefetchMessagesPerRefresh)
+                break
+
             var item = items[index]
             if (!item || !item.threadId)
                 continue
@@ -127,30 +160,42 @@ Item {
             if (!subjectApiUrl)
                 continue
 
-            var lastFetchedUpdatedAt = fetchedAtUpdatedAt[item.threadId] || ""
-            if (lastFetchedUpdatedAt === item.updatedAt)
+            if (nextQueuedIds[item.threadId])
                 continue
 
-            // Message updated since last fetch — clear URL-level state
-            if (lastFetchedUpdatedAt !== "" && fetchedUrlsByThread.hasOwnProperty(item.threadId)) {
-                var nextFetchedState = _cloneFetchedUrlsByThread()
-                delete nextFetchedState[item.threadId]
-                fetchedUrlsByThread = nextFetchedState
-            }
-
-            enqueueAuthorFetch(item.threadId, subjectApiUrl, item.subjectType || "", item.updatedAt || "")
+            nextQueuedIds[item.threadId] = true
+            nextQueue.push({
+                threadId: item.threadId,
+                subjectApiUrl: subjectApiUrl,
+                subjectType: item.subjectType || "",
+                updatedAt: item.updatedAt || ""
+            })
+            accepted++
             enqueued++
+        }
+
+        if (enqueued > 0) {
+            _prefetchQueue = nextQueue
+            _prefetchQueuedThreadIds = nextQueuedIds
+            _prefetchAcceptedCount = accepted
+            if (!prefetchTimer.running)
+                prefetchTimer.restart()
         }
         _perfLog("prefetchForMessages — enqueued=" + enqueued)
     }
 
     function resetState() {
+        requestGeneration = requestGeneration + 1
+        prefetchTimer.stop()
         requestQueue = []
         requestsInFlight = 0
         prefetchPending = false
         _pendingMerges = ({})
         _mergeFlushQueued = false
         _pendingAvatarPreloadAuthors = []
+        _prefetchQueue = []
+        _prefetchQueuedThreadIds = ({})
+        _prefetchAcceptedCount = 0
     }
 
     function clearAllState() {
@@ -174,6 +219,10 @@ Item {
         return false
     }
 
+    function hasPendingPrefetchWork() {
+        return _prefetchQueue.length > 0 || prefetchTimer.running
+    }
+
     /// Returns the current merged authorsByThread including not-yet-flushed pending merges.
     function cloneAuthorsByThread(authorsByThread) {
         var copy = {}
@@ -189,6 +238,9 @@ Item {
     // =========================================================================
 
     function handleAuthorResult(message) {
+        if (message.generation !== requestGeneration)
+            return
+
         var threadId = message.threadId || ""
         var updatedAt = message.updatedAt || ""
         var fetchedAuthors = message.authors || []
@@ -246,7 +298,7 @@ Item {
         if (!token || !loadAuthorInfo)
             return
 
-        while (requestsInFlight < Constants.maxConcurrentAuthorFetches && requestQueue.length > 0) {
+        while (requestsInFlight < GitHubConstants.maxConcurrentAuthorFetches && requestQueue.length > 0) {
             _perfLog("processQueue — queueLen=" + requestQueue.length + " inFlight=" + requestsInFlight)
 
             var nextQueue = requestQueue.slice(0)
@@ -259,9 +311,11 @@ Item {
 
             requestsInFlight++
             var process = authorFetchComponentDef.createObject(authorFetcher, {
+                generation: requestGeneration,
                 threadId: request.threadId,
                 requestedUrls: urls,
-                updatedAt: request.updatedAt || ""
+                updatedAt: request.updatedAt || "",
+                automaticPrefetch: !!request.automaticPrefetch
             })
 
             var command = ["curl"]
@@ -273,10 +327,10 @@ Item {
                     command.push("--next")
                 command.push(
                     "-sS",
-                    "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-                    "--max-time", Constants.curlMaxTimeSeconds,
-                    "-H", "Accept: " + Constants.httpAcceptHeader,
-                    "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                    "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+                    "--max-time", GitHubConstants.curlMaxTimeSeconds,
+                    "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+                    "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
                     "-H", "Authorization: token " + token,
                     "-w", "\n" + authorSplitToken + "\n",
                     url
@@ -286,6 +340,57 @@ Item {
             ApiCallStats.recordCalls(urls.length)
             process.command = command
             process.running = true
+        }
+    }
+
+    function _processPrefetchBatch() {
+        if (!loadAuthorInfo || !token) {
+            prefetchTimer.stop()
+            _prefetchQueue = []
+            _prefetchQueuedThreadIds = ({})
+            prefetchMaybeComplete()
+            return
+        }
+
+        if (_prefetchQueue.length === 0) {
+            prefetchTimer.stop()
+            prefetchMaybeComplete()
+            return
+        }
+
+        var batchSize = Math.max(1, GitHubConstants.authorPrefetchBatchSize)
+        var remaining = _prefetchQueue.slice(0)
+        var nextQueuedIds = _cloneMap(_prefetchQueuedThreadIds)
+        var processed = 0
+
+        while (processed < batchSize && remaining.length > 0) {
+            var item = remaining.shift()
+            processed++
+
+            if (item.threadId)
+                delete nextQueuedIds[item.threadId]
+
+            var lastFetchedUpdatedAt = fetchedAtUpdatedAt[item.threadId] || ""
+            if (lastFetchedUpdatedAt === item.updatedAt)
+                continue
+
+            // Message updated since last fetch: clear URL-level state once,
+            // then let the normal URL filter avoid duplicate subrequests.
+            if (lastFetchedUpdatedAt !== "" && fetchedUrlsByThread.hasOwnProperty(item.threadId)) {
+                var nextFetchedState = _cloneFetchedUrlsByThread()
+                delete nextFetchedState[item.threadId]
+                fetchedUrlsByThread = nextFetchedState
+            }
+
+            enqueueAuthorFetch(item.threadId, item.subjectApiUrl, item.subjectType || "", item.updatedAt || "", true)
+        }
+
+        _prefetchQueue = remaining
+        _prefetchQueuedThreadIds = nextQueuedIds
+
+        if (_prefetchQueue.length === 0) {
+            prefetchTimer.stop()
+            prefetchMaybeComplete()
         }
     }
 
@@ -373,6 +478,13 @@ Item {
         return copy
     }
 
+    function _cloneMap(source) {
+        var copy = {}
+        for (var key in source)
+            copy[key] = source[key]
+        return copy
+    }
+
     // =========================================================================
     //  PROCESS COMPONENT
     // =========================================================================
@@ -384,6 +496,8 @@ Item {
             property string threadId: ""
             property var requestedUrls: []
             property string updatedAt: ""
+            property int generation: 0
+            property bool automaticPrefetch: false
             property string _buffer: ""
 
             stdout: SplitParser {
@@ -398,6 +512,11 @@ Item {
             }
 
             onExited: exitCode => {
+                if (generation !== authorFetcher.requestGeneration) {
+                    destroy()
+                    return
+                }
+
                 if (!authorFetcher.loadAuthorInfo) {
                     authorFetcher.requestsInFlight = Math.max(0, authorFetcher.requestsInFlight - 1)
                     authorFetcher.prefetchMaybeComplete()
@@ -419,10 +538,11 @@ Item {
                 if (authorFetcher.workerSendMessage) {
                     authorFetcher.workerSendMessage({
                         action: "parseAuthors",
+                        generation: generation,
                         threadId: threadId,
                         updatedAt: updatedAt || "",
                         requestedUrls: requestedUrls || [],
-                        shouldExpand: authorFetcher.shouldExpandFromRequestedUrls(requestedUrls || []),
+                        shouldExpand: !automaticPrefetch && authorFetcher.shouldExpandFromRequestedUrls(requestedUrls || []),
                         buffer: _buffer,
                         splitToken: authorFetcher.authorSplitToken
                     })

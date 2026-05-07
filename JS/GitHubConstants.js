@@ -9,7 +9,7 @@
 // GitHubHelpers.js references these values as local constants defined at the
 // top of that file (pragma-library JS modules cannot use importScripts).
 
-var GHC = (function() {
+var GHC = (function () {
     "use strict";
 
     return {
@@ -40,7 +40,7 @@ var GHC = (function() {
         // -- API Request Sizing ----------------------------------------------
 
         /// Number of inbox message items sent in each worker-script chunk message.
-        messagesParseChunkSize: 80,
+        messagesParseChunkSize: 40,
 
         /// Pixel size appended to GitHub avatar URLs to control the fetched
         /// image resolution (e.g. ".png?size=128").

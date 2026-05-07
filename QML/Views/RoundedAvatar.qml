@@ -22,7 +22,7 @@ Item {
 
     Timer {
         id: retryTimer
-        interval: Constants.avatarImageRetryBaseDelayMs * Math.pow(2, Math.max(0, root._retryCount - 1))
+        interval: GitHubConstants.avatarImageRetryBaseDelayMs * Math.pow(2, Math.max(0, root._retryCount - 1))
         onTriggered: {
             // Flip source to "" then back to force QML to re-load
             var url = root.source
@@ -51,7 +51,8 @@ Item {
             onStatusChanged: {
                 if (status === Image.Error
                         && root.source
-                        && root._retryCount < Constants.avatarImageMaxRetries) {
+                        && String(root.source).indexOf("file://") !== 0
+                        && root._retryCount < GitHubConstants.avatarImageMaxRetries) {
                     root._retryCount++
                     retryTimer.restart()
                 }

@@ -22,7 +22,7 @@ Item {
     property real headerOffset: 0
     property int titleLines: 2
     property int groupItemLimit: 25
-    property var expandedReposState: ({ [Constants.expandedStateDefaultKey]: true })
+    property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
     property bool showAuthorInfo: true
 
@@ -74,23 +74,23 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: Theme.spacingXS
         y: -panel.headerOffset + Theme.spacingS
-        spacing: Constants.popoutHeaderButtonSpacingPx
+        spacing: GitHubConstants.popoutHeaderButtonSpacingPx
         visible: panel.anyBusy || panel._headerHovered
         z: 101
         opacity: visible ? 1 : 0
 
         Behavior on opacity {
-            NumberAnimation { duration: Constants.popoutHeaderFadeDurationMs }
+            NumberAnimation { duration: GitHubConstants.popoutHeaderFadeDurationMs }
         }
 
         Rectangle {
             visible: panel._headerHovered
-            width: Constants.popoutHeaderButtonSizePx
-            height: Constants.popoutHeaderButtonSizePx
-            radius: Constants.popoutHeaderButtonRadiusPx
+            width: GitHubConstants.popoutHeaderButtonSizePx
+            height: GitHubConstants.popoutHeaderButtonSizePx
+            radius: GitHubConstants.popoutHeaderButtonRadiusPx
             color: expandAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: expandAllArea
@@ -104,19 +104,19 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "unfold_more"
-                size: Constants.popoutHeaderButtonIconSizePx
+                size: GitHubConstants.popoutHeaderButtonIconSizePx
                 color: Theme.surfaceText
             }
         }
 
         Rectangle {
             visible: panel._headerHovered
-            width: Constants.popoutHeaderButtonSizePx
-            height: Constants.popoutHeaderButtonSizePx
-            radius: Constants.popoutHeaderButtonRadiusPx
+            width: GitHubConstants.popoutHeaderButtonSizePx
+            height: GitHubConstants.popoutHeaderButtonSizePx
+            radius: GitHubConstants.popoutHeaderButtonRadiusPx
             color: collapseAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: collapseAllArea
@@ -130,19 +130,19 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "unfold_less"
-                size: Constants.popoutHeaderButtonIconSizePx
+                size: GitHubConstants.popoutHeaderButtonIconSizePx
                 color: Theme.surfaceText
             }
         }
 
         // -- Refresh ---------------------------------------------------
         Rectangle {
-            width: Constants.popoutHeaderButtonSizePx
-            height: Constants.popoutHeaderButtonSizePx
-            radius: Constants.popoutHeaderButtonRadiusPx
+            width: GitHubConstants.popoutHeaderButtonSizePx
+            height: GitHubConstants.popoutHeaderButtonSizePx
+            radius: GitHubConstants.popoutHeaderButtonRadiusPx
             color: refreshAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: refreshAllArea
@@ -157,7 +157,7 @@ Item {
                 id: refreshIcon
                 anchors.centerIn: parent
                 name: "refresh"
-                size: Constants.popoutHeaderButtonIconSizePx
+                size: GitHubConstants.popoutHeaderButtonIconSizePx
                 color: panel.anyBusy ? Theme.primary : Theme.surfaceText
 
                 RotationAnimation {
@@ -166,7 +166,7 @@ Item {
                     running: panel.anyBusy
                     from: 0
                     to: 360
-                    duration: Constants.popoutRefreshIconSpinDurationMs
+                    duration: GitHubConstants.popoutRefreshIconSpinDurationMs
                     loops: Animation.Infinite
                 }
 
@@ -182,13 +182,13 @@ Item {
 
         // -- Mark all as read -----------------------------------------
         Rectangle {
-            width: Constants.popoutHeaderButtonSizePx
-            height: Constants.popoutHeaderButtonSizePx
-            radius: Constants.popoutHeaderButtonRadiusPx
+            width: GitHubConstants.popoutHeaderButtonSizePx
+            height: GitHubConstants.popoutHeaderButtonSizePx
+            radius: GitHubConstants.popoutHeaderButtonRadiusPx
             visible: panel._headerHovered && panel.tokenConfigured && panel.unreadCount > 0
             color: markAllArea.containsMouse
-                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutHeaderButtonHoverTintOpacity)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
+                   ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: markAllArea
@@ -202,7 +202,7 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "done_all"
-                size: Constants.popoutHeaderButtonIconSizePx
+                size: GitHubConstants.popoutHeaderButtonIconSizePx
                 color: Theme.surfaceText
             }
         }
@@ -210,12 +210,12 @@ Item {
         // -- Close ----------------------------------------------------
         Rectangle {
             visible: panel._headerHovered
-            width: Constants.popoutHeaderButtonSizePx
-            height: Constants.popoutHeaderButtonSizePx
-            radius: Constants.popoutHeaderButtonRadiusPx
+            width: GitHubConstants.popoutHeaderButtonSizePx
+            height: GitHubConstants.popoutHeaderButtonSizePx
+            radius: GitHubConstants.popoutHeaderButtonRadiusPx
             color: closeArea.containsMouse
-                   ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, Constants.popoutHeaderButtonHoverTintOpacity)
-                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutHeaderButtonBackgroundOpacity)
+                   ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
+                   : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
 
             MouseArea {
                 id: closeArea
@@ -228,7 +228,7 @@ Item {
             DankIcon {
                 anchors.centerIn: parent
                 name: "close"
-                size: Constants.popoutHeaderButtonIconSizePx
+                size: GitHubConstants.popoutHeaderButtonIconSizePx
                 color: closeArea.containsMouse ? Theme.error : Theme.surfaceText
             }
         }
@@ -288,7 +288,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: panel.tokenConfigured && panel.errorMessage === ""
-        height: filterRow.implicitHeight + Constants.popoutFilterBarVerticalPaddingPx
+        height: filterRow.implicitHeight + GitHubConstants.popoutFilterBarVerticalPaddingPx
         z: 5
 
         Item {
@@ -298,12 +298,12 @@ Item {
             anchors.leftMargin: Theme.spacingXS
             anchors.rightMargin: Theme.spacingXS
             anchors.top: parent.top
-            anchors.topMargin: Constants.popoutFilterBarVerticalPaddingPx
-            implicitHeight: Constants.popoutFilterSegmentHeightPx
+            anchors.topMargin: GitHubConstants.popoutFilterBarVerticalPaddingPx
+            implicitHeight: GitHubConstants.popoutFilterSegmentHeightPx
 
             property int segmentWidth: {
                 var available = (width - readLabel.implicitWidth - participatedLabel.implicitWidth - Theme.spacingXS * 4) / 2
-                return Math.max(Constants.popoutFilterSegmentMinWidthPx, Math.min(Constants.popoutFilterSegmentMaxWidthPx, Math.floor(available)))
+                return Math.max(GitHubConstants.popoutFilterSegmentMinWidthPx, Math.min(GitHubConstants.popoutFilterSegmentMaxWidthPx, Math.floor(available)))
             }
 
             // -- Read filter (left-aligned) -----------------------------------
@@ -323,9 +323,9 @@ Item {
 
                 Rectangle {
                     width: filterRow.segmentWidth
-                    height: Constants.popoutFilterSegmentHeightPx
+                    height: GitHubConstants.popoutFilterSegmentHeightPx
                     radius: Theme.cornerRadius
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
+                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutFilterBackgroundOpacity)
 
                     Row {
                         anchors.fill: parent
@@ -345,7 +345,7 @@ Item {
                                 height: parent.height
                                 radius: Theme.cornerRadius
                                 color: groupModel.readFilter === modelData.value
-                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
+                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutFilterActiveTintOpacity)
                                        : "transparent"
 
                                 MouseArea {
@@ -384,9 +384,9 @@ Item {
 
                 Rectangle {
                     width: filterRow.segmentWidth
-                    height: Constants.popoutFilterSegmentHeightPx
+                    height: GitHubConstants.popoutFilterSegmentHeightPx
                     radius: Theme.cornerRadius
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.popoutFilterBackgroundOpacity)
+                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutFilterBackgroundOpacity)
 
                     Row {
                         anchors.fill: parent
@@ -406,7 +406,7 @@ Item {
                                 height: parent.height
                                 radius: Theme.cornerRadius
                                 color: groupModel.participationFilter === modelData.value
-                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.popoutFilterActiveTintOpacity)
+                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutFilterActiveTintOpacity)
                                        : "transparent"
 
                                 MouseArea {
@@ -436,22 +436,22 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
-        width: Constants.popoutScrollIndicatorWidthPx
+        width: GitHubConstants.popoutScrollIndicatorWidthPx
         color: "transparent"
 
         Rectangle {
             width: parent.width
-            radius: Constants.popoutScrollIndicatorRadiusPx
+            radius: GitHubConstants.popoutScrollIndicatorRadiusPx
             color: Theme.outlineVariant
-            opacity: groupedFlick.moving ? Constants.popoutScrollIndicatorActiveOpacity : Constants.popoutScrollIndicatorIdleOpacity
+            opacity: groupedFlick.moving ? GitHubConstants.popoutScrollIndicatorActiveOpacity : GitHubConstants.popoutScrollIndicatorIdleOpacity
 
             property real ratio: groupedFlick.height / groupedFlick.contentHeight
-            height: Math.max(Constants.popoutScrollIndicatorMinHeightPx, parent.height * ratio)
+            height: Math.max(GitHubConstants.popoutScrollIndicatorMinHeightPx, parent.height * ratio)
             y: groupedFlick.contentHeight > groupedFlick.height
                ? (groupedFlick.contentY / (groupedFlick.contentHeight - groupedFlick.height)) * (parent.height - height)
                : 0
 
-            Behavior on opacity { NumberAnimation { duration: Constants.popoutScrollIndicatorFadeDurationMs } }
+            Behavior on opacity { NumberAnimation { duration: GitHubConstants.popoutScrollIndicatorFadeDurationMs } }
         }
     }
 

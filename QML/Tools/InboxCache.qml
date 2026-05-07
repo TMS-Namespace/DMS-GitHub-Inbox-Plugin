@@ -6,6 +6,7 @@
 
 import QtQuick
 import Quickshell.Io
+import ".."
 
 Item {
     id: cache
@@ -13,7 +14,7 @@ Item {
 
     // -- Configuration --------------------------------------------------------
     property string cacheDir: ""
-    property int cacheTtlMinutes: Constants.defaultCacheTtlMinutes
+    property int cacheTtlMinutes: GitHubConstants.defaultCacheTtlMinutes
 
     // -- Exposed cached state -------------------------------------------------
     property var cachedMessages: []
@@ -29,7 +30,7 @@ Item {
     // -- FileView for the JSON cache file -------------------------------------
     FileView {
         id: cacheFileView
-        path: cache.cacheDir ? (cache.cacheDir + "/" + Constants.cacheFileName) : ""
+        path: cache.cacheDir ? (cache.cacheDir + "/" + GitHubConstants.cacheFileName) : ""
         preload: false
         blockLoading: false
         atomicWrites: true
@@ -46,7 +47,7 @@ Item {
     // -- Save debounce timer --------------------------------------------------
     Timer {
         id: saveDebounce
-        interval: Constants.cacheSaveDebounceMs
+        interval: GitHubConstants.cacheSaveDebounceMs
         onTriggered: cache._writeToDisk()
     }
 
@@ -56,6 +57,11 @@ Item {
     property bool _avatarBusy: false
     property bool _initializing: false
     property var _pendingAvatarValidation: []
+    property var _pendingAvatarValidationPaths: ({})
+    property bool _avatarValidationDuringInit: false
+    property var _avatarFailedLogins: ({})
+    property int _cacheParseSeq: 0
+    property int _cacheWriteSeq: 0
 
     Component {
         id: initDirComponent
@@ -117,6 +123,8 @@ Item {
             onExited: function(exitCode) {
                 if (exitCode === 0 && login)
                     cache._onAvatarDlDone(login, localPath, remoteUrl)
+                else if (login)
+                    cache._onAvatarDlFailed(login, localPath)
                 cache._avatarBusy = false
                 cache._processAvatarQueue()
                 destroy()
@@ -148,13 +156,33 @@ Item {
         }
     }
 
+    WorkerScript {
+        id: cacheWorker
+        source: Qt.resolvedUrl("../../JS/CacheWorker.js")
+
+        onMessage: function(message) {
+            if (message.action === "cacheParsed") {
+                if (message.seq !== cache._cacheParseSeq)
+                    return
+                cache._applyParsedCache(message.data || ({}))
+                return
+            }
+
+            if (message.action === "cacheStringified") {
+                if (message.seq !== cache._cacheWriteSeq)
+                    return
+                cacheFileView.setText(message.text || "{}")
+            }
+        }
+    }
+
     // =========================================================================
     //  PUBLIC API
     // =========================================================================
 
     // -- Perf logging helper (standalone, no Widget dependency) --------------
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
+        if (!GitHubConstants.debugPerformanceLogging) return
         console.warn("[GitHubInbox PERF] InboxCache: " + label)
     }
 
@@ -172,7 +200,7 @@ Item {
         var proc = resolveDirComponent.createObject(cache)
         proc.command = [
             "sh", "-c",
-            "echo \"${XDG_CACHE_HOME:-$HOME/.cache}/" + Constants.cacheSubdirectory + "\""
+            "echo \"${XDG_CACHE_HOME:-$HOME/.cache}/" + GitHubConstants.cacheSubdirectory + "\""
         ]
         proc.running = true
     }
@@ -240,6 +268,8 @@ Item {
     function queueAvatarDownload(login, remoteUrl) {
         if (!cacheDir || !login || !remoteUrl)
             return
+        if (_avatarFailedLogins[login])
+            return
         if (avatarLocalPaths.hasOwnProperty(login))
             return
 
@@ -267,6 +297,8 @@ Item {
             var login = items[i].login
             var remoteUrl = items[i].remoteUrl
             if (!login || !remoteUrl)
+                continue
+            if (_avatarFailedLogins[login])
                 continue
             if (avatarLocalPaths.hasOwnProperty(login))
                 continue
@@ -319,14 +351,15 @@ Item {
         avatarLocalPaths = ({})
         cachedTimestamp = 0
         _avatarQueue = []
+        _avatarFailedLogins = ({})
 
         if (cacheDir) {
             var proc = clearCacheComponent.createObject(cache)
             proc.command = [
                 "sh", "-c",
-                "rm -f " + _shellQuote(cacheDir + "/" + Constants.cacheFileName)
-                + " && rm -rf " + _shellQuote(cacheDir + "/" + Constants.cacheAvatarsSubdirectory)
-                + " && mkdir -p " + _shellQuote(cacheDir + "/" + Constants.cacheAvatarsSubdirectory)
+                "rm -f " + _shellQuote(cacheDir + "/" + GitHubConstants.cacheFileName)
+                + " && rm -rf " + _shellQuote(cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory)
+                + " && mkdir -p " + _shellQuote(cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory)
             ]
             proc.running = true
         }
@@ -340,7 +373,7 @@ Item {
         _perfLog("_onDirResolved — path='" + (resolvedPath || "(empty)") + "'")
         if (!resolvedPath) {
             console.warn("[GitHubInbox] Could not resolve cache directory, using fallback")
-            resolvedPath = Constants.cacheFallbackDirPath
+            resolvedPath = GitHubConstants.cacheFallbackDirPath
         }
         cacheDir = resolvedPath
         _perfLog("_onDirResolved — cacheDir set, FileView.path='" + cacheFileView.path + "'")
@@ -350,7 +383,7 @@ Item {
     function _createDirs() {
         _perfLog("_createDirs — spawning mkdir -p")
         var proc = initDirComponent.createObject(cache)
-        proc.command = ["mkdir", "-p", cacheDir + "/" + Constants.cacheAvatarsSubdirectory]
+        proc.command = ["mkdir", "-p", cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory]
         proc.running = true
     }
 
@@ -364,7 +397,7 @@ Item {
         }
 
         // Read existing cache file via Process (FileView.reload is unreliable)
-        var cachePath = cacheFileView.path || (cacheDir + "/" + Constants.cacheFileName)
+        var cachePath = cacheFileView.path || (cacheDir + "/" + GitHubConstants.cacheFileName)
         _perfLog("_onDirReady — reading cache via cat: '" + cachePath + "'")
         var proc = readCacheComponent.createObject(cache)
         proc.command = ["cat", cachePath]
@@ -372,17 +405,18 @@ Item {
     }
 
     function _onCacheFileRead(text) {
-        _perfLog("_onCacheFileRead — start (JSON.parse), len=" + text.length)
-        var t0 = Date.now()
-        var data
-        try {
-            data = JSON.parse(text || "{}")
-        } catch (e) {
-            data = {}
-        }
-        _perfLog("_onCacheFileRead — JSON.parse done in " + (Date.now() - t0) + "ms")
+        _perfLog("_onCacheFileRead — dispatching JSON parse to worker, len=" + text.length)
+        _cacheParseSeq = _cacheParseSeq + 1
+        cacheWorker.sendMessage({
+            action: "parseCache",
+            seq: _cacheParseSeq,
+            text: text || "{}"
+        })
+    }
 
-        if ((data.version || 0) !== Constants.cacheFormatVersion)
+    function _applyParsedCache(data) {
+        _perfLog("_applyParsedCache — start")
+        if ((data.version || 0) !== GitHubConstants.cacheFormatVersion)
             data = {}
 
         cachedMessages = data.notifications || []
@@ -397,18 +431,22 @@ Item {
         for (var login in avatarMap) {
             var localFile = avatarMap[login].localFile || ""
             if (localFile) {
-                var fullPath = cacheDir + "/" + Constants.cacheAvatarsSubdirectory + "/" + localFile
+                var fullPath = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory + "/" + localFile
                 paths[login] = "file://" + fullPath
             }
         }
-        avatarLocalPaths = paths
-
-        // Schedule validation of avatar files on disk (runs after init completes)
+        // Validate before exposing local file:// URLs to the view. Old cache
+        // entries may be HTML/JSON error bodies saved as .png, which causes
+        // repeated QML Image decoder warnings and UI stalls.
         _pendingAvatarValidation = Object.keys(paths)
-        if (_pendingAvatarValidation.length > 0)
-            Qt.callLater(_validateAvatarFiles)
+        _pendingAvatarValidationPaths = paths
+        if (_pendingAvatarValidation.length > 0) {
+            _avatarValidationDuringInit = true
+            _validateAvatarFiles()
+            return
+        }
 
-        _perfLog("_onCacheFileRead — end, msgs=" + cachedMessages.length + " avatars=" + Object.keys(paths).length)
+        _perfLog("_applyParsedCache — end, msgs=" + cachedMessages.length + " avatars=" + Object.keys(paths).length)
         initialized = true
         cacheReady()
     }
@@ -432,7 +470,7 @@ Item {
             avatarMap[login] = { localFile: login + ".png" }
 
         var payload = {
-            version: Constants.cacheFormatVersion,
+            version: GitHubConstants.cacheFormatVersion,
             lastFetched: cachedTimestamp,
             notifications: cachedMessages,
             authorsByThread: cachedAuthorsByThread,
@@ -440,7 +478,12 @@ Item {
             avatarMap: avatarMap
         }
 
-        cacheFileView.setText(JSON.stringify(payload))
+        _cacheWriteSeq = _cacheWriteSeq + 1
+        cacheWorker.sendMessage({
+            action: "stringifyCache",
+            seq: _cacheWriteSeq,
+            payload: payload
+        })
     }
 
     function _processAvatarQueue() {
@@ -458,7 +501,7 @@ Item {
         }
 
         _avatarBusy = true
-        var localPath = cacheDir + "/" + Constants.cacheAvatarsSubdirectory + "/" + item.login + ".png"
+        var localPath = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory + "/" + item.login + ".png"
 
         var proc = avatarDlComponent.createObject(cache, {
             login: item.login,
@@ -466,9 +509,9 @@ Item {
             remoteUrl: item.remoteUrl
         })
         proc.command = [
-            "curl", "-sS", "-L",
-            "--connect-timeout", Constants.avatarDownloadConnectTimeoutSeconds,
-            "--max-time", Constants.avatarDownloadMaxTimeSeconds,
+            "curl", "-f", "-sS", "-L",
+            "--connect-timeout", GitHubConstants.avatarDownloadConnectTimeoutSeconds,
+            "--max-time", GitHubConstants.avatarDownloadMaxTimeSeconds,
             "-o", localPath,
             item.remoteUrl
         ]
@@ -483,6 +526,17 @@ Item {
         _queueSave()
     }
 
+    function _onAvatarDlFailed(login, localPath) {
+        var failed = _cloneMap(_avatarFailedLogins)
+        failed[login] = true
+        _avatarFailedLogins = failed
+        if (localPath) {
+            var proc = clearCacheComponent.createObject(cache)
+            proc.command = ["rm", "-f", localPath]
+            proc.running = true
+        }
+    }
+
     function _cloneMap(source) {
         var copy = {}
         for (var key in source)
@@ -494,21 +548,28 @@ Item {
         return "'" + String(str).replace(/'/g, "'\\''") + "'"
     }
 
-    /// Check which cached avatar files actually exist on disk.
-    /// Missing files are removed from avatarLocalPaths so they get re-downloaded.
+    /// Check which cached avatar files exist and are actually images.
+    /// Missing or invalid files are removed from avatarLocalPaths so they get
+    /// re-downloaded instead of repeatedly forcing QML Image decode failures.
     function _validateAvatarFiles() {
         var logins = _pendingAvatarValidation
         _pendingAvatarValidation = []
         if (logins.length === 0 || !cacheDir)
             return
 
-        // Build a command that tests each file and prints logins of missing ones
-        var avatarDir = cacheDir + "/" + Constants.cacheAvatarsSubdirectory
+        // Build a command that tests each file and prints logins of missing or
+        // non-image files. Invalid downloads are usually GitHub HTML/JSON error
+        // pages saved under a .png name.
+        var avatarDir = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory
         var parts = []
         for (var i = 0; i < logins.length; i++) {
             var login = logins[i]
             var file = avatarDir + "/" + login + ".png"
-            parts.push("[ -f " + _shellQuote(file) + " ] || echo " + _shellQuote(login))
+            var quotedFile = _shellQuote(file)
+            parts.push("if [ ! -f " + quotedFile + " ]; then echo " + _shellQuote(login)
+                       + "; else mime=$(file -b --mime-type " + quotedFile + " 2>/dev/null); case \"$mime\" in image/*) ;; *) rm -f "
+                       + quotedFile + "; echo "
+                       + _shellQuote(login) + " ;; esac; fi")
         }
 
         var proc = avatarValidateComponent.createObject(cache)
@@ -517,33 +578,55 @@ Item {
     }
 
     function _onAvatarValidationDone(output) {
-        if (!output)
-            return
+        var lines = output ? output.split("\n") : []
+        var initializing = _avatarValidationDuringInit
+        var validationPaths = _pendingAvatarValidationPaths || ({})
+        _avatarValidationDuringInit = false
+        _pendingAvatarValidationPaths = ({})
 
-        var lines = output.split("\n")
-        var nextPaths = _cloneMap(avatarLocalPaths)
+        var invalid = {}
+        for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            var invalidLogin = lines[lineIndex].trim()
+            if (invalidLogin)
+                invalid[invalidLogin] = true
+        }
+
+        var nextPaths = initializing ? {} : _cloneMap(avatarLocalPaths)
         var changed = false
         var redownloads = []
 
-        for (var i = 0; i < lines.length; i++) {
-            var login = lines[i].trim()
-            if (login && nextPaths.hasOwnProperty(login)) {
-                _perfLog("avatar file missing on disk, re-queuing download: " + login)
+        if (initializing) {
+            for (var validLogin in validationPaths) {
+                if (!invalid[validLogin])
+                    nextPaths[validLogin] = validationPaths[validLogin]
+            }
+        }
+
+        for (var login in invalid) {
+            if ((initializing && validationPaths.hasOwnProperty(login))
+                    || (!initializing && nextPaths.hasOwnProperty(login))) {
+                _perfLog("avatar file missing or invalid on disk, re-queuing download: " + login)
                 delete nextPaths[login]
                 changed = true
                 redownloads.push({
                     login: login,
-                    remoteUrl: Constants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
-                              + "?size=" + Constants.avatarDefaultSizePx
+                    remoteUrl: GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
+                              + "?size=" + GitHubConstants.avatarDefaultSizePx
                 })
             }
         }
 
-        if (changed) {
+        if (changed || initializing) {
             avatarLocalPaths = nextPaths
             _queueSave()
             if (redownloads.length > 0)
                 batchQueueAvatarDownloads(redownloads)
+        }
+
+        if (initializing) {
+            _perfLog("_applyParsedCache — end, msgs=" + cachedMessages.length + " avatars=" + Object.keys(nextPaths).length)
+            initialized = true
+            cacheReady()
         }
     }
 }

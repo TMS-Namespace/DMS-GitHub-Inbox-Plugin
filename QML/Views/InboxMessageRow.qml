@@ -37,15 +37,15 @@ Item {
 
     property var limitedAuthors: {
         var list = resolvedAuthors || []
-        if (list.length <= Constants.maxAuthorsDisplayedPerMessage)
+        if (list.length <= GitHubConstants.maxAuthorsDisplayedPerMessage)
             return list
-        return list.slice(0, Constants.maxAuthorsDisplayedPerMessage)
+        return list.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
     }
 
-    property int authorRowHeight: Constants.messageAuthorRowHeightPx
+    property int authorRowHeight: GitHubConstants.messageAuthorRowHeightPx
     property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
-    property int contentMinHeight: Constants.messageRowContentMinHeightPx + (Math.max(1, titleLines) * Constants.messageRowTitleLineHeightPx)
-    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Constants.messageRowAuthorColumnPaddingPx)
+    property int contentMinHeight: GitHubConstants.messageRowContentMinHeightPx + (Math.max(1, titleLines) * GitHubConstants.messageRowTitleLineHeightPx)
+    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + GitHubConstants.messageRowAuthorColumnPaddingPx)
 
     function openAuthorProfile(url) {
         if (url) {
@@ -87,25 +87,25 @@ Item {
         var login = String(author.login || "").trim()
         if (!login)
             return ""
-        return Constants.githubWebBaseUrl + "/" + encodeURIComponent(login) + ".png?size=" + Constants.avatarDefaultSizePx
+        return GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login) + "?size=" + GitHubConstants.avatarDefaultSizePx
     }
 
     function requestAuthorsIfNeeded() {
         // Authors are pre-fetched during refresh in Widget.qml.
     }
 
-    height: Math.max(Constants.messageRowMinHeightPx, rowHeight)
+    height: Math.max(GitHubConstants.messageRowMinHeightPx, rowHeight)
 
     Rectangle {
         anchors.fill: parent
         radius: Theme.cornerRadius
         color: row.unread
-               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.messageRowUnreadBackgroundOpacity)
+               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.messageRowUnreadBackgroundOpacity)
                : Theme.surfaceContainer
         border.color: row.unread
-                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.messageRowUnreadBorderOpacity)
+                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.messageRowUnreadBorderOpacity)
                       : Theme.outlineVariant
-        border.width: Constants.messageRowBorderWidthPx
+        border.width: GitHubConstants.messageRowBorderWidthPx
     }
 
     MouseArea {
@@ -128,20 +128,20 @@ Item {
 
         Item {
             id: iconSlot
-            width: Constants.messageIconSlotWidthPx
+            width: GitHubConstants.messageIconSlotWidthPx
             height: parent.height
 
             Rectangle {
-                width: Constants.messageIconBadgeWidthPx
-                height: Constants.messageIconBadgeHeightPx
-                radius: Constants.messageIconBadgeRadiusPx
+                width: GitHubConstants.messageIconBadgeWidthPx
+                height: GitHubConstants.messageIconBadgeHeightPx
+                radius: GitHubConstants.messageIconBadgeRadiusPx
                 anchors.top: parent.top
-                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, Constants.messageIconBadgeBackgroundOpacity)
+                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, GitHubConstants.messageIconBadgeBackgroundOpacity)
 
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.subjectIcon
-                    size: Constants.messageSubjectIconSizePx
+                    size: GitHubConstants.messageSubjectIconSizePx
                     color: row.unread ? Theme.primary : Theme.surfaceVariantText
                 }
             }
@@ -159,10 +159,10 @@ Item {
                 Column {
                     id: mainInfo
                     width: (showAuthors && row.limitedAuthors.length > 0)
-                           ? Math.max(Constants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * Constants.messageMainInfoWidthRatio))
+                           ? Math.max(GitHubConstants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * GitHubConstants.messageMainInfoWidthRatio))
                            : bodySlot.width
                     anchors.top: parent.top
-                    spacing: Constants.messageMainInfoColumnSpacingPx
+                    spacing: GitHubConstants.messageMainInfoColumnSpacingPx
 
                     StyledText {
                         width: parent.width
@@ -181,31 +181,31 @@ Item {
 
                         StyledText {
                             text: row.subjectType
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.reason
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.updatedText
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                             elide: Text.ElideRight
                         }
@@ -214,7 +214,7 @@ Item {
 
                 Item {
                     id: authorInfo
-                    width: Math.max(Constants.messageAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
+                    width: Math.max(GitHubConstants.messageAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
                     height: parent.height
                     visible: row.showAuthors && row.limitedAuthors.length > 0
 
@@ -222,7 +222,7 @@ Item {
                         id: authorColumn
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: Constants.messageAuthorColumnItemSpacingPx
+                        spacing: GitHubConstants.messageAuthorColumnItemSpacingPx
 
                         Repeater {
                             model: row.limitedAuthors
@@ -239,21 +239,21 @@ Item {
 
                                     Item {
                                         id: avatarHost
-                                        width: Constants.authorAvatarSizePx
-                                        height: Constants.authorAvatarSizePx
+                                        width: GitHubConstants.authorAvatarSizePx
+                                        height: GitHubConstants.authorAvatarSizePx
 
                                         RoundedAvatar {
                                             anchors.fill: parent
                                             source: row.avatarSource(modelData)
                                             fallbackIcon: "person"
-                                            fallbackIconSize: Constants.authorAvatarFallbackIconSizePx
+                                            fallbackIconSize: GitHubConstants.authorAvatarFallbackIconSizePx
                                         }
                                     }
 
                                     StyledText {
-                                        width: Math.max(Constants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
+                                        width: Math.max(GitHubConstants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
                                         text: row.authorDisplayName(modelData)
-                                        font.pixelSize: Constants.authorNameFontSizePx
+                                        font.pixelSize: GitHubConstants.authorNameFontSizePx
                                         color: Theme.surfaceVariantText
                                         elide: Text.ElideRight
                                         maximumLineCount: 1
@@ -281,10 +281,10 @@ Item {
         id: actionsHost
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.rightMargin: Constants.messageActionsHostMarginPx
-        anchors.topMargin: Constants.messageActionsHostMarginPx
-        width: Constants.messageActionsHostWidthPx
-        height: Constants.messageActionsHostHeightPx
+        anchors.rightMargin: GitHubConstants.messageActionsHostMarginPx
+        anchors.topMargin: GitHubConstants.messageActionsHostMarginPx
+        width: GitHubConstants.messageActionsHostWidthPx
+        height: GitHubConstants.messageActionsHostHeightPx
         z: 10
 
         MouseArea {
@@ -296,7 +296,7 @@ Item {
 
         Row {
             id: actionButtons
-            spacing: Constants.messageActionButtonsSpacingPx
+            spacing: GitHubConstants.messageActionButtonsSpacingPx
             visible: rowArea.containsMouse
                      || actionsHoverArea.containsMouse
                      || openArea.containsMouse
@@ -305,14 +305,14 @@ Item {
             opacity: visible ? 1 : 0
 
             Behavior on opacity {
-                NumberAnimation { duration: Constants.messageActionsFadeDurationMs }
+                NumberAnimation { duration: GitHubConstants.messageActionsFadeDurationMs }
             }
 
             Rectangle {
-                width: Constants.messageActionButtonSizePx
-                height: Constants.messageActionButtonSizePx
-                radius: Constants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
+                width: GitHubConstants.messageActionButtonSizePx
+                height: GitHubConstants.messageActionButtonSizePx
+                radius: GitHubConstants.messageActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: openArea
@@ -329,16 +329,16 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: "open_in_new"
-                    size: Constants.messageActionButtonIconSizePx
+                    size: GitHubConstants.messageActionButtonIconSizePx
                     color: Theme.surfaceVariantText
                 }
             }
 
             Rectangle {
-                width: Constants.messageActionButtonSizePx
-                height: Constants.messageActionButtonSizePx
-                radius: Constants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
+                width: GitHubConstants.messageActionButtonSizePx
+                height: GitHubConstants.messageActionButtonSizePx
+                radius: GitHubConstants.messageActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: readToggleArea
@@ -357,16 +357,16 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.unread ? "mark_email_read" : "mark_email_unread"
-                    size: Constants.messageActionButtonIconSizePx
+                    size: GitHubConstants.messageActionButtonIconSizePx
                     color: readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                 }
             }
 
             Rectangle {
-                width: Constants.messageActionButtonSizePx
-                height: Constants.messageActionButtonSizePx
-                radius: Constants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
+                width: GitHubConstants.messageActionButtonSizePx
+                height: GitHubConstants.messageActionButtonSizePx
+                radius: GitHubConstants.messageActionButtonRadiusPx
+                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: doneArea
@@ -380,7 +380,7 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: "done"
-                    size: Constants.messageActionButtonIconSizePx
+                    size: GitHubConstants.messageActionButtonIconSizePx
                     color: doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                 }
             }

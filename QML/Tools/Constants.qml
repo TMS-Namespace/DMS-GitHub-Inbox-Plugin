@@ -1,9 +1,10 @@
-// Constants.qml - Central registry of every hardcoded value used by the GitHub Inbox plugin.
+// Constants.qml - exported as GitHubConstants in qmldir.
+// Central registry of every hardcoded value used by the GitHub Inbox plugin.
 //
 // All files in this module reference values through this singleton so that a change
 // to any magic number, URL, or token only needs to be made in one place.
 //
-// QML usage:   Constants.SOME_CONSTANT   (no import needed - registered in qmldir)
+// QML usage:   GitHubConstants.SOME_CONSTANT   (no import needed - registered in qmldir)
 // JS  usage:   see JS/GitHubConstants.js (mirrored subset; loaded via importScripts)
 
 pragma Singleton
@@ -122,14 +123,38 @@ QtObject {
 
     /// Maximum number of distinct API URLs bundled into one author-fetch curl
     /// invocation.  Limits the size of a single outbound network batch.
-    readonly property int maxAuthorUrlsPerThreadFetch: 16
+    readonly property int maxAuthorUrlsPerThreadFetch: 8
 
     /// Maximum number of author-fetch curl requests in flight at the same time.
-    readonly property int maxConcurrentAuthorFetches: 3
+    readonly property int maxConcurrentAuthorFetches: 1
 
     /// Number of inbox message items sent in each worker-script chunk message
     /// so that the main thread processes results incrementally.
-    readonly property int messagesParseChunkSize: 80
+    readonly property int messagesParseChunkSize: 40
+
+    /// Number of parsed inbox messages applied to the visible popout model per
+    /// UI tick.  Keeps startup/cache refreshes from rebuilding delegates in one
+    /// long main-thread turn.
+    readonly property int viewApplyChunkSize: 20
+
+    /// Number of inbox messages inspected per author-prefetch timer tick.
+    readonly property int authorPrefetchBatchSize: 3
+
+    /// Delay between author-prefetch batches.
+    readonly property int authorPrefetchBatchIntervalMs: 25
+
+    /// Maximum notification threads whose extra author metadata is prefetched
+    /// automatically during one refresh. More threads can still fetch authors
+    /// on demand when their row requests it.
+    readonly property int maxAuthorPrefetchMessagesPerRefresh: 0
+
+    /// Automatic author enrichment can be expensive because GitHub timeline
+    /// responses can be large. Keep it off for shell responsiveness; cached
+    /// author data is still displayed when present.
+    readonly property bool automaticAuthorPrefetchEnabled: false
+
+    /// Maximum queued author-fetch requests retained at once.
+    readonly property int maxAuthorRequestQueueLength: 160
 
 
     // =========================================================================
@@ -138,11 +163,11 @@ QtObject {
 
     /// Maximum number of entries kept in the background avatar preload list.
     /// Prevents unbounded growth when a user has many distinct authors.
-    readonly property int avatarPreloadTotalCacheLimit: 500
+    readonly property int avatarPreloadTotalCacheLimit: 0
 
     /// Rendered resolution (width and height) used for preloaded avatar Image
     /// items.  Kept small to reduce memory and network bandwidth.
-    readonly property int avatarPreloadSourceSizePx: 64
+    readonly property int avatarPreloadSourceSizePx: 40
 
     /// Maximum number of times a RoundedAvatar retries loading after an error
     /// (e.g. transient network failure after system wakeup).
@@ -275,7 +300,7 @@ QtObject {
 
     /// How often (ms) the view-apply timer ticks while draining pending
     /// inbox message chunks into the visible list.
-    readonly property int viewApplyTimerIntervalMs: 8
+    readonly property int viewApplyTimerIntervalMs: 16
 
     /// Maximum unread count displayed as a plain number; anything higher shows
     /// as "999+".
@@ -692,6 +717,13 @@ QtObject {
     // Performance Debugging
     // =========================================================================
 
+    /// Developer mode enables opt-in performance instrumentation. Keep this
+    /// false for normal shell use so metrics/logging do not add UI-thread work.
+    readonly property bool isDevMode: false
+
     /// Set to true to emit timing breadcrumbs to journalctl during startup.
-    readonly property bool debugPerformanceLogging: false
+    readonly property bool debugPerformanceLogging: isDevMode
+
+    /// Enables lightweight API/refresh metric collection shown in settings.
+    readonly property bool apiCallStatsEnabled: isDevMode
 }

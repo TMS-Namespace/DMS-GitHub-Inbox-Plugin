@@ -1,6 +1,6 @@
 singleton ApiCallStats 1.0 Tools/ApiCallStats.qml
 singleton AuthorUtils 1.0 Tools/AuthorUtils.qml
-singleton Constants 1.0 Tools/Constants.qml
+singleton GitHubConstants 1.0 Tools/Constants.qml
 
 AuthorFetcher 1.0 Tools/AuthorFetcher.qml
 AvatarPreloader 1.0 Tools/AvatarPreloader.qml

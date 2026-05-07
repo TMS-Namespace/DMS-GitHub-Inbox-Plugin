@@ -6,8 +6,8 @@
 // Local mirrors of QML/Constants.qml values.
 // This file uses .pragma library and cannot importScripts, so constants are inlined here.
 var _DEFAULT_POLL_INTERVAL_SECONDS = 120
-var _MIN_POLL_INTERVAL_SECONDS     = 60
-var _UNREAD_COUNT_DISPLAY_MAX      = 999
+var _MIN_POLL_INTERVAL_SECONDS = 60
+var _UNREAD_COUNT_DISPLAY_MAX = 999
 var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
 
 function pluginDataBool(value, defaultValue) {
@@ -76,7 +76,7 @@ function parseMessagesPayload(payloadText) {
     }
 
     // Keep unread items first, then most recently updated.
-    items.sort(function(a, b) {
+    items.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
         var tA = Date.parse(a.updatedAt) || 0
@@ -193,7 +193,7 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
         mergedItems.push(mergedItem)
     }
 
-    mergedItems.sort(function(a, b) {
+    mergedItems.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
         var tA = Date.parse(a.updatedAt) || 0
@@ -346,11 +346,11 @@ function subjectIconName(subjectType) {
     if (type === "commit")
         return "account_tree"
     if (type === "repositoryvulnerabilityalert"
-            || type === "repositoryadvisory"
-            || type === "repositorydependabotalert"
-            || type === "vulnerabilityalert"
-            || type === "dependabotalert"
-            || type === "codescanningalert")
+        || type === "repositoryadvisory"
+        || type === "repositorydependabotalert"
+        || type === "vulnerabilityalert"
+        || type === "dependabotalert"
+        || type === "codescanningalert")
         return "shield"
     if (type === "checksuite")
         return "fact_check"

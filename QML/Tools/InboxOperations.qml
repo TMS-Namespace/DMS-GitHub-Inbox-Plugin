@@ -6,6 +6,7 @@
 
 import QtQuick
 import Quickshell.Io
+import ".."
 
 Item {
     id: operations
@@ -33,7 +34,7 @@ Item {
         if (!threadId) return
         _runMutation(
             "PATCH",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_read", threadId, "", ""
         )
     }
@@ -42,7 +43,7 @@ Item {
         if (!threadId) return
         _runMutation(
             "PATCH",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_unread", threadId, "", "{\"read\":false}"
         )
     }
@@ -51,7 +52,7 @@ Item {
         if (!threadId) return
         _runMutation(
             "DELETE",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_done", threadId, "", ""
         )
     }
@@ -87,7 +88,7 @@ Item {
         var repo = encodeURIComponent(parts[1])
         _runMutation(
             "PUT",
-            Constants.githubApiReposPrefix + owner + "/" + repo + "/notifications",
+            GitHubConstants.githubApiReposPrefix + owner + "/" + repo + "/notifications",
             "repo_read", "", repositoryFullName, ""
         )
     }
@@ -95,7 +96,7 @@ Item {
     function markAllAsRead() {
         _runMutation(
             "PUT",
-            Constants.githubInboxApiUrl,
+            GitHubConstants.githubInboxApiUrl,
             "all_read", "", "", ""
         )
     }
@@ -192,7 +193,7 @@ Item {
 
         _runMutation(
             "DELETE",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_done_sync", threadId, "", ""
         )
     }
@@ -222,12 +223,12 @@ Item {
         var cmd = [
             "curl", "-sS",
             "-o", "/dev/null",
-            "-w", Constants.curlStatusCodeFormat,
-            "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-            "--max-time", Constants.curlMaxTimeSeconds,
+            "-w", GitHubConstants.curlStatusCodeFormat,
+            "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+            "--max-time", GitHubConstants.curlMaxTimeSeconds,
             "-X", method,
-            "-H", "Accept: " + Constants.httpAcceptHeader,
-            "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+            "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+            "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
             "-H", "Authorization: token " + token,
             url
         ]
@@ -313,8 +314,8 @@ Item {
 
                 var statusCode = parseInt((_buffer || "").trim())
                 if (!isNaN(statusCode)
-                        && statusCode >= Constants.httpSuccessMin
-                        && statusCode < Constants.httpSuccessMax) {
+                        && statusCode >= GitHubConstants.httpSuccessMin
+                        && statusCode < GitHubConstants.httpSuccessMax) {
                     operations.operationApplied(actionType, threadId, repositoryFullName)
                 } else {
                     operations.operationError("Action failed (HTTP "

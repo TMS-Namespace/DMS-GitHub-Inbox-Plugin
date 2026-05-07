@@ -5,13 +5,14 @@
 // handling clear-cache requests from the settings panel.
 
 import QtQuick
+import ".."
 
 Item {
     id: coordinator
     visible: false
 
     // -- Configuration --------------------------------------------------------
-    property int cacheTtlMinutes: Constants.defaultCacheTtlMinutes
+    property int cacheTtlMinutes: GitHubConstants.defaultCacheTtlMinutes
 
     // -- Sub-components -------------------------------------------------------
     InboxCache {
@@ -38,7 +39,7 @@ Item {
 
     // -- Perf logging helper --------------------------------------------------
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
+        if (!GitHubConstants.debugPerformanceLogging) return
         console.warn("[GitHubInbox PERF] CacheCoord: " + label)
     }
 
@@ -134,8 +135,8 @@ Item {
 
     /// Construct a fresh remote avatar URL from a login
     function _remoteAvatarUrl(login) {
-        return Constants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
-               + "?size=" + Constants.avatarDefaultSizePx
+        return GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
+               + "?size=" + GitHubConstants.avatarDefaultSizePx
     }
 
     // -- Persistence ----------------------------------------------------------
@@ -167,7 +168,7 @@ Item {
         if (flag === "true" || flag === "1") {
             diskCache.clearCache()
             if (pluginService)
-                pluginService.savePluginData(Constants.pluginNamespaceId, "clearCacheRequested", "")
+                pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "clearCacheRequested", "")
         }
     }
 }

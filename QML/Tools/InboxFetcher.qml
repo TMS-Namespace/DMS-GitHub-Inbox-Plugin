@@ -5,6 +5,7 @@
 
 import QtQuick
 import Quickshell.Io
+import ".."
 import "../../JS/GitHubHelpers.js" as GitHub
 
 Item {
@@ -14,7 +15,7 @@ Item {
     // -- Configuration --------------------------------------------------------
     property string token: ""
     property int fetchPageCount: 1
-    property string fetchSplitToken: Constants.fetchPayloadSplitToken
+    property string fetchSplitToken: GitHubConstants.fetchPayloadSplitToken
     property var doneThreadState: ({})
 
     // -- State ----------------------------------------------------------------
@@ -34,7 +35,7 @@ Item {
 
     // -- Perf logging helper --------------------------------------------------
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
+        if (!GitHubConstants.debugPerformanceLogging) return
         console.warn("[GitHubInbox PERF] InboxFetcher: " + label)
     }
 
@@ -52,9 +53,9 @@ Item {
         ApiCallStats.resetSession()
 
         var pages = Math.max(1, fetchPageCount)
-        var baseQuery = "per_page=" + Constants.messagesApiPageSize
-        var allBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
-        var participatingBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
+        var baseQuery = "per_page=" + GitHubConstants.messagesApiPageSize
+        var allBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
+        var participatingBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
         var command = ["curl"]
 
         // Fetch "all" pages first
@@ -63,10 +64,10 @@ Item {
                 command.push("--next")
             command.push(
                 "-sS",
-                "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-                "--max-time", Constants.curlMaxTimeSeconds,
-                "-H", "Accept: " + Constants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+                "--max-time", GitHubConstants.curlMaxTimeSeconds,
+                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
                 "-H", "Authorization: token " + token,
                 "-w", "\n" + fetchSplitToken + "\n",
                 allBaseUrl + "&page=" + page
@@ -78,10 +79,10 @@ Item {
             command.push("--next")
             command.push(
                 "-sS",
-                "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-                "--max-time", Constants.curlMaxTimeSeconds,
-                "-H", "Accept: " + Constants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+                "--max-time", GitHubConstants.curlMaxTimeSeconds,
+                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
                 "-H", "Authorization: token " + token,
                 "-w", "\n" + fetchSplitToken + "\n",
                 participatingBaseUrl + "&page=" + pPage
@@ -148,7 +149,7 @@ Item {
                     separator: fetcher.fetchSplitToken,
                     allSegmentCount: fetcher.fetchPageCount,
                     doneThreadState: fetcher.doneThreadState,
-                    chunkSize: Constants.messagesParseChunkSize
+                    chunkSize: GitHubConstants.messagesParseChunkSize
                 })
 
                 destroy()

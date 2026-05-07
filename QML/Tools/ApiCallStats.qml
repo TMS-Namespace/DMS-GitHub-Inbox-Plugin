@@ -4,6 +4,7 @@
 pragma Singleton
 
 import QtQuick
+import ".."
 
 QtObject {
     id: stats
@@ -33,8 +34,8 @@ QtObject {
     property int _totalDurationMs: 0   // lifetime ms sum across completed refreshes
 
     property var _pruneTimer: Timer {
-        interval: Constants.statsHourlyPruneIntervalMs
-        running: true
+        interval: GitHubConstants.statsHourlyPruneIntervalMs
+        running: GitHubConstants.apiCallStatsEnabled
         repeat: true
         onTriggered: stats._prune()
     }
@@ -43,12 +44,18 @@ QtObject {
 
     // Call at the very start of each fetchNotifications().
     function resetSession() {
+        if (!GitHubConstants.apiCallStatsEnabled)
+            return
+
         sessionCalls    = 0
         _refreshStartMs = Date.now()
     }
 
     // Record `count` API calls that just fired.
     function recordCalls(count) {
+        if (!GitHubConstants.apiCallStatsEnabled)
+            return
+
         var n = (count > 0) ? count : 1
         totalCalls   += n
         sessionCalls += n
@@ -64,6 +71,9 @@ QtObject {
 
     // Call once when a refresh cycle fully completes (success or error).
     function recordRefreshComplete() {
+        if (!GitHubConstants.apiCallStatsEnabled)
+            return
+
         var durationMs = (_refreshStartMs > 0)
             ? Math.max(0, Date.now() - _refreshStartMs)
             : 0
@@ -71,7 +81,7 @@ QtObject {
         // If the measured duration exceeds the reasonable maximum the machine
         // was almost certainly suspended mid-refresh; skip duration accounting
         // so sleep time never inflates the averages.
-        var sleepDetected = durationMs > Constants.statsMaxReasonableRefreshDurationMs
+        var sleepDetected = durationMs > GitHubConstants.statsMaxReasonableRefreshDurationMs
 
         lastSessionCalls         = sessionCalls
         lastSessionSleepDetected = sleepDetected
@@ -94,7 +104,10 @@ QtObject {
     // -- Private -------------------------------------------------------------
 
     function _prune() {
-        var cutoff = Date.now() - Constants.statsOneHourWindowMs  // 1 hour in ms
+        if (!GitHubConstants.apiCallStatsEnabled)
+            return
+
+        var cutoff = Date.now() - GitHubConstants.statsOneHourWindowMs  // 1 hour in ms
 
         // API-call timestamp window
         var ts = _timestamps

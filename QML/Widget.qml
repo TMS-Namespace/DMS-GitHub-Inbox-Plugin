@@ -16,12 +16,13 @@ import Quickshell.Io
 import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
+import "."
 import "../JS/GitHubHelpers.js" as GitHub
 
 PluginComponent {
     id: root
 
-    layerNamespacePlugin: Constants.pluginNamespaceId
+    layerNamespacePlugin: GitHubConstants.pluginNamespaceId
 
     // =========================================================================
     //  SETTINGS-BACKED STATE
@@ -30,39 +31,39 @@ PluginComponent {
     property string token: (pluginData.githubToken || "").trim()
     property int pollIntervalMs: GitHub.pollIntervalMs(pluginData.pollInterval)
     property int groupItemLimit: {
-        var value = parseInt(pluginData.groupItemLimit || Constants.defaultGroupItemLimit)
+        var value = parseInt(pluginData.groupItemLimit || GitHubConstants.defaultGroupItemLimit)
         if (isNaN(value))
-            return Constants.defaultGroupItemLimit
-        return Math.max(Constants.minGroupItemLimit, Math.min(Constants.maxGroupItemLimit, value))
+            return GitHubConstants.defaultGroupItemLimit
+        return Math.max(GitHubConstants.minGroupItemLimit, Math.min(GitHubConstants.maxGroupItemLimit, value))
     }
     property int fetchPageCount: {
-        var value = parseInt(pluginData.fetchPages || Constants.defaultFetchPageCount)
+        var value = parseInt(pluginData.fetchPages || GitHubConstants.defaultFetchPageCount)
         if (isNaN(value))
-            return Constants.defaultFetchPageCount
-        return Math.max(Constants.minFetchPageCount, Math.min(Constants.maxFetchPageCount, value))
+            return GitHubConstants.defaultFetchPageCount
+        return Math.max(GitHubConstants.minFetchPageCount, Math.min(GitHubConstants.maxFetchPageCount, value))
     }
     property int popupHeightUnits: {
         var rawValue = pluginData.popupHeight
         if (rawValue === undefined || rawValue === "")
-            rawValue = pluginData.popupItems || Constants.defaultPopupHeightUnits
+            rawValue = pluginData.popupItems || GitHubConstants.defaultPopupHeightUnits
         var value = parseInt(rawValue)
         if (isNaN(value))
-            return Constants.defaultPopupHeightUnits
-        return Math.max(Constants.minPopupHeightUnits, Math.min(Constants.maxPopupHeightUnits, value))
+            return GitHubConstants.defaultPopupHeightUnits
+        return Math.max(GitHubConstants.minPopupHeightUnits, Math.min(GitHubConstants.maxPopupHeightUnits, value))
     }
     property int titleLines: {
-        var value = parseInt(pluginData.titleLines || Constants.defaultTitleLines)
+        var value = parseInt(pluginData.titleLines || GitHubConstants.defaultTitleLines)
         if (isNaN(value))
-            return Constants.defaultTitleLines
-        return Math.max(Constants.minTitleLines, Math.min(Constants.maxTitleLines, value))
+            return GitHubConstants.defaultTitleLines
+        return Math.max(GitHubConstants.minTitleLines, Math.min(GitHubConstants.maxTitleLines, value))
     }
     property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
-    property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, Constants.defaultEnableNotifications)
+    property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, GitHubConstants.defaultEnableNotifications)
     property int cacheTtlMinutes: {
-        var value = parseInt(pluginData.cacheTtlMinutes || Constants.defaultCacheTtlMinutes)
+        var value = parseInt(pluginData.cacheTtlMinutes || GitHubConstants.defaultCacheTtlMinutes)
         if (isNaN(value))
-            return Constants.defaultCacheTtlMinutes
-        return Math.max(Constants.minCacheTtlMinutes, Math.min(Constants.maxCacheTtlMinutes, value))
+            return GitHubConstants.defaultCacheTtlMinutes
+        return Math.max(GitHubConstants.minCacheTtlMinutes, Math.min(GitHubConstants.maxCacheTtlMinutes, value))
     }
 
     // =========================================================================
@@ -78,11 +79,11 @@ PluginComponent {
     property int unreadCount: 0
     property string errorMessage: ""
     property real lastUpdated: 0
-    property var expandedReposState: ({ [Constants.expandedStateDefaultKey]: true })
+    property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
     property var _previousThreadIds: ({})
 
-    property url githubIconPrimary: Constants.githubFaviconUrl
+    property url githubIconPrimary: GitHubConstants.githubFaviconUrl
     property url githubIconFallback: Qt.resolvedUrl("../Images/github-mark.svg")
 
     // -- Computed properties --------------------------------------------------
@@ -112,7 +113,6 @@ PluginComponent {
         onCacheReady: root._onCacheReady()
         onAvatarCachedLocally: function(login, localUrl) {
             avatarPreloader.updateEntrySource(login, localUrl)
-            root._propagateLocalAvatar(login, localUrl)
         }
     }
 
@@ -147,7 +147,7 @@ PluginComponent {
                 for (var index = 0; index < chunk.length; index++)
                     nextMessages.push(chunk[index])
                 root.inboxMessages = nextMessages
-                root.messagesForView = nextMessages
+                root._appendViewMessages(chunk)
                 avatarPreloader.queueFromMessages(chunk)
                 authorFetch.prefetchForMessages(chunk)
             }
@@ -157,6 +157,7 @@ PluginComponent {
                 cacheCoord.updateMessages(root.inboxMessages)
                 root._detectAndNotifyNewMessages(root.inboxMessages)
                 _tryFinalizeAuthorPrefetch()
+                Qt.callLater(_tryFinalizeAuthorPrefetch)
             }
         }
 
@@ -174,6 +175,7 @@ PluginComponent {
             cacheCoord.updateMessages(root.inboxMessages)
             root._detectAndNotifyNewMessages(root.inboxMessages)
             _tryFinalizeAuthorPrefetch()
+            Qt.callLater(_tryFinalizeAuthorPrefetch)
         }
 
         onFetchError: function(errorMessage) {
@@ -274,7 +276,7 @@ PluginComponent {
 
     Timer {
         id: viewApplyTimer
-        interval: Constants.viewApplyTimerIntervalMs
+        interval: GitHubConstants.viewApplyTimerIntervalMs
         repeat: true
         onTriggered: root._applyViewChunk()
     }
@@ -284,7 +286,7 @@ PluginComponent {
     // =========================================================================
 
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
+        if (!GitHubConstants.debugPerformanceLogging) return
         var elapsed = (Date.now() - _perfStartMs).toFixed(0)
         console.warn("[GitHubInbox PERF] +" + elapsed + "ms  " + label)
     }
@@ -386,7 +388,7 @@ PluginComponent {
 
     function _sendDesktopNotification(newMessages) {
         var body = ""
-        var maxLines = Constants.notificationMaxLines
+        var maxLines = GitHubConstants.notificationMaxLines
 
         if (newMessages.length === 1) {
             var lines = (newMessages[0].title || "").split("\n")
@@ -417,8 +419,8 @@ PluginComponent {
 
         var proc = notifyProcessDef.createObject(root)
         var cmd = ["notify-send",
-            "-a", Constants.notificationAppName,
-            "-t", String(Constants.notificationExpireMs)]
+            "-a", GitHubConstants.notificationAppName,
+            "-t", String(GitHubConstants.notificationExpireMs)]
         if (iconPath)
             cmd.push("-i", iconPath)
         cmd.push(summary, body)
@@ -489,10 +491,8 @@ PluginComponent {
         if (cachedAuthors && typeof cachedAuthors === "object") {
             for (var tid in cachedAuthors) {
                 var authors = cachedAuthors[tid]
-                if (authors && authors.length > 0) {
-                    cacheCoord.resolveAuthorAvatars(authors)
+                if (authors && authors.length > 0)
                     resolvedAuthors[tid] = authors
-                }
             }
             authorsByThread = resolvedAuthors
         }
@@ -521,19 +521,26 @@ PluginComponent {
         var resolvedAuthors = state.resolvedAuthors || {}
         var allPreloadAuthors = []
         for (var mi = 0; mi < messages.length; mi++) {
+            if (allPreloadAuthors.length >= GitHubConstants.avatarPreloadTotalCacheLimit)
+                break
             var msg = messages[mi]
             allPreloadAuthors.push({
                 login: msg.repositoryOwnerLogin || "",
                 avatarUrl: msg.repositoryOwnerAvatarUrl || "",
                 htmlUrl: msg.repositoryOwnerLogin
-                    ? (Constants.githubWebBaseUrl + "/" + encodeURIComponent(msg.repositoryOwnerLogin))
+                    ? (GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(msg.repositoryOwnerLogin))
                     : ""
             })
         }
         for (var atid in resolvedAuthors) {
+            if (allPreloadAuthors.length >= GitHubConstants.avatarPreloadTotalCacheLimit)
+                break
             var authorList = resolvedAuthors[atid] || []
-            for (var ai = 0; ai < authorList.length; ai++)
+            for (var ai = 0; ai < authorList.length; ai++) {
+                if (allPreloadAuthors.length >= GitHubConstants.avatarPreloadTotalCacheLimit)
+                    break
                 allPreloadAuthors.push(authorList[ai])
+            }
         }
         _perfLog("_onCacheReadyPhase3 — preload authors count=" + allPreloadAuthors.length)
         if (allPreloadAuthors.length > 0)
@@ -548,6 +555,8 @@ PluginComponent {
         if (!authorFetch.prefetchPending)
             return
         if (authorFetch.requestsInFlight > 0 || authorFetch.requestQueue.length > 0)
+            return
+        if (authorFetch.hasPendingPrefetchWork())
             return
         if (fetcher.isLoading)
             return
@@ -604,15 +613,47 @@ PluginComponent {
     // -- View helpers ---------------------------------------------------------
 
     function _queueViewMessages(items) {
-        var nextItems = (items || []).slice(0)
-        pendingViewMessages = nextItems
-        pendingViewIndex = nextItems.length
-        messagesForView = nextItems
-        viewApplyTimer.stop()
+        pendingViewMessages = (items || []).slice(0)
+        pendingViewIndex = 0
+        messagesForView = []
+        if (pendingViewMessages.length > 0)
+            viewApplyTimer.restart()
+        else
+            viewApplyTimer.stop()
+    }
+
+    function _appendViewMessages(items) {
+        if (!items || items.length === 0)
+            return
+
+        var nextPending = pendingViewMessages.slice(0)
+        for (var index = 0; index < items.length; index++)
+            nextPending.push(items[index])
+        pendingViewMessages = nextPending
+
+        if (!viewApplyTimer.running)
+            viewApplyTimer.restart()
     }
 
     function _applyViewChunk() {
-        viewApplyTimer.stop()
+        if (pendingViewMessages.length === 0) {
+            viewApplyTimer.stop()
+            return
+        }
+
+        var limit = Math.max(1, GitHubConstants.viewApplyChunkSize)
+        var count = Math.min(limit, pendingViewMessages.length)
+        var nextView = messagesForView.slice(0)
+
+        for (var index = 0; index < count; index++)
+            nextView.push(pendingViewMessages[index])
+
+        messagesForView = nextView
+        pendingViewIndex += count
+        pendingViewMessages = pendingViewMessages.slice(count)
+
+        if (pendingViewMessages.length === 0)
+            viewApplyTimer.stop()
     }
 
     function _recalculateUnread(items) {
@@ -629,8 +670,8 @@ PluginComponent {
         var source = state || {}
         for (var key in source)
             copy[key] = source[key]
-        if (copy[Constants.expandedStateDefaultKey] === undefined)
-            copy[Constants.expandedStateDefaultKey] = true
+        if (copy[GitHubConstants.expandedStateDefaultKey] === undefined)
+            copy[GitHubConstants.expandedStateDefaultKey] = true
         return copy
     }
 
@@ -660,7 +701,7 @@ PluginComponent {
             operations.resetState()
             avatarPreloader.reset()
             authorsByThread = ({})
-            expandedReposState = ({ [Constants.expandedStateDefaultKey]: true })
+            expandedReposState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
             _previousThreadIds = ({})
             return
         }
@@ -712,8 +753,8 @@ PluginComponent {
             spacing: Theme.spacingXS
 
             GitHubIcon {
-                size: Math.max(Constants.barIconMinSizePx, root.iconSize - Constants.barIconSizeReductionPx)
-                iconOpacity: Constants.githubIconBarOpacity
+                size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
+                iconOpacity: GitHubConstants.githubIconBarOpacity
                 sourcePrimary: root.githubIconPrimary
                 sourceFallback: root.githubIconFallback
                 anchors.verticalCenter: parent.verticalCenter
@@ -735,8 +776,8 @@ PluginComponent {
             spacing: Theme.spacingXS
 
             GitHubIcon {
-                size: Math.max(Constants.barIconMinSizePx, root.iconSize - Constants.barIconSizeReductionPx)
-                iconOpacity: Constants.githubIconBarOpacity
+                size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
+                iconOpacity: GitHubConstants.githubIconBarOpacity
                 sourcePrimary: root.githubIconPrimary
                 sourceFallback: root.githubIconFallback
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -814,12 +855,12 @@ PluginComponent {
         }
     }
 
-    popoutWidth: Math.round(Constants.popoutBaseWidthPx * Constants.popoutWidthScale)
+    popoutWidth: Math.round(GitHubConstants.popoutBaseWidthPx * GitHubConstants.popoutWidthScale)
     popoutHeight: {
-        var groups = Math.max(Constants.minPopupHeightUnits, popupHeightUnits)
-        var groupHeaderHeight = Constants.popoutGroupHeaderHeightPx
-        var lineContribution = Math.max(1, titleLines) * Constants.popoutTitleLineHeightContributionPx
-        var estimated = (groups * (groupHeaderHeight + lineContribution)) + Constants.popoutHeightBasePaddingPx
-        return Math.max(Constants.popoutMinHeightPx, Math.min(Constants.popoutMaxHeightPx, estimated))
+        var groups = Math.max(GitHubConstants.minPopupHeightUnits, popupHeightUnits)
+        var groupHeaderHeight = GitHubConstants.popoutGroupHeaderHeightPx
+        var lineContribution = Math.max(1, titleLines) * GitHubConstants.popoutTitleLineHeightContributionPx
+        var estimated = (groups * (groupHeaderHeight + lineContribution)) + GitHubConstants.popoutHeightBasePaddingPx
+        return Math.max(GitHubConstants.popoutMinHeightPx, Math.min(GitHubConstants.popoutMaxHeightPx, estimated))
     }
 }

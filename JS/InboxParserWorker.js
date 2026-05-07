@@ -3,7 +3,7 @@
 // Local mirrors of QML/Constants.qml values.
 // WorkerScript files cannot access QML singletons; constants are inlined here.
 var _FETCH_PAYLOAD_SPLIT_TOKEN = "__GH_PARTICIPATING_SPLIT__"
-var _MESSAGES_PARSE_CHUNK_SIZE = 80
+var _MESSAGES_PARSE_CHUNK_SIZE = 40
 var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
 var _AVATAR_DEFAULT_SIZE_PX = 128
 
@@ -19,6 +19,7 @@ WorkerScript.onMessage = function (message) {
         }
         WorkerScript.sendMessage({
             action: "authorsResult",
+            generation: message.generation || 0,
             threadId: message.threadId || "",
             updatedAt: message.updatedAt || "",
             requestedUrls: message.requestedUrls || [],
@@ -286,7 +287,7 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
 function defaultAvatarUrlForLogin(login) {
     var normalized = String(login || "").trim()
     if (!normalized) return ""
-    return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=" + _AVATAR_DEFAULT_SIZE_PX
+    return "https://avatars.githubusercontent.com/" + encodeURIComponent(normalized) + "?size=" + _AVATAR_DEFAULT_SIZE_PX
 }
 
 function authorAvatarUrl(authorLike) {

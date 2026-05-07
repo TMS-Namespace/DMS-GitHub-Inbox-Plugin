@@ -8,14 +8,14 @@ import ".."
 
 PluginSettings {
     id: root
-    pluginId: Constants.pluginNamespaceId
+    pluginId: GitHubConstants.pluginNamespaceId
 
     property string tokenValue: ""
     property bool showToken: false
-    property int groupLimitValue: Constants.defaultGroupItemLimit
-    property int fetchPagesValue: Constants.defaultFetchPageCount
-    property int popupHeightValue: Constants.defaultPopupHeightUnits
-    property int cacheTtlValue: Constants.defaultCacheTtlMinutes
+    property int groupLimitValue: GitHubConstants.defaultGroupItemLimit
+    property int fetchPagesValue: GitHubConstants.defaultFetchPageCount
+    property int popupHeightValue: GitHubConstants.defaultPopupHeightUnits
+    property int cacheTtlValue: GitHubConstants.defaultCacheTtlMinutes
 
     function saveValue(key, value) {
         if (pluginService)
@@ -33,47 +33,47 @@ PluginSettings {
     }
 
     function clampGroupLimit(value) {
-        var limit = parseInt(value || Constants.defaultGroupItemLimit)
+        var limit = parseInt(value || GitHubConstants.defaultGroupItemLimit)
         if (isNaN(limit))
-            return Constants.defaultGroupItemLimit
-        return Math.max(Constants.minGroupItemLimit, Math.min(Constants.maxGroupItemLimit, limit))
+            return GitHubConstants.defaultGroupItemLimit
+        return Math.max(GitHubConstants.minGroupItemLimit, Math.min(GitHubConstants.maxGroupItemLimit, limit))
     }
 
     function loadGroupLimit() {
-        groupLimitValue = clampGroupLimit(loadValue("groupItemLimit", Constants.defaultGroupItemLimit))
+        groupLimitValue = clampGroupLimit(loadValue("groupItemLimit", GitHubConstants.defaultGroupItemLimit))
     }
 
     function clampFetchPages(value) {
-        var pages = parseInt(value || Constants.defaultFetchPageCount)
+        var pages = parseInt(value || GitHubConstants.defaultFetchPageCount)
         if (isNaN(pages))
-            return Constants.defaultFetchPageCount
-        return Math.max(Constants.minFetchPageCount, Math.min(Constants.maxFetchPageCount, pages))
+            return GitHubConstants.defaultFetchPageCount
+        return Math.max(GitHubConstants.minFetchPageCount, Math.min(GitHubConstants.maxFetchPageCount, pages))
     }
 
     function loadFetchPages() {
-        fetchPagesValue = clampFetchPages(loadValue("fetchPages", Constants.defaultFetchPageCount))
+        fetchPagesValue = clampFetchPages(loadValue("fetchPages", GitHubConstants.defaultFetchPageCount))
     }
 
     function clampPopupHeight(value) {
-        var units = parseInt(value || Constants.defaultPopupHeightUnits)
+        var units = parseInt(value || GitHubConstants.defaultPopupHeightUnits)
         if (isNaN(units))
-            return Constants.defaultPopupHeightUnits
-        return Math.max(Constants.minPopupHeightUnits, Math.min(Constants.maxPopupHeightUnits, units))
+            return GitHubConstants.defaultPopupHeightUnits
+        return Math.max(GitHubConstants.minPopupHeightUnits, Math.min(GitHubConstants.maxPopupHeightUnits, units))
     }
 
     function loadPopupHeight() {
-        popupHeightValue = clampPopupHeight(loadValue("popupHeight", Constants.defaultPopupHeightUnits))
+        popupHeightValue = clampPopupHeight(loadValue("popupHeight", GitHubConstants.defaultPopupHeightUnits))
     }
 
     function clampCacheTtl(value) {
-        var ttl = parseInt(value || Constants.defaultCacheTtlMinutes)
+        var ttl = parseInt(value || GitHubConstants.defaultCacheTtlMinutes)
         if (isNaN(ttl))
-            return Constants.defaultCacheTtlMinutes
-        return Math.max(Constants.minCacheTtlMinutes, Math.min(Constants.maxCacheTtlMinutes, ttl))
+            return GitHubConstants.defaultCacheTtlMinutes
+        return Math.max(GitHubConstants.minCacheTtlMinutes, Math.min(GitHubConstants.maxCacheTtlMinutes, ttl))
     }
 
     function loadCacheTtl() {
-        cacheTtlValue = clampCacheTtl(loadValue("cacheTtlMinutes", Constants.defaultCacheTtlMinutes))
+        cacheTtlValue = clampCacheTtl(loadValue("cacheTtlMinutes", GitHubConstants.defaultCacheTtlMinutes))
     }
     onPluginServiceChanged: {
         if (pluginService) {
@@ -144,13 +144,13 @@ PluginSettings {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: Qt.openUrlExternally(Constants.githubTokenSettingsUrl)
+            onClicked: Qt.openUrlExternally(GitHubConstants.githubTokenSettingsUrl)
         }
     }
 
     Item {
         width: parent.width
-        height: Constants.settingsTokenItemHeightPx
+        height: GitHubConstants.settingsTokenItemHeightPx
 
         Column {
             anchors.fill: parent
@@ -166,7 +166,7 @@ PluginSettings {
             Rectangle {
                 id: tokenField
                 width: parent.width
-                height: Constants.settingsTokenFieldHeightPx
+                height: GitHubConstants.settingsTokenFieldHeightPx
                 radius: Theme.cornerRadius
                 color: Theme.surfaceContainerHigh
                 border.width: 1
@@ -205,13 +205,13 @@ PluginSettings {
                 Rectangle {
                     id: visibilityButton
                     anchors.right: parent.right
-                    anchors.rightMargin: Constants.settingsVisibilityButtonRightMarginPx
+                    anchors.rightMargin: GitHubConstants.settingsVisibilityButtonRightMarginPx
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Constants.settingsVisibilityButtonSizePx
-                    height: Constants.settingsVisibilityButtonSizePx
-                    radius: Constants.settingsVisibilityButtonRadiusPx
+                    width: GitHubConstants.settingsVisibilityButtonSizePx
+                    height: GitHubConstants.settingsVisibilityButtonSizePx
+                    radius: GitHubConstants.settingsVisibilityButtonRadiusPx
                     color: visibilityArea.containsMouse
-                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.settingsButtonHoverOpacity)
+                           ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.settingsButtonHoverOpacity)
                            : "transparent"
 
                     MouseArea {
@@ -225,7 +225,7 @@ PluginSettings {
                     DankIcon {
                         anchors.centerIn: parent
                         name: root.showToken ? "visibility_off" : "visibility"
-                        size: Constants.settingsVisibilityIconSizePx
+                        size: GitHubConstants.settingsVisibilityIconSizePx
                         color: Theme.surfaceVariantText
                     }
                 }
@@ -244,7 +244,7 @@ PluginSettings {
             { label: "10 minutes", value: "600" },
             { label: "15 minutes", value: "900" }
         ]
-        defaultValue: Constants.defaultPollIntervalSetting
+        defaultValue: GitHubConstants.defaultPollIntervalSetting
     }
 
     ToggleSetting {
@@ -276,16 +276,16 @@ PluginSettings {
         settingKey: "enableNotifications"
         label: "Desktop Notifications"
         description: "Show a system notification when new inbox messages arrive"
-        defaultValue: Constants.defaultEnableNotifications
+        defaultValue: GitHubConstants.defaultEnableNotifications
     }
 
     Item {
         width: parent.width
-        height: Constants.settingsSliderItemHeightPx
+        height: GitHubConstants.settingsSliderItemHeightPx
 
         Column {
             anchors.fill: parent
-            spacing: Constants.settingsSliderColumnSpacingPx
+            spacing: GitHubConstants.settingsSliderColumnSpacingPx
 
             Row {
                 width: parent.width
@@ -308,33 +308,33 @@ PluginSettings {
 
             Item {
                 width: parent.width
-                height: Constants.settingsSliderKnobAreaHeightPx
+                height: GitHubConstants.settingsSliderKnobAreaHeightPx
 
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    height: Constants.settingsSliderTrackHeightPx
-                    radius: Constants.settingsSliderTrackRadiusPx
+                    height: GitHubConstants.settingsSliderTrackHeightPx
+                    radius: GitHubConstants.settingsSliderTrackRadiusPx
                     color: Theme.surfaceContainerHighest
 
                     Rectangle {
-                        width: (groupSlider.value - Constants.minGroupItemLimit) / (Constants.maxGroupItemLimit - Constants.minGroupItemLimit) * parent.width
+                        width: (groupSlider.value - GitHubConstants.minGroupItemLimit) / (GitHubConstants.maxGroupItemLimit - GitHubConstants.minGroupItemLimit) * parent.width
                         height: parent.height
-                        radius: Constants.settingsSliderTrackRadiusPx
+                        radius: GitHubConstants.settingsSliderTrackRadiusPx
                         color: Theme.primary
                     }
                 }
 
                 Rectangle {
                     id: groupHandle
-                    width: Constants.settingsSliderHandleSizePx
-                    height: Constants.settingsSliderHandleSizePx
-                    radius: Constants.settingsSliderHandleRadiusPx
+                    width: GitHubConstants.settingsSliderHandleSizePx
+                    height: GitHubConstants.settingsSliderHandleSizePx
+                    radius: GitHubConstants.settingsSliderHandleRadiusPx
                     color: groupMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
                     border.color: Theme.primary
-                    border.width: Constants.settingsSliderHandleBorderWidthPx
-                    x: (groupSlider.value - Constants.minGroupItemLimit) / (Constants.maxGroupItemLimit - Constants.minGroupItemLimit) * (parent.width - width)
+                    border.width: GitHubConstants.settingsSliderHandleBorderWidthPx
+                    x: (groupSlider.value - GitHubConstants.minGroupItemLimit) / (GitHubConstants.maxGroupItemLimit - GitHubConstants.minGroupItemLimit) * (parent.width - width)
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -346,13 +346,13 @@ PluginSettings {
                 MouseArea {
                     id: groupMouse
                     anchors.fill: parent
-                    anchors.topMargin: -Constants.settingsSliderTouchExpansionPx
-                    anchors.bottomMargin: -Constants.settingsSliderTouchExpansionPx
+                    anchors.topMargin: -GitHubConstants.settingsSliderTouchExpansionPx
+                    anchors.bottomMargin: -GitHubConstants.settingsSliderTouchExpansionPx
                     cursorShape: Qt.PointingHandCursor
 
                     function updateValue(mouseX) {
                         var ratio = Math.max(0, Math.min(1, mouseX / width))
-                        groupSlider.value = Math.round(Constants.minGroupItemLimit + ratio * (Constants.maxGroupItemLimit - Constants.minGroupItemLimit))
+                        groupSlider.value = Math.round(GitHubConstants.minGroupItemLimit + ratio * (GitHubConstants.maxGroupItemLimit - GitHubConstants.minGroupItemLimit))
                     }
 
                     onPressed: function(mouse) { updateValue(mouse.x) }
@@ -370,11 +370,11 @@ PluginSettings {
 
     Item {
         width: parent.width
-        height: Constants.settingsSliderItemHeightPx
+        height: GitHubConstants.settingsSliderItemHeightPx
 
         Column {
             anchors.fill: parent
-            spacing: Constants.settingsSliderColumnSpacingPx
+            spacing: GitHubConstants.settingsSliderColumnSpacingPx
 
             Row {
                 width: parent.width
@@ -397,33 +397,33 @@ PluginSettings {
 
             Item {
                 width: parent.width
-                height: Constants.settingsSliderKnobAreaHeightPx
+                height: GitHubConstants.settingsSliderKnobAreaHeightPx
 
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    height: Constants.settingsSliderTrackHeightPx
-                    radius: Constants.settingsSliderTrackRadiusPx
+                    height: GitHubConstants.settingsSliderTrackHeightPx
+                    radius: GitHubConstants.settingsSliderTrackRadiusPx
                     color: Theme.surfaceContainerHighest
 
                     Rectangle {
-                        width: (fetchPagesSlider.value - Constants.minFetchPageCount) / (Constants.maxFetchPageCount - Constants.minFetchPageCount) * parent.width
+                        width: (fetchPagesSlider.value - GitHubConstants.minFetchPageCount) / (GitHubConstants.maxFetchPageCount - GitHubConstants.minFetchPageCount) * parent.width
                         height: parent.height
-                        radius: Constants.settingsSliderTrackRadiusPx
+                        radius: GitHubConstants.settingsSliderTrackRadiusPx
                         color: Theme.primary
                     }
                 }
 
                 Rectangle {
                     id: fetchPagesHandle
-                    width: Constants.settingsSliderHandleSizePx
-                    height: Constants.settingsSliderHandleSizePx
-                    radius: Constants.settingsSliderHandleRadiusPx
+                    width: GitHubConstants.settingsSliderHandleSizePx
+                    height: GitHubConstants.settingsSliderHandleSizePx
+                    radius: GitHubConstants.settingsSliderHandleRadiusPx
                     color: fetchPagesMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
                     border.color: Theme.primary
-                    border.width: Constants.settingsSliderHandleBorderWidthPx
-                    x: (fetchPagesSlider.value - Constants.minFetchPageCount) / (Constants.maxFetchPageCount - Constants.minFetchPageCount) * (parent.width - width)
+                    border.width: GitHubConstants.settingsSliderHandleBorderWidthPx
+                    x: (fetchPagesSlider.value - GitHubConstants.minFetchPageCount) / (GitHubConstants.maxFetchPageCount - GitHubConstants.minFetchPageCount) * (parent.width - width)
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -435,13 +435,13 @@ PluginSettings {
                 MouseArea {
                     id: fetchPagesMouse
                     anchors.fill: parent
-                    anchors.topMargin: -Constants.settingsSliderTouchExpansionPx
-                    anchors.bottomMargin: -Constants.settingsSliderTouchExpansionPx
+                    anchors.topMargin: -GitHubConstants.settingsSliderTouchExpansionPx
+                    anchors.bottomMargin: -GitHubConstants.settingsSliderTouchExpansionPx
                     cursorShape: Qt.PointingHandCursor
 
                     function updateValue(mouseX) {
                         var ratio = Math.max(0, Math.min(1, mouseX / width))
-                        fetchPagesSlider.value = Math.round(Constants.minFetchPageCount + ratio * (Constants.maxFetchPageCount - Constants.minFetchPageCount))
+                        fetchPagesSlider.value = Math.round(GitHubConstants.minFetchPageCount + ratio * (GitHubConstants.maxFetchPageCount - GitHubConstants.minFetchPageCount))
                     }
 
                     onPressed: function(mouse) { updateValue(mouse.x) }
@@ -459,11 +459,11 @@ PluginSettings {
 
     Item {
         width: parent.width
-        height: Constants.settingsSliderItemHeightPx
+        height: GitHubConstants.settingsSliderItemHeightPx
 
         Column {
             anchors.fill: parent
-            spacing: Constants.settingsSliderColumnSpacingPx
+            spacing: GitHubConstants.settingsSliderColumnSpacingPx
 
             Row {
                 width: parent.width
@@ -486,33 +486,33 @@ PluginSettings {
 
             Item {
                 width: parent.width
-                height: Constants.settingsSliderKnobAreaHeightPx
+                height: GitHubConstants.settingsSliderKnobAreaHeightPx
 
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    height: Constants.settingsSliderTrackHeightPx
-                    radius: Constants.settingsSliderTrackRadiusPx
+                    height: GitHubConstants.settingsSliderTrackHeightPx
+                    radius: GitHubConstants.settingsSliderTrackRadiusPx
                     color: Theme.surfaceContainerHighest
 
                     Rectangle {
-                        width: (popupHeightSlider.value - Constants.minPopupHeightUnits) / (Constants.maxPopupHeightUnits - Constants.minPopupHeightUnits) * parent.width
+                        width: (popupHeightSlider.value - GitHubConstants.minPopupHeightUnits) / (GitHubConstants.maxPopupHeightUnits - GitHubConstants.minPopupHeightUnits) * parent.width
                         height: parent.height
-                        radius: Constants.settingsSliderTrackRadiusPx
+                        radius: GitHubConstants.settingsSliderTrackRadiusPx
                         color: Theme.primary
                     }
                 }
 
                 Rectangle {
                     id: popupHeightHandle
-                    width: Constants.settingsSliderHandleSizePx
-                    height: Constants.settingsSliderHandleSizePx
-                    radius: Constants.settingsSliderHandleRadiusPx
+                    width: GitHubConstants.settingsSliderHandleSizePx
+                    height: GitHubConstants.settingsSliderHandleSizePx
+                    radius: GitHubConstants.settingsSliderHandleRadiusPx
                     color: popupHeightMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
                     border.color: Theme.primary
-                    border.width: Constants.settingsSliderHandleBorderWidthPx
-                    x: (popupHeightSlider.value - Constants.minPopupHeightUnits) / (Constants.maxPopupHeightUnits - Constants.minPopupHeightUnits) * (parent.width - width)
+                    border.width: GitHubConstants.settingsSliderHandleBorderWidthPx
+                    x: (popupHeightSlider.value - GitHubConstants.minPopupHeightUnits) / (GitHubConstants.maxPopupHeightUnits - GitHubConstants.minPopupHeightUnits) * (parent.width - width)
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -524,13 +524,13 @@ PluginSettings {
                 MouseArea {
                     id: popupHeightMouse
                     anchors.fill: parent
-                    anchors.topMargin: -Constants.settingsSliderTouchExpansionPx
-                    anchors.bottomMargin: -Constants.settingsSliderTouchExpansionPx
+                    anchors.topMargin: -GitHubConstants.settingsSliderTouchExpansionPx
+                    anchors.bottomMargin: -GitHubConstants.settingsSliderTouchExpansionPx
                     cursorShape: Qt.PointingHandCursor
 
                     function updateValue(mouseX) {
                         var ratio = Math.max(0, Math.min(1, mouseX / width))
-                        popupHeightSlider.value = Math.round(Constants.minPopupHeightUnits + ratio * (Constants.maxPopupHeightUnits - Constants.minPopupHeightUnits))
+                        popupHeightSlider.value = Math.round(GitHubConstants.minPopupHeightUnits + ratio * (GitHubConstants.maxPopupHeightUnits - GitHubConstants.minPopupHeightUnits))
                     }
 
                     onPressed: function(mouse) { updateValue(mouse.x) }
@@ -556,7 +556,7 @@ PluginSettings {
             { label: "3 lines", value: "3" },
             { label: "4 lines", value: "4" }
         ]
-        defaultValue: Constants.defaultTitleLines
+        defaultValue: GitHubConstants.defaultTitleLines
     }
 
     // -------------------------------------------------------------------------
@@ -586,11 +586,11 @@ PluginSettings {
 
     Item {
         width: parent.width
-        height: Constants.settingsSliderItemHeightPx
+        height: GitHubConstants.settingsSliderItemHeightPx
 
         Column {
             anchors.fill: parent
-            spacing: Constants.settingsSliderColumnSpacingPx
+            spacing: GitHubConstants.settingsSliderColumnSpacingPx
 
             Row {
                 width: parent.width
@@ -613,33 +613,33 @@ PluginSettings {
 
             Item {
                 width: parent.width
-                height: Constants.settingsSliderKnobAreaHeightPx
+                height: GitHubConstants.settingsSliderKnobAreaHeightPx
 
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    height: Constants.settingsSliderTrackHeightPx
-                    radius: Constants.settingsSliderTrackRadiusPx
+                    height: GitHubConstants.settingsSliderTrackHeightPx
+                    radius: GitHubConstants.settingsSliderTrackRadiusPx
                     color: Theme.surfaceContainerHighest
 
                     Rectangle {
-                        width: (cacheTtlSlider.value - Constants.minCacheTtlMinutes) / (Constants.maxCacheTtlMinutes - Constants.minCacheTtlMinutes) * parent.width
+                        width: (cacheTtlSlider.value - GitHubConstants.minCacheTtlMinutes) / (GitHubConstants.maxCacheTtlMinutes - GitHubConstants.minCacheTtlMinutes) * parent.width
                         height: parent.height
-                        radius: Constants.settingsSliderTrackRadiusPx
+                        radius: GitHubConstants.settingsSliderTrackRadiusPx
                         color: Theme.primary
                     }
                 }
 
                 Rectangle {
                     id: cacheTtlHandle
-                    width: Constants.settingsSliderHandleSizePx
-                    height: Constants.settingsSliderHandleSizePx
-                    radius: Constants.settingsSliderHandleRadiusPx
+                    width: GitHubConstants.settingsSliderHandleSizePx
+                    height: GitHubConstants.settingsSliderHandleSizePx
+                    radius: GitHubConstants.settingsSliderHandleRadiusPx
                     color: cacheTtlMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
                     border.color: Theme.primary
-                    border.width: Constants.settingsSliderHandleBorderWidthPx
-                    x: (cacheTtlSlider.value - Constants.minCacheTtlMinutes) / (Constants.maxCacheTtlMinutes - Constants.minCacheTtlMinutes) * (parent.width - width)
+                    border.width: GitHubConstants.settingsSliderHandleBorderWidthPx
+                    x: (cacheTtlSlider.value - GitHubConstants.minCacheTtlMinutes) / (GitHubConstants.maxCacheTtlMinutes - GitHubConstants.minCacheTtlMinutes) * (parent.width - width)
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
@@ -651,13 +651,13 @@ PluginSettings {
                 MouseArea {
                     id: cacheTtlMouse
                     anchors.fill: parent
-                    anchors.topMargin: -Constants.settingsSliderTouchExpansionPx
-                    anchors.bottomMargin: -Constants.settingsSliderTouchExpansionPx
+                    anchors.topMargin: -GitHubConstants.settingsSliderTouchExpansionPx
+                    anchors.bottomMargin: -GitHubConstants.settingsSliderTouchExpansionPx
                     cursorShape: Qt.PointingHandCursor
 
                     function updateValue(mouseX) {
                         var ratio = Math.max(0, Math.min(1, mouseX / width))
-                        cacheTtlSlider.value = Math.round(Constants.minCacheTtlMinutes + ratio * (Constants.maxCacheTtlMinutes - Constants.minCacheTtlMinutes))
+                        cacheTtlSlider.value = Math.round(GitHubConstants.minCacheTtlMinutes + ratio * (GitHubConstants.maxCacheTtlMinutes - GitHubConstants.minCacheTtlMinutes))
                     }
 
                     onPressed: function(mouse) { updateValue(mouse.x) }
@@ -706,8 +706,9 @@ PluginSettings {
     // -------------------------------------------------------------------------
 
     Rectangle {
+        visible: GitHubConstants.isDevMode
         width: parent.width
-        height: 1
+        height: visible ? 1 : 0
         color: Theme.outlineVariant
     }
 
@@ -715,8 +716,9 @@ PluginSettings {
         id: statsSection
         property bool statsExpanded: false
 
+        visible: GitHubConstants.isDevMode
         width: parent.width
-        height: Theme.spacingS + statsHeader.height + statsCollapser.height
+        height: visible ? Theme.spacingS + statsHeader.height + statsCollapser.height : 0
 
         MouseArea {
             width: parent.width
@@ -757,7 +759,7 @@ PluginSettings {
             clip: true
 
             Behavior on height {
-                NumberAnimation { duration: Constants.settingsStatsExpandAnimationDurationMs; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: GitHubConstants.settingsStatsExpandAnimationDurationMs; easing.type: Easing.OutCubic }
             }
 
             Column {
@@ -766,27 +768,27 @@ PluginSettings {
                 spacing: 2
                 topPadding: Theme.spacingXS
 
-                readonly property real c1: width * Constants.settingsStatsScopeColumnWidthRatio
-                readonly property real c2: width * Constants.settingsStatsCallsColumnWidthRatio
-                readonly property real c3: width * Constants.settingsStatsAvgDurationColumnWidthRatio
-                readonly property real c4: width * Constants.settingsStatsRefreshesColumnWidthRatio
+                readonly property real c1: width * GitHubConstants.settingsStatsScopeColumnWidthRatio
+                readonly property real c2: width * GitHubConstants.settingsStatsCallsColumnWidthRatio
+                readonly property real c3: width * GitHubConstants.settingsStatsAvgDurationColumnWidthRatio
+                readonly property real c4: width * GitHubConstants.settingsStatsRefreshesColumnWidthRatio
 
                 // ---- Column headers -----------------------------------------
                 Row {
                     width: parent.width
-                    height: Constants.settingsStatsHeaderRowHeightPx
+                    height: GitHubConstants.settingsStatsHeaderRowHeightPx
 
                     StyledText {
                         width: statsTable.c1
                         text: "Scope"
-                        font.pixelSize: Constants.settingsStatsFontSizePx
+                        font.pixelSize: GitHubConstants.settingsStatsFontSizePx
                         color: Theme.surfaceVariantText
                         font.weight: Font.Medium
                     }
                     StyledText {
                         width: statsTable.c2
                         text: "Calls"
-                        font.pixelSize: Constants.settingsStatsFontSizePx
+                        font.pixelSize: GitHubConstants.settingsStatsFontSizePx
                         color: Theme.surfaceVariantText
                         font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
@@ -794,7 +796,7 @@ PluginSettings {
                     StyledText {
                         width: statsTable.c3
                         text: "Avg sec"
-                        font.pixelSize: Constants.settingsStatsFontSizePx
+                        font.pixelSize: GitHubConstants.settingsStatsFontSizePx
                         color: Theme.surfaceVariantText
                         font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
@@ -802,7 +804,7 @@ PluginSettings {
                     StyledText {
                         width: statsTable.c4
                         text: "Refreshes"
-                        font.pixelSize: Constants.settingsStatsFontSizePx
+                        font.pixelSize: GitHubConstants.settingsStatsFontSizePx
                         color: Theme.surfaceVariantText
                         font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
@@ -814,7 +816,7 @@ PluginSettings {
                 // ---- Last refresh -------------------------------------------
                 Row {
                     width: parent.width
-                    height: Constants.settingsStatsDataRowHeightPx
+                    height: GitHubConstants.settingsStatsDataRowHeightPx
 
                     StyledText {
                         width: statsTable.c1
@@ -850,7 +852,7 @@ PluginSettings {
                 // ---- Last hour ----------------------------------------------
                 Row {
                     width: parent.width
-                    height: Constants.settingsStatsDataRowHeightPx
+                    height: GitHubConstants.settingsStatsDataRowHeightPx
 
                     StyledText {
                         width: statsTable.c1
@@ -884,7 +886,7 @@ PluginSettings {
                 // ---- All time -----------------------------------------------
                 Row {
                     width: parent.width
-                    height: Constants.settingsStatsDataRowHeightPx
+                    height: GitHubConstants.settingsStatsDataRowHeightPx
 
                     StyledText {
                         width: statsTable.c1
