@@ -416,7 +416,7 @@ Item {
 
     function _applyParsedCache(data) {
         _perfLog("_applyParsedCache — start")
-        if ((data.version || 0) !== GitHubConstants.cacheFormatVersion)
+        if (!data || (data.version || 0) !== GitHubConstants.cacheFormatVersion)
             data = {}
 
         cachedMessages = data.notifications || []

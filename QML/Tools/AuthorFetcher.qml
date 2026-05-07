@@ -68,7 +68,7 @@ Item {
     }
 
     function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt, automaticPrefetch) {
-        if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl)
+        if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl || typeof subjectApiUrl !== 'string')
             return
 
         enqueueAuthorUrls(threadId,

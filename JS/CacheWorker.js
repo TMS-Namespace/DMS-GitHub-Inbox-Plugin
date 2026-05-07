@@ -1,6 +1,10 @@
 // CacheWorker.js - background JSON parse/stringify for the disk cache.
 
 WorkerScript.onMessage = function (message) {
+    if (!message || !message.action) {
+        console.error('Invalid message received:', message);
+        return;
+    }
     var action = message.action || ""
 
     if (action === "parseCache") {
