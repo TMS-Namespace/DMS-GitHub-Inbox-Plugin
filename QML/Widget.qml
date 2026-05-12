@@ -28,7 +28,7 @@ PluginComponent {
     //  SETTINGS-BACKED STATE
     // =========================================================================
 
-    property string token: (pluginData.githubToken || "").trim()
+    property string token: (secretStore.token || "").trim()
     property int pollIntervalMs: GitHub.pollIntervalMs(pluginData.pollInterval)
     property int groupItemLimit: {
         var value = parseInt(pluginData.groupItemLimit || GitHubConstants.defaultGroupItemLimit)
@@ -135,6 +135,12 @@ PluginComponent {
                 root._queueLocalAvatarPropagation(login, updates[login])
             }
         }
+    }
+
+    SecretStore {
+        id: secretStore
+        pluginService: root.pluginService
+        legacyPlainTextToken: root.pluginData.githubToken || ""
     }
 
     InboxBackgroundWorker {

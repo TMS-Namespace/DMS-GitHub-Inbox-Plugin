@@ -20,6 +20,7 @@ InboxGrouper 1.0 Tools/InboxGrouper.qml
 InboxOperations 1.0 Tools/InboxOperations.qml
 PluginCache 1.0 Cache/PluginCache.qml
 ResourceRepository 1.0 Tools/ResourceRepository.qml
+SecretStore 1.0 Tools/SecretStore.qml
 
 GitHubIcon 1.0 Views/GitHubIcon.qml
 InboxMessageGroup 1.0 Views/InboxMessageGroup.qml

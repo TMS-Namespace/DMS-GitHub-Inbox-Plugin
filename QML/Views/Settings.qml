@@ -16,6 +16,8 @@ PluginSettings {
     property int fetchPagesValue: GitHubConstants.defaultFetchPageCount
     property int popupHeightValue: GitHubConstants.defaultPopupHeightUnits
     property int cacheTtlValue: GitHubConstants.defaultCacheTtlMinutes
+    property string tokenStatusMessage: ""
+    property bool tokenSaveFailed: false
 
     function saveValue(key, value) {
         if (pluginService)
@@ -29,7 +31,18 @@ PluginSettings {
     }
 
     function loadToken() {
-        tokenValue = loadValue("githubToken", "")
+        secretStore.loadToken()
+    }
+
+    function persistToken(value) {
+        var trimmed = String(value || "").trim()
+        tokenValue = trimmed
+        tokenSaveFailed = false
+        tokenStatusMessage = trimmed ? "Saving token to Secret Service..." : "Removing token from Secret Service..."
+        if (trimmed)
+            secretStore.storeToken(trimmed, false)
+        else
+            secretStore.clearToken()
     }
 
     function clampGroupLimit(value) {
@@ -93,6 +106,36 @@ PluginSettings {
         loadCacheTtl()
     }
 
+    SecretStore {
+        id: secretStore
+        pluginService: root.pluginService
+        legacyPlainTextToken: root.loadValue("githubToken", "")
+
+        onTokenLoaded: function(token) {
+            root.tokenValue = token || ""
+            root.tokenSaveFailed = false
+            if (!token && statusMessage)
+                root.tokenStatusMessage = statusMessage
+        }
+
+        onTokenStored: function(success, message) {
+            root.tokenSaveFailed = !success
+            root.tokenStatusMessage = message
+        }
+
+        onTokenCleared: function(success, message) {
+            root.tokenSaveFailed = !success
+            root.tokenStatusMessage = message
+        }
+    }
+
+    Timer {
+        id: tokenSaveTimer
+        interval: 500
+        repeat: false
+        onTriggered: root.persistToken(tokenInput.text)
+    }
+
     Row {
         width: parent.width
         spacing: Theme.spacingS
@@ -150,9 +193,10 @@ PluginSettings {
 
     Item {
         width: parent.width
-        height: GitHubConstants.settingsTokenItemHeightPx
+        height: tokenColumn.implicitHeight
 
         Column {
+            id: tokenColumn
             anchors.fill: parent
             spacing: Theme.spacingXS
 
@@ -190,7 +234,7 @@ PluginSettings {
                             root.tokenValue = text
                     }
 
-                    onTextEdited: root.saveValue("githubToken", text)
+                    onTextEdited: tokenSaveTimer.restart()
                 }
 
                 StyledText {
@@ -229,6 +273,15 @@ PluginSettings {
                         color: Theme.surfaceVariantText
                     }
                 }
+            }
+
+            StyledText {
+                visible: root.tokenStatusMessage.length > 0
+                text: root.tokenStatusMessage
+                color: root.tokenSaveFailed ? Theme.error : Theme.surfaceVariantText
+                font.pixelSize: Theme.fontSizeSmall
+                width: parent.width
+                wrapMode: Text.WordWrap
             }
         }
     }
