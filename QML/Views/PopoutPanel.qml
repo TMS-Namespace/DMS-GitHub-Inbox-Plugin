@@ -1,7 +1,7 @@
 // PopoutPanel.qml - Popup content for GitHub inbox messages list
 //
 // Pure visual component.  All filtering, grouping and expanded-state
-// management lives in InboxGroupModel.
+// management lives in InboxGrouper.
 
 import QtQuick
 import qs.Common
@@ -16,6 +16,7 @@ Item {
     property int unreadCount: 0
     property bool tokenConfigured: false
     property bool isLoading: false
+    property bool isAuthorFetching: false
     property bool isOperating: false
     property bool isDownloadingAvatars: false
     property string errorMessage: ""
@@ -37,7 +38,10 @@ Item {
     signal closePopout()
     signal persistExpandedRepos(var state)
 
-    property bool anyBusy: isLoading || isOperating || isDownloadingAvatars
+    property bool hasError: errorMessage !== ""
+    property bool hasBlockingError: hasError && messages.length === 0 && !isLoading
+    property bool isRefreshBusy: isLoading || isAuthorFetching || isDownloadingAvatars
+    property bool anyBusy: isRefreshBusy || isOperating
     property bool _headerHovered: headerHoverArea.containsMouse
                                   || expandAllArea.containsMouse
                                   || collapseAllArea.containsMouse
@@ -46,8 +50,8 @@ Item {
                                   || closeArea.containsMouse
 
     // -- Model ----------------------------------------------------------------
-    InboxGroupModel {
-        id: groupModel
+    InboxGrouper {
+        id: grouper
         messages: panel.messages
         groupItemLimit: panel.groupItemLimit
         expandedReposState: panel.expandedReposState
@@ -75,7 +79,7 @@ Item {
         anchors.rightMargin: Theme.spacingXS
         y: -panel.headerOffset + Theme.spacingS
         spacing: GitHubConstants.popoutHeaderButtonSpacingPx
-        visible: panel.anyBusy || panel._headerHovered
+        visible: panel.anyBusy || panel.hasError || panel._headerHovered
         z: 101
         opacity: visible ? 1 : 0
 
@@ -98,7 +102,7 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 enabled: panel.tokenConfigured
-                onClicked: groupModel.expandAllGroups()
+                onClicked: grouper.expandAllGroups()
             }
 
             DankIcon {
@@ -124,7 +128,7 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 enabled: panel.tokenConfigured
-                onClicked: groupModel.collapseAllGroups()
+                onClicked: grouper.collapseAllGroups()
             }
 
             DankIcon {
@@ -158,12 +162,12 @@ Item {
                 anchors.centerIn: parent
                 name: "refresh"
                 size: GitHubConstants.popoutHeaderButtonIconSizePx
-                color: panel.anyBusy ? Theme.primary : Theme.surfaceText
+                color: panel.hasError ? Theme.error : (panel.isRefreshBusy ? Theme.primary : Theme.surfaceText)
 
                 RotationAnimation {
                     target: refreshIcon
                     property: "rotation"
-                    running: panel.anyBusy
+                    running: panel.isRefreshBusy
                     from: 0
                     to: 360
                     duration: GitHubConstants.popoutRefreshIconSpinDurationMs
@@ -172,10 +176,30 @@ Item {
 
                 Connections {
                     target: panel
-                    function onAnyBusyChanged() {
-                        if (!panel.anyBusy)
+                    function onIsRefreshBusyChanged() {
+                        if (!panel.isRefreshBusy)
                             refreshIcon.rotation = 0
                     }
+                }
+            }
+
+            Rectangle {
+                visible: panel.hasError && !panel.isRefreshBusy
+                width: 12
+                height: 12
+                radius: 6
+                anchors.right: parent.right
+                anchors.top: parent.top
+                color: Theme.error
+                border.width: 1
+                border.color: Theme.nestedSurface
+
+                StyledText {
+                    anchors.centerIn: parent
+                    text: "!"
+                    font.pixelSize: 9
+                    font.weight: Font.Bold
+                    color: Theme.surfaceText
                 }
             }
         }
@@ -241,7 +265,8 @@ Item {
     Flickable {
         id: groupedFlick
         anchors.left: parent.left
-        anchors.right: scrollIndicator.visible ? scrollIndicator.left : parent.right
+        anchors.right: scrollGutter.visible ? scrollGutter.left : parent.right
+        anchors.rightMargin: scrollGutter.visible ? GitHubConstants.popoutScrollContentGapPx : 0
         anchors.top: parent.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
         clip: true
@@ -249,8 +274,8 @@ Item {
         contentWidth: width
         contentHeight: groupsColumn.implicitHeight
         visible: panel.tokenConfigured
-                 && panel.errorMessage === ""
-                 && (groupModel.filteredMessages.length > 0 || panel.isLoading)
+                 && !panel.hasBlockingError
+                 && (grouper.filteredMessages.length > 0 || panel.isLoading)
 
         Column {
             id: groupsColumn
@@ -258,17 +283,17 @@ Item {
             spacing: Theme.spacingS
 
             Repeater {
-                model: groupModel.groupedMessages
+                model: grouper.groupedMessages
 
                 delegate: InboxMessageGroup {
                     width: groupsColumn.width
                     groupData: modelData
-                    expanded: groupModel.isRepoExpanded(modelData.repository)
+                    expanded: grouper.isRepoExpanded(modelData.repository)
                     authorsByThread: panel.authorsByThread
                     showAuthorInfo: panel.showAuthorInfo
                     isBusy: panel.anyBusy
                     titleLines: panel.titleLines
-                    onToggleExpanded: groupModel.toggleRepo(modelData.repository)
+                    onToggleExpanded: grouper.toggleRepo(modelData.repository)
                     onMarkRepoDone: panel.markRepoDone(modelData.repository)
                     onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
                     onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
@@ -287,7 +312,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: panel.tokenConfigured && panel.errorMessage === ""
+        visible: panel.tokenConfigured && !panel.hasBlockingError
         height: filterRow.implicitHeight + GitHubConstants.popoutFilterBarVerticalPaddingPx
         z: 5
 
@@ -325,7 +350,9 @@ Item {
                     width: filterRow.segmentWidth
                     height: GitHubConstants.popoutFilterSegmentHeightPx
                     radius: Theme.cornerRadius
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutFilterBackgroundOpacity)
+                    color: Theme.nestedSurface
+                    border.width: 1
+                    border.color: Theme.outlineMedium
 
                     Row {
                         anchors.fill: parent
@@ -344,22 +371,20 @@ Item {
                                 width: (parent.width - 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
-                                color: groupModel.readFilter === modelData.value
-                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutFilterActiveTintOpacity)
-                                       : "transparent"
+                                color: grouper.readFilter === modelData.value ? Theme.primaryContainer : "transparent"
 
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: groupModel.readFilter = modelData.value
+                                    onClicked: grouper.readFilter = modelData.value
                                 }
 
                                 StyledText {
                                     anchors.centerIn: parent
                                     text: modelData.label
                                     font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: groupModel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                    color: groupModel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                    font.weight: grouper.readFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                    color: grouper.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
                                 }
                             }
                         }
@@ -386,7 +411,9 @@ Item {
                     width: filterRow.segmentWidth
                     height: GitHubConstants.popoutFilterSegmentHeightPx
                     radius: Theme.cornerRadius
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutFilterBackgroundOpacity)
+                    color: Theme.nestedSurface
+                    border.width: 1
+                    border.color: Theme.outlineMedium
 
                     Row {
                         anchors.fill: parent
@@ -405,22 +432,20 @@ Item {
                                 width: (parent.width - 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
-                                color: groupModel.participationFilter === modelData.value
-                                       ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutFilterActiveTintOpacity)
-                                       : "transparent"
+                                color: grouper.participationFilter === modelData.value ? Theme.primaryContainer : "transparent"
 
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: groupModel.participationFilter = modelData.value
+                                    onClicked: grouper.participationFilter = modelData.value
                                 }
 
                                 StyledText {
                                     anchors.centerIn: parent
                                     text: modelData.label
                                     font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: groupModel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                    color: groupModel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                    font.weight: grouper.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                    color: grouper.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
                                 }
                             }
                         }
@@ -430,20 +455,24 @@ Item {
         }
     }
 
-    Rectangle {
-        id: scrollIndicator
+    Item {
+        id: scrollGutter
         visible: groupedFlick.visible && groupedFlick.contentHeight > groupedFlick.height
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
-        width: GitHubConstants.popoutScrollIndicatorWidthPx
-        color: "transparent"
+        width: GitHubConstants.popoutScrollGutterWidthPx
+        z: 10
 
         Rectangle {
-            width: parent.width
+            id: scrollThumb
+            width: GitHubConstants.popoutScrollIndicatorWidthPx
             radius: GitHubConstants.popoutScrollIndicatorRadiusPx
             color: Theme.outlineVariant
-            opacity: groupedFlick.moving ? GitHubConstants.popoutScrollIndicatorActiveOpacity : GitHubConstants.popoutScrollIndicatorIdleOpacity
+            opacity: groupedFlick.moving || scrollDragArea.pressed || scrollDragArea.containsMouse
+                     ? GitHubConstants.popoutScrollIndicatorActiveOpacity
+                     : GitHubConstants.popoutScrollIndicatorIdleOpacity
+            anchors.horizontalCenter: parent.horizontalCenter
 
             property real ratio: groupedFlick.height / groupedFlick.contentHeight
             height: Math.max(GitHubConstants.popoutScrollIndicatorMinHeightPx, parent.height * ratio)
@@ -452,6 +481,41 @@ Item {
                : 0
 
             Behavior on opacity { NumberAnimation { duration: GitHubConstants.popoutScrollIndicatorFadeDurationMs } }
+        }
+
+        MouseArea {
+            id: scrollDragArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+
+            property real pressOffsetY: 0
+
+            function scrollToMouse(mouseY) {
+                var trackHeight = scrollGutter.height - scrollThumb.height
+                var maxContentY = groupedFlick.contentHeight - groupedFlick.height
+                if (trackHeight <= 0 || maxContentY <= 0) {
+                    groupedFlick.contentY = 0
+                    return
+                }
+
+                var thumbY = Math.max(0, Math.min(trackHeight, mouseY - pressOffsetY))
+                groupedFlick.contentY = Math.max(0, Math.min(maxContentY, (thumbY / trackHeight) * maxContentY))
+            }
+
+            onPressed: function(mouse) {
+                if (mouse.y >= scrollThumb.y && mouse.y <= scrollThumb.y + scrollThumb.height)
+                    pressOffsetY = mouse.y - scrollThumb.y
+                else
+                    pressOffsetY = scrollThumb.height / 2
+
+                scrollToMouse(mouse.y)
+            }
+
+            onPositionChanged: function(mouse) {
+                if (pressed)
+                    scrollToMouse(mouse.y)
+            }
         }
     }
 
@@ -488,7 +552,7 @@ Item {
     }
 
     Column {
-        visible: panel.tokenConfigured && panel.errorMessage !== "" && !panel.isLoading
+        visible: panel.tokenConfigured && panel.hasBlockingError
         anchors.centerIn: parent
         spacing: Theme.spacingS
         width: parent.width - Theme.spacingXL
@@ -512,8 +576,8 @@ Item {
 
     Column {
         visible: panel.tokenConfigured
-                 && panel.errorMessage === ""
-                 && groupModel.filteredMessages.length === 0
+                 && !panel.hasBlockingError
+                 && grouper.filteredMessages.length === 0
                  && panel.isLoading
         anchors.centerIn: parent
         spacing: Theme.spacingM
@@ -535,8 +599,8 @@ Item {
 
     Column {
         visible: panel.tokenConfigured
-                 && panel.errorMessage === ""
-                 && groupModel.filteredMessages.length === 0
+                 && !panel.hasBlockingError
+                 && grouper.filteredMessages.length === 0
                  && !panel.isLoading
         anchors.centerIn: parent
         spacing: Theme.spacingM

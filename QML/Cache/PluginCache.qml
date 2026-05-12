@@ -1,7 +1,9 @@
-// InboxCache.qml - Disk-backed cache for inbox messages, authors, and avatars
+// PluginCache.qml - Disk-backed cache for messages, authors, and avatar metadata
 //
-// Stores a single JSON file (messages + author data + avatar map) and
-// individual avatar image files under a configurable XDG-compatible cache dir.
+// Stores serialized object state and avatar files under the plugin cache root.
+// Default layout:
+//   ~/.cache/dms-github-inbox-plugin/objects/cache.json
+//   ~/.cache/dms-github-inbox-plugin/avatars/<login>.png
 // All writes are debounced so rapid updates are batched into one disk flush.
 
 import QtQuick
@@ -15,6 +17,9 @@ Item {
     // -- Configuration --------------------------------------------------------
     property string cacheDir: ""
     property int cacheTtlMinutes: GitHubConstants.defaultCacheTtlMinutes
+    readonly property string cacheObjectsDir: cacheDir ? (cacheDir + "/" + GitHubConstants.cacheObjectsSubdirectory) : ""
+    readonly property string cacheAvatarsDir: cacheDir ? (cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory) : ""
+    readonly property string cacheFilePath: cacheObjectsDir ? (cacheObjectsDir + "/" + GitHubConstants.cacheFileName) : ""
 
     // -- Exposed cached state -------------------------------------------------
     property var cachedMessages: []
@@ -25,12 +30,12 @@ Item {
     property bool initialized: false
 
     signal cacheReady()
-    signal avatarDownloaded(string login, string localUrl)
+    signal avatarDownloadsRequested(var items)
 
     // -- FileView for the JSON cache file -------------------------------------
     FileView {
         id: cacheFileView
-        path: cache.cacheDir ? (cache.cacheDir + "/" + GitHubConstants.cacheFileName) : ""
+        path: cache.cacheFilePath
         preload: false
         blockLoading: false
         atomicWrites: true
@@ -51,17 +56,30 @@ Item {
         onTriggered: cache._writeToDisk()
     }
 
-    // -- Avatar download queue ------------------------------------------------
-    readonly property bool isDownloadingAvatars: _avatarBusy || _avatarQueue.length > 0
-    property var _avatarQueue: []
-    property bool _avatarBusy: false
+    CachePayload {
+        id: cachePayloadModel
+    }
+
+    AvatarCacheEntry {
+        id: avatarCacheEntryModel
+    }
+
+    // -- Initialization / worker state ---------------------------------------
     property bool _initializing: false
     property var _pendingAvatarValidation: []
     property var _pendingAvatarValidationPaths: ({})
     property bool _avatarValidationDuringInit: false
-    property var _avatarFailedLogins: ({})
     property int _cacheParseSeq: 0
     property int _cacheWriteSeq: 0
+    property var _pendingChangedAuthors: ({})
+    property var _pendingAuthorFetchedAt: ({})
+
+    Timer {
+        id: metadataFlushTimer
+        interval: GitHubConstants.cacheMetadataFlushIntervalMs
+        repeat: false
+        onTriggered: cache._flushPendingMetadata(true)
+    }
 
     Component {
         id: initDirComponent
@@ -113,26 +131,6 @@ Item {
     }
 
     Component {
-        id: avatarDlComponent
-        Process {
-            property string login: ""
-            property string localPath: ""
-            property string remoteUrl: ""
-            stdout: SplitParser { onRead: function(line) {} }
-            stderr: SplitParser { onRead: function(line) {} }
-            onExited: function(exitCode) {
-                if (exitCode === 0 && login)
-                    cache._onAvatarDlDone(login, localPath, remoteUrl)
-                else if (login)
-                    cache._onAvatarDlFailed(login, localPath)
-                cache._avatarBusy = false
-                cache._processAvatarQueue()
-                destroy()
-            }
-        }
-    }
-
-    Component {
         id: clearCacheComponent
         Process {
             stdout: SplitParser { onRead: function(line) {} }
@@ -158,7 +156,7 @@ Item {
 
     WorkerScript {
         id: cacheWorker
-        source: Qt.resolvedUrl("../../JS/CacheWorker.js")
+        source: Qt.resolvedUrl("../../JS/BackgroundWorkers/CacheBackgroundWorker.js")
 
         onMessage: function(message) {
             if (message.action === "cacheParsed") {
@@ -183,7 +181,19 @@ Item {
     // -- Perf logging helper (standalone, no Widget dependency) --------------
     function _perfLog(label) {
         if (!GitHubConstants.debugPerformanceLogging) return
-        console.warn("[GitHubInbox PERF] InboxCache: " + label)
+        console.warn("[GitHubInbox PERF] PluginCache: " + label)
+    }
+
+    function _profile(label, startMs, details) {
+        if (!GitHubConstants.profileLoggingEnabled)
+            return
+        var duration = Date.now() - startMs
+        if (!GitHubConstants.profileLogAllOperations
+                && duration < GitHubConstants.profileSlowOperationThresholdMs)
+            return
+        var suffix = details ? (" — " + details) : ""
+        console.warn("[GitHubInbox PROFILE] PluginCache." + label
+                     + " took " + duration + "ms" + suffix)
     }
 
     function initialize() {
@@ -200,7 +210,7 @@ Item {
         var proc = resolveDirComponent.createObject(cache)
         proc.command = [
             "sh", "-c",
-            "echo \"${XDG_CACHE_HOME:-$HOME/.cache}/" + GitHubConstants.cacheSubdirectory + "\""
+            "echo \"${XDG_CACHE_HOME:-$HOME/.cache}/" + GitHubConstants.cacheRootDirectoryName + "\""
         ]
         proc.running = true
     }
@@ -228,6 +238,23 @@ Item {
         _queueSave()
     }
 
+    function updateChangedAuthors(changedAuthorsByThread) {
+        if (!changedAuthorsByThread)
+            return
+
+        var nextPending = _cloneMap(_pendingChangedAuthors)
+        var changed = false
+        for (var threadId in changedAuthorsByThread) {
+            nextPending[threadId] = changedAuthorsByThread[threadId] || []
+            changed = true
+        }
+        if (!changed)
+            return
+
+        _pendingChangedAuthors = nextPending
+        metadataFlushTimer.restart()
+    }
+
     function bulkUpdateAuthors(authorsMap) {
         cachedAuthorsByThread = authorsMap || ({})
         _queueSave()
@@ -243,13 +270,18 @@ Item {
     }
 
     function updateAuthorFetchedAt(threadId, updatedAt) {
-        var next = _cloneMap(cachedAuthorFetchedAt)
-        next[threadId] = updatedAt || ""
-        cachedAuthorFetchedAt = next
-        // authorFetchedAt changes piggyback on the next debounced save
+        if (!threadId)
+            return
+
+        var nextPending = _cloneMap(_pendingAuthorFetchedAt)
+        nextPending[threadId] = updatedAt || ""
+        _pendingAuthorFetchedAt = nextPending
+        metadataFlushTimer.restart()
     }
 
     function getAuthorFetchedAt(threadId) {
+        if (_pendingAuthorFetchedAt.hasOwnProperty(threadId))
+            return _pendingAuthorFetchedAt[threadId] || ""
         return cachedAuthorFetchedAt[threadId] || ""
     }
 
@@ -265,57 +297,9 @@ Item {
         return avatarLocalPaths[login] || remoteUrl
     }
 
-    function queueAvatarDownload(login, remoteUrl) {
-        if (!cacheDir || !login || !remoteUrl)
-            return
-        if (_avatarFailedLogins[login])
-            return
-        if (avatarLocalPaths.hasOwnProperty(login))
-            return
-
-        for (var i = 0; i < _avatarQueue.length; i++) {
-            if (_avatarQueue[i].login === login)
-                return
-        }
-
-        var nextQueue = _avatarQueue.slice(0)
-        nextQueue.push({ login: login, remoteUrl: remoteUrl })
-        _avatarQueue = nextQueue
-        _processAvatarQueue()
-    }
-
-    function batchQueueAvatarDownloads(items) {
-        if (!cacheDir || !items || items.length === 0)
-            return
-
-        var existingLogins = {}
-        for (var qi = 0; qi < _avatarQueue.length; qi++)
-            existingLogins[_avatarQueue[qi].login] = true
-
-        var toAdd = []
-        for (var i = 0; i < items.length; i++) {
-            var login = items[i].login
-            var remoteUrl = items[i].remoteUrl
-            if (!login || !remoteUrl)
-                continue
-            if (_avatarFailedLogins[login])
-                continue
-            if (avatarLocalPaths.hasOwnProperty(login))
-                continue
-            if (existingLogins[login])
-                continue
-            existingLogins[login] = true
-            toAdd.push({ login: login, remoteUrl: remoteUrl })
-        }
-
-        if (toAdd.length === 0)
-            return
-
-        var nextQueue = _avatarQueue.slice(0)
-        for (var j = 0; j < toAdd.length; j++)
-            nextQueue.push(toAdd[j])
-        _avatarQueue = nextQueue
-        _processAvatarQueue()
+    function updateAvatarLocalPaths(paths) {
+        avatarLocalPaths = paths || ({})
+        _queueSave()
     }
 
     // -- Pruning --------------------------------------------------------------
@@ -345,21 +329,23 @@ Item {
     // -- Clear ----------------------------------------------------------------
 
     function clearCache() {
+        metadataFlushTimer.stop()
+        _pendingChangedAuthors = ({})
+        _pendingAuthorFetchedAt = ({})
         cachedMessages = []
         cachedAuthorsByThread = ({})
         cachedAuthorFetchedAt = ({})
         avatarLocalPaths = ({})
         cachedTimestamp = 0
-        _avatarQueue = []
-        _avatarFailedLogins = ({})
 
         if (cacheDir) {
             var proc = clearCacheComponent.createObject(cache)
             proc.command = [
                 "sh", "-c",
-                "rm -f " + _shellQuote(cacheDir + "/" + GitHubConstants.cacheFileName)
-                + " && rm -rf " + _shellQuote(cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory)
-                + " && mkdir -p " + _shellQuote(cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory)
+                "rm -f " + _shellQuote(cacheFilePath)
+                + " && rm -rf " + _shellQuote(cacheAvatarsDir)
+                + " && mkdir -p " + _shellQuote(cacheObjectsDir)
+                + " " + _shellQuote(cacheAvatarsDir)
             ]
             proc.running = true
         }
@@ -383,7 +369,7 @@ Item {
     function _createDirs() {
         _perfLog("_createDirs — spawning mkdir -p")
         var proc = initDirComponent.createObject(cache)
-        proc.command = ["mkdir", "-p", cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory]
+        proc.command = ["mkdir", "-p", cacheObjectsDir, cacheAvatarsDir]
         proc.running = true
     }
 
@@ -397,7 +383,7 @@ Item {
         }
 
         // Read existing cache file via Process (FileView.reload is unreliable)
-        var cachePath = cacheFileView.path || (cacheDir + "/" + GitHubConstants.cacheFileName)
+        var cachePath = cacheFileView.path || cacheFilePath
         _perfLog("_onDirReady — reading cache via cat: '" + cachePath + "'")
         var proc = readCacheComponent.createObject(cache)
         proc.command = ["cat", cachePath]
@@ -415,25 +401,27 @@ Item {
     }
 
     function _applyParsedCache(data) {
+        var profileStart = Date.now()
         _perfLog("_applyParsedCache — start")
-        if (!data || (data.version || 0) !== GitHubConstants.cacheFormatVersion)
-            data = {}
+        cachePayloadModel.readFromObject(data, GitHubConstants.cacheFormatVersion)
 
-        cachedMessages = data.notifications || []
-        cachedAuthorsByThread = data.authorsByThread || ({})
-        cachedAuthorFetchedAt = data.authorFetchedAt || ({})
-        cachedTimestamp = data.lastFetched || 0
+        cachedMessages = cachePayloadModel.notifications || []
+        cachedAuthorsByThread = cachePayloadModel.authorsByThread || ({})
+        cachedAuthorFetchedAt = cachePayloadModel.authorFetchedAt || ({})
+        cachedTimestamp = cachePayloadModel.lastFetched || 0
 
         // Rebuild avatar local path map, validating files still exist on disk
-        var avatarMap = data.avatarMap || ({})
+        var avatarMap = cachePayloadModel.avatarMap || ({})
         var paths = {}
-        var missingAvatars = []
         for (var login in avatarMap) {
-            var localFile = avatarMap[login].localFile || ""
-            if (localFile) {
-                var fullPath = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory + "/" + localFile
-                paths[login] = "file://" + fullPath
-            }
+            avatarCacheEntryModel.readFromObject(
+                avatarMap[login],
+                login,
+                cacheDir,
+                GitHubConstants.cacheAvatarsSubdirectory
+            )
+            if (avatarCacheEntryModel.localUrl)
+                paths[login] = avatarCacheEntryModel.localUrl
         }
         // Validate before exposing local file:// URLs to the view. Old cache
         // entries may be HTML/JSON error bodies saved as .png, which causes
@@ -443,10 +431,17 @@ Item {
         if (_pendingAvatarValidation.length > 0) {
             _avatarValidationDuringInit = true
             _validateAvatarFiles()
+            _profile("_applyParsedCache", profileStart,
+                     "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
+                     + " avatarsPendingValidation=" + _pendingAvatarValidation.length)
             return
         }
 
+        avatarLocalPaths = paths
         _perfLog("_applyParsedCache — end, msgs=" + cachedMessages.length + " avatars=" + Object.keys(paths).length)
+        _profile("_applyParsedCache", profileStart,
+                 "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
+                 + " avatars=" + Object.keys(paths).length)
         initialized = true
         cacheReady()
     }
@@ -462,79 +457,72 @@ Item {
     }
 
     function _writeToDisk() {
+        var profileStart = Date.now()
         if (!cacheDir || !initialized)
             return
 
-        var avatarMap = {}
-        for (var login in avatarLocalPaths)
-            avatarMap[login] = { localFile: login + ".png" }
+        _flushPendingMetadata(false)
 
-        var payload = {
-            version: GitHubConstants.cacheFormatVersion,
-            lastFetched: cachedTimestamp,
-            notifications: cachedMessages,
-            authorsByThread: cachedAuthorsByThread,
-            authorFetchedAt: cachedAuthorFetchedAt,
-            avatarMap: avatarMap
+        var avatarMap = {}
+        for (var login in avatarLocalPaths) {
+            avatarCacheEntryModel.login = login
+            avatarCacheEntryModel.localFile = login + ".png"
+            avatarCacheEntryModel.localUrl = avatarLocalPaths[login] || ""
+            avatarMap[login] = avatarCacheEntryModel.toObject()
         }
+
+        cachePayloadModel.version = GitHubConstants.cacheFormatVersion
+        cachePayloadModel.lastFetched = cachedTimestamp
+        cachePayloadModel.notifications = cachedMessages
+        cachePayloadModel.authorsByThread = cachedAuthorsByThread
+        cachePayloadModel.authorFetchedAt = cachedAuthorFetchedAt
+        cachePayloadModel.avatarMap = avatarMap
 
         _cacheWriteSeq = _cacheWriteSeq + 1
         cacheWorker.sendMessage({
             action: "stringifyCache",
             seq: _cacheWriteSeq,
-            payload: payload
+            payload: cachePayloadModel.toObject()
         })
+        _profile("_writeToDisk.preparePayload", profileStart,
+                 "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
+                 + " avatars=" + Object.keys(avatarMap).length)
     }
 
-    function _processAvatarQueue() {
-        if (_avatarBusy || _avatarQueue.length === 0)
-            return
+    function _flushPendingMetadata(queueSaveAfterFlush) {
+        var profileStart = Date.now()
+        var pendingAuthors = _pendingChangedAuthors || ({})
+        var pendingFetchedAt = _pendingAuthorFetchedAt || ({})
+        var hasAuthorChanges = false
+        var hasFetchedAtChanges = false
 
-        var nextQueue = _avatarQueue.slice(0)
-        var item = nextQueue.shift()
-        _avatarQueue = nextQueue
-
-        // Skip if already downloaded between queue and now
-        if (avatarLocalPaths.hasOwnProperty(item.login)) {
-            Qt.callLater(cache._processAvatarQueue)
-            return
+        for (var authorThreadId in pendingAuthors) {
+            cachedAuthorsByThread[authorThreadId] = pendingAuthors[authorThreadId] || []
+            hasAuthorChanges = true
         }
 
-        _avatarBusy = true
-        var localPath = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory + "/" + item.login + ".png"
-
-        var proc = avatarDlComponent.createObject(cache, {
-            login: item.login,
-            localPath: localPath,
-            remoteUrl: item.remoteUrl
-        })
-        proc.command = [
-            "curl", "-f", "-sS", "-L",
-            "--connect-timeout", GitHubConstants.avatarDownloadConnectTimeoutSeconds,
-            "--max-time", GitHubConstants.avatarDownloadMaxTimeSeconds,
-            "-o", localPath,
-            item.remoteUrl
-        ]
-        proc.running = true
-    }
-
-    function _onAvatarDlDone(login, localPath, remoteUrl) {
-        var nextPaths = _cloneMap(avatarLocalPaths)
-        nextPaths[login] = "file://" + localPath
-        avatarLocalPaths = nextPaths
-        avatarDownloaded(login, "file://" + localPath)
-        _queueSave()
-    }
-
-    function _onAvatarDlFailed(login, localPath) {
-        var failed = _cloneMap(_avatarFailedLogins)
-        failed[login] = true
-        _avatarFailedLogins = failed
-        if (localPath) {
-            var proc = clearCacheComponent.createObject(cache)
-            proc.command = ["rm", "-f", localPath]
-            proc.running = true
+        for (var fetchedThreadId in pendingFetchedAt) {
+            var fetchedValue = pendingFetchedAt[fetchedThreadId] || ""
+            if (fetchedValue)
+                cachedAuthorFetchedAt[fetchedThreadId] = fetchedValue
+            else
+                delete cachedAuthorFetchedAt[fetchedThreadId]
+            hasFetchedAtChanges = true
         }
+
+        if (!hasAuthorChanges && !hasFetchedAtChanges)
+            return false
+
+        _pendingChangedAuthors = ({})
+        _pendingAuthorFetchedAt = ({})
+
+        if (queueSaveAfterFlush)
+            _queueSave()
+
+        _profile("_flushPendingMetadata", profileStart,
+                 "authors=" + Object.keys(pendingAuthors).length
+                 + " fetchedAt=" + Object.keys(pendingFetchedAt).length)
+        return true
     }
 
     function _cloneMap(source) {
@@ -560,7 +548,7 @@ Item {
         // Build a command that tests each file and prints logins of missing or
         // non-image files. Invalid downloads are usually GitHub HTML/JSON error
         // pages saved under a .png name.
-        var avatarDir = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory
+        var avatarDir = cacheAvatarsDir
         var parts = []
         for (var i = 0; i < logins.length; i++) {
             var login = logins[i]
@@ -620,7 +608,7 @@ Item {
             avatarLocalPaths = nextPaths
             _queueSave()
             if (redownloads.length > 0)
-                batchQueueAvatarDownloads(redownloads)
+                avatarDownloadsRequested(redownloads)
         }
 
         if (initializing) {

@@ -1,4 +1,4 @@
-// InboxParserWorker.js - background parser for GitHub inbox messages
+// InboxParserBackgroundWorker.js - background parser for GitHub inbox messages
 
 // Local mirrors of QML/Constants.qml values.
 // WorkerScript files cannot access QML singletons; constants are inlined here.
@@ -24,6 +24,7 @@ WorkerScript.onMessage = function (message) {
             updatedAt: message.updatedAt || "",
             requestedUrls: message.requestedUrls || [],
             shouldExpand: !!message.shouldExpand,
+            fallbackAuthor: message.fallbackAuthor || null,
             authors: authors,
             expansionUrls: expansionUrls
         })

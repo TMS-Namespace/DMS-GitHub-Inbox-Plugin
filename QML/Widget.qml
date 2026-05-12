@@ -2,8 +2,8 @@
 //
 // This file is the top-level PluginComponent that wires together the
 // extracted sub-components.  Business logic lives in the delegates:
-//   - InboxFetcher        — curl-based inbox message fetching + WorkerScript
-//   - AuthorFetcher       — author data queue, dedup, fetching
+//   - InboxBackgroundWorker  — curl-based inbox message fetching + WorkerScript
+//   - AuthorBackgroundWorker — author data queue, dedup, fetching
 //   - InboxOperations     — mark read/done/unread operations
 //   - AvatarPreloader     — hidden Image warm-up cache
 //   - CacheCoordinator    — disk cache bridge (messages, authors, avatars)
@@ -76,12 +76,24 @@ PluginComponent {
     property var messagesForView: []
     property var pendingViewMessages: []
     property int pendingViewIndex: 0
+    property var _pendingFetchedMessages: []
+    property int _pendingFetchedUnreadCount: 0
     property int unreadCount: 0
     property string errorMessage: ""
     property real lastUpdated: 0
     property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
     property var _previousThreadIds: ({})
+    property var _pendingLocalAvatarUpdates: ({})
+    property var _pendingStartupAuthorMessages: []
+    property var _pendingStartupAuthorAvatarLists: []
+    property int _pendingStartupAuthorAvatarIndex: 0
+    property bool _startupAuthorPrefetchQueued: false
+    property var _pendingEnrichmentMessages: []
+    property real _lastUiStallProbeAt: 0
+    property bool isRefreshBusy: fetcher.isLoading || authorFetch.isBusy || cacheCoord.isDownloadingAvatars
+    property bool popoutVisible: false
+    property bool _refreshAfterPopoutClose: false
 
     property url githubIconPrimary: GitHubConstants.githubFaviconUrl
     property url githubIconFallback: Qt.resolvedUrl("../Images/github-mark.svg")
@@ -94,10 +106,10 @@ PluginComponent {
     property string popoutDetails: {
         if (!token)
             return "Set your GitHub classic token in Settings"
-        if (errorMessage)
-            return errorMessage
         if (fetcher.isLoading && inboxMessages.length === 0)
             return "Loading messages..."
+        if (errorMessage && inboxMessages.length === 0)
+            return errorMessage
 
         var counts = unreadCount + " unread / " + readCount + " read / " + totalCount + " total"
         return counts
@@ -111,12 +123,21 @@ PluginComponent {
         id: cacheCoord
         cacheTtlMinutes: root.cacheTtlMinutes
         onCacheReady: root._onCacheReady()
-        onAvatarCachedLocally: function(login, localUrl) {
-            avatarPreloader.updateEntrySource(login, localUrl)
+    }
+
+    ResourceRepository {
+        id: resourceRepo
+        cacheCoordinator: cacheCoord
+
+        onAvatarResourcesReady: function(updates) {
+            for (var login in updates) {
+                avatarPreloader.updateEntrySource(login, updates[login])
+                root._queueLocalAvatarPropagation(login, updates[login])
+            }
         }
     }
 
-    InboxFetcher {
+    InboxBackgroundWorker {
         id: fetcher
         token: root.token
         fetchPageCount: root.fetchPageCount
@@ -125,68 +146,47 @@ PluginComponent {
         onFetchBegin: function(totalCount, unreadCount) {
             root._perfLog("onFetchBegin — total=" + totalCount + " unread=" + unreadCount)
             root._saveCurrentThreadIds()
-            root.inboxMessages = []
-            root.messagesForView = []
-            root.pendingViewMessages = []
-            root.pendingViewIndex = 0
+            root._pendingFetchedMessages = []
+            root._pendingFetchedUnreadCount = unreadCount
+            root._pendingEnrichmentMessages = []
+            backgroundEnrichmentTimer.stop()
             authorFetch.resetState()
-            authorFetch.prefetchPending = totalCount > 0
-            root.unreadCount = unreadCount
-            root.errorMessage = ""
+            authorFetch.prefetchPending = false
             root.lastUpdated = Date.now()
 
-            if (totalCount === 0)
-                _finalizeFetchCycle()
         }
 
         onFetchChunk: function(chunk, isLast) {
             root._perfLog("onFetchChunk — size=" + chunk.length + " isLast=" + isLast)
             if (chunk.length > 0) {
-                cacheCoord.resolveMessageAvatars(chunk)
-                var nextMessages = root.inboxMessages.slice(0)
+                var nextMessages = root._pendingFetchedMessages.slice(0)
                 for (var index = 0; index < chunk.length; index++)
                     nextMessages.push(chunk[index])
-                root.inboxMessages = nextMessages
-                root._appendViewMessages(chunk)
-                avatarPreloader.queueFromMessages(chunk)
-                authorFetch.prefetchForMessages(chunk)
+                root._pendingFetchedMessages = nextMessages
             }
 
             if (isLast) {
-                root.lastUpdated = Date.now()
-                cacheCoord.updateMessages(root.inboxMessages)
-                root._detectAndNotifyNewMessages(root.inboxMessages)
-                _tryFinalizeAuthorPrefetch()
-                Qt.callLater(_tryFinalizeAuthorPrefetch)
+                root._applyFetchedMessages(root._pendingFetchedMessages, root._pendingFetchedUnreadCount)
+                root._scheduleBackgroundEnrichment(root._pendingFetchedMessages)
+                _finalizeFetchCycle()
             }
         }
 
         onFetchComplete: function(items, unreadCount) {
             root._perfLog("onFetchComplete — items=" + items.length + " unread=" + unreadCount)
-            cacheCoord.resolveMessageAvatars(items)
-            root.inboxMessages = items
-            root.unreadCount = unreadCount
-            root._queueViewMessages(root.inboxMessages)
-            avatarPreloader.queueFromMessages(root.inboxMessages)
-            authorFetch.prefetchPending = root.inboxMessages.length > 0
-            authorFetch.prefetchForMessages(root.inboxMessages)
-            root.errorMessage = ""
-            root.lastUpdated = Date.now()
-            cacheCoord.updateMessages(root.inboxMessages)
-            root._detectAndNotifyNewMessages(root.inboxMessages)
-            _tryFinalizeAuthorPrefetch()
-            Qt.callLater(_tryFinalizeAuthorPrefetch)
+            root._pendingFetchedMessages = items
+            root._pendingFetchedUnreadCount = unreadCount
+            root._applyFetchedMessages(items, unreadCount)
+            authorFetch.prefetchPending = false
+            root._scheduleBackgroundEnrichment(root.inboxMessages)
+            _finalizeFetchCycle()
         }
 
         onFetchError: function(errorMessage) {
             root._perfLog("onFetchError — " + errorMessage)
-            root.inboxMessages = []
-            root.messagesForView = []
-            root.pendingViewMessages = []
-            root.pendingViewIndex = 0
-            viewApplyTimer.stop()
+            root._pendingFetchedMessages = []
+            root._pendingFetchedUnreadCount = 0
             authorFetch.resetState()
-            root.unreadCount = 0
             root.errorMessage = errorMessage
             root.lastUpdated = Date.now()
             Qt.callLater(operations.processPendingDoneQueue)
@@ -197,7 +197,7 @@ PluginComponent {
         }
     }
 
-    AuthorFetcher {
+    AuthorBackgroundWorker {
         id: authorFetch
         token: root.token
         loadAuthorInfo: root.loadAuthorInfo
@@ -209,11 +209,17 @@ PluginComponent {
             for (var i = 0; i < changedThreadIds.length; i++) {
                 var cid = changedThreadIds[i]
                 if (mergedAuthors[cid])
-                    cacheCoord.resolveAuthorAvatars(mergedAuthors[cid])
+                    resourceRepo.requestAuthorAvatars(mergedAuthors[cid])
+            }
+
+            var changedAuthorsForCache = {}
+            for (var cacheIndex = 0; cacheIndex < changedThreadIds.length; cacheIndex++) {
+                var cacheThreadId = changedThreadIds[cacheIndex]
+                changedAuthorsForCache[cacheThreadId] = mergedAuthors[cacheThreadId] || []
             }
 
             root.authorsByThread = mergedAuthors
-            cacheCoord.bulkUpdateAuthors(mergedAuthors)
+            cacheCoord.updateChangedAuthors(changedAuthorsForCache)
 
             if (preloadAuthors.length > 0)
                 avatarPreloader.queueFromAuthors(preloadAuthors)
@@ -237,8 +243,10 @@ PluginComponent {
 
         onOperationApplied: function(actionType, threadId, repositoryFullName) {
             var result = operations.applyResult(actionType, threadId, repositoryFullName, root.inboxMessages)
-            root.inboxMessages = result.items
-            root._queueViewMessages(root.inboxMessages)
+            if (result.items !== root.inboxMessages) {
+                root.inboxMessages = result.items
+                root._replaceViewMessages(root.inboxMessages)
+            }
             if (result.unreadChanged)
                 root.unreadCount = _recalculateUnread(root.inboxMessages)
             root.errorMessage = ""
@@ -281,6 +289,35 @@ PluginComponent {
         onTriggered: root._applyViewChunk()
     }
 
+    Timer {
+        id: localAvatarApplyTimer
+        interval: GitHubConstants.localAvatarPropagationDelayMs
+        repeat: false
+        onTriggered: root._applyLocalAvatarPropagations()
+    }
+
+    Timer {
+        id: startupMissingInfoTimer
+        interval: GitHubConstants.startupMissingInfoScanIntervalMs
+        repeat: true
+        onTriggered: root._processStartupMissingInfoBatch()
+    }
+
+    Timer {
+        id: backgroundEnrichmentTimer
+        interval: GitHubConstants.backgroundEnrichmentDelayMs
+        repeat: false
+        onTriggered: root._runBackgroundEnrichment()
+    }
+
+    Timer {
+        id: uiStallProbeTimer
+        interval: GitHubConstants.uiStallProbeIntervalMs
+        running: GitHubConstants.profileLoggingEnabled
+        repeat: true
+        onTriggered: root._probeUiStall()
+    }
+
     // =========================================================================
     //  ORCHESTRATION LOGIC
     // =========================================================================
@@ -291,10 +328,46 @@ PluginComponent {
         console.warn("[GitHubInbox PERF] +" + elapsed + "ms  " + label)
     }
 
+    function _profile(label, startMs, details) {
+        if (!GitHubConstants.profileLoggingEnabled)
+            return
+        var duration = Date.now() - startMs
+        if (!GitHubConstants.profileLogAllOperations
+                && duration < GitHubConstants.profileSlowOperationThresholdMs)
+            return
+        var suffix = details ? (" — " + details) : ""
+        console.warn("[GitHubInbox PROFILE] Widget." + label
+                     + " took " + duration + "ms" + suffix)
+    }
+
+    function _probeUiStall() {
+        if (!GitHubConstants.profileLoggingEnabled)
+            return
+
+        var now = Date.now()
+        if (_lastUiStallProbeAt > 0) {
+            var gap = now - _lastUiStallProbeAt
+            if (gap >= GitHubConstants.uiStallLogThresholdMs) {
+                console.warn("[GitHubInbox PROFILE] Widget.uiStallProbe gap="
+                             + gap + "ms fetchLoading=" + fetcher.isLoading
+                             + " authorBusy=" + authorFetch.isBusy
+                             + " avatarBusy=" + cacheCoord.isDownloadingAvatars
+                             + " viewApply=" + viewApplyTimer.running
+                             + " authorQueue=" + authorFetch.requestQueue.length
+                             + " authorInFlight=" + authorFetch.requestsInFlight)
+            }
+        }
+        _lastUiStallProbeAt = now
+    }
+
     function _fetchInbox() {
         _perfLog("_fetchInbox — called")
-        if (!token || operations.isOperating)
+        if (!token || operations.isOperating || root.isRefreshBusy)
             return
+        if (root.popoutVisible) {
+            root._refreshAfterPopoutClose = true
+            return
+        }
         fetcher.fetch()
         _perfLog("_fetchInbox — fetch() dispatched")
     }
@@ -307,6 +380,34 @@ PluginComponent {
         _fetchInbox()
     }
 
+    function _scheduleBackgroundEnrichment(items) {
+        _pendingEnrichmentMessages = (items || []).slice(0)
+        if (!token || _pendingEnrichmentMessages.length === 0)
+            return
+        backgroundEnrichmentTimer.restart()
+    }
+
+    function _runBackgroundEnrichment() {
+        var profileStart = Date.now()
+        if (!token || _pendingEnrichmentMessages.length === 0)
+            return
+
+        if (fetcher.isLoading || viewApplyTimer.running) {
+            backgroundEnrichmentTimer.restart()
+            return
+        }
+
+        var items = _pendingEnrichmentMessages
+        _pendingEnrichmentMessages = []
+
+        resourceRepo.requestMessageAvatars(items)
+        avatarPreloader.queueFromMessages(items)
+        if (loadAuthorInfo)
+            authorFetch.prefetchForMessages(items)
+
+        _profile("_runBackgroundEnrichment", profileStart, "items=" + items.length)
+    }
+
     // -- Notification helpers -------------------------------------------------
 
     /// When an avatar is downloaded to disk, update all live data that still
@@ -314,33 +415,41 @@ PluginComponent {
     function _propagateLocalAvatar(login, localUrl) {
         if (!login || !localUrl)
             return
+        var updates = {}
+        updates[login] = localUrl
+        _propagateLocalAvatarBatch(updates)
+    }
 
-        // 1. Update repositoryOwnerAvatarUrl in inboxMessages
+    function _propagateLocalAvatarBatch(updates) {
+        var profileStart = Date.now()
+        if (!updates)
+            return
+
         var messagesChanged = false
         for (var mi = 0; mi < inboxMessages.length; mi++) {
             var msg = inboxMessages[mi]
-            if ((msg.repositoryOwnerLogin || "") === login
-                    && msg.repositoryOwnerAvatarUrl !== localUrl) {
-                msg.repositoryOwnerAvatarUrl = localUrl
+            var messageLogin = msg.repositoryOwnerLogin || ""
+            var messageLocalUrl = updates[messageLogin]
+            if (messageLocalUrl && msg.repositoryOwnerAvatarUrl !== messageLocalUrl) {
+                msg.repositoryOwnerAvatarUrl = messageLocalUrl
                 messagesChanged = true
             }
         }
         if (messagesChanged) {
-            // Force binding re-evaluation by reassigning the array
             inboxMessages = inboxMessages.slice(0)
-            messagesForView = inboxMessages
+            messagesForView = messagesForView.slice(0)
         }
 
-        // 2. Update author avatarUrl in authorsByThread
         var authorsChanged = false
         for (var tid in authorsByThread) {
             var authors = authorsByThread[tid]
             if (!authors)
                 continue
             for (var ai = 0; ai < authors.length; ai++) {
-                if ((authors[ai].login || "") === login
-                        && authors[ai].avatarUrl !== localUrl) {
-                    authors[ai].avatarUrl = localUrl
+                var authorLogin = authors[ai].login || ""
+                var authorLocalUrl = updates[authorLogin]
+                if (authorLocalUrl && authors[ai].avatarUrl !== authorLocalUrl) {
+                    authors[ai].avatarUrl = authorLocalUrl
                     authorsChanged = true
                 }
             }
@@ -351,6 +460,42 @@ PluginComponent {
                 nextAuthors[copyTid] = authorsByThread[copyTid]
             authorsByThread = nextAuthors
         }
+        _profile("_propagateLocalAvatarBatch", profileStart,
+                 "updates=" + Object.keys(updates).length
+                 + " messagesChanged=" + messagesChanged + " authorsChanged=" + authorsChanged)
+    }
+
+    function _queueLocalAvatarPropagation(login, localUrl) {
+        if (!login || !localUrl)
+            return
+
+        var pending = {}
+        for (var key in _pendingLocalAvatarUpdates)
+            pending[key] = _pendingLocalAvatarUpdates[key]
+        pending[login] = localUrl
+        _pendingLocalAvatarUpdates = pending
+        localAvatarApplyTimer.restart()
+    }
+
+    function _applyLocalAvatarPropagations() {
+        var pending = _pendingLocalAvatarUpdates
+        var batch = {}
+        var remaining = {}
+        var processed = 0
+
+        for (var login in pending) {
+            if (processed >= GitHubConstants.localAvatarPropagationBatchSize) {
+                remaining[login] = pending[login]
+                continue
+            }
+            batch[login] = pending[login]
+            processed++
+        }
+
+        _propagateLocalAvatarBatch(batch)
+        _pendingLocalAvatarUpdates = remaining
+        if (Object.keys(remaining).length > 0)
+            localAvatarApplyTimer.restart()
     }
 
     function _saveCurrentThreadIds() {
@@ -467,7 +612,6 @@ PluginComponent {
 
         // Phase 1: Load messages for immediate bar-pill display
         if (cached.messages.length > 0) {
-            cacheCoord.resolveMessageAvatars(cached.messages)
             inboxMessages = cached.messages
             unreadCount = _recalculateUnread(cached.messages)
             _queueViewMessages(cached.messages)
@@ -491,7 +635,7 @@ PluginComponent {
         if (cachedAuthors && typeof cachedAuthors === "object") {
             for (var tid in cachedAuthors) {
                 var authors = cachedAuthors[tid]
-                if (authors && authors.length > 0)
+                if (authors && typeof authors.length === "number")
                     resolvedAuthors[tid] = authors
             }
             authorsByThread = resolvedAuthors
@@ -499,10 +643,36 @@ PluginComponent {
 
         // Load cached author fetch timestamps
         var cachedFetchedAt = cached.authorFetchedAt
+        var nextFetchedAt = {}
         if (cachedFetchedAt && typeof cachedFetchedAt === "object") {
             for (var fid in cachedFetchedAt)
-                authorFetch.fetchedAtUpdatedAt[fid] = cachedFetchedAt[fid]
+                nextFetchedAt[fid] = cachedFetchedAt[fid]
         }
+        authorFetch.fetchedAtUpdatedAt = nextFetchedAt
+
+        var fallbackAuthorUpdates = {}
+        var cachedMessages = cached.messages || []
+        for (var mi = 0; mi < cachedMessages.length; mi++) {
+            var message = cachedMessages[mi]
+            var threadId = message.threadId || ""
+            if (!threadId)
+                continue
+
+            var knownAuthors = resolvedAuthors[threadId] || []
+            if (knownAuthors.length > 0)
+                continue
+            if ((nextFetchedAt[threadId] || "") !== (message.updatedAt || ""))
+                continue
+
+            var fallbackAuthor = _fallbackAuthorForMessage(message)
+            if (!fallbackAuthor)
+                continue
+            resolvedAuthors[threadId] = [fallbackAuthor]
+            fallbackAuthorUpdates[threadId] = [fallbackAuthor]
+        }
+        authorsByThread = resolvedAuthors
+        if (Object.keys(fallbackAuthorUpdates).length > 0)
+            cacheCoord.updateChangedAuthors(fallbackAuthorUpdates)
 
         // Defer preloader + fetch to yet another frame
         _pendingCacheState = { messages: cached.messages, resolvedAuthors: resolvedAuthors }
@@ -546,9 +716,110 @@ PluginComponent {
         if (allPreloadAuthors.length > 0)
             avatarPreloader.queueFromAuthors(allPreloadAuthors)
 
+        _scheduleStartupMissingInfoScan(messages, resolvedAuthors)
+
         _perfLog("_onCacheReadyPhase3 — end, scheduling _fetchInbox")
         // Finally, start the network fetch
         Qt.callLater(_fetchInbox)
+    }
+
+    function _scheduleStartupMissingInfoScan(messages, resolvedAuthors) {
+        if (!token)
+            return
+
+        var cachedMessages = messages || []
+        var cachedAuthors = resolvedAuthors || ({})
+        var missingAuthorFetchThreadIds = {}
+        var nextFetchedAt = {}
+
+        for (var existingId in authorFetch.fetchedAtUpdatedAt)
+            nextFetchedAt[existingId] = authorFetch.fetchedAtUpdatedAt[existingId]
+
+        for (var mi = 0; mi < cachedMessages.length; mi++) {
+            var message = cachedMessages[mi]
+            var threadId = message.threadId || ""
+            if (!threadId)
+                continue
+
+            var fetchedAt = nextFetchedAt[threadId] || ""
+            if (fetchedAt !== (message.updatedAt || ""))
+                missingAuthorFetchThreadIds[threadId] = true
+        }
+
+        authorFetch.fetchedAtUpdatedAt = nextFetchedAt
+
+        var authorLists = []
+        for (var authorThreadId in cachedAuthors) {
+            var authorList = cachedAuthors[authorThreadId] || []
+            if (authorList.length > 0)
+                authorLists.push(authorList)
+        }
+
+        _pendingStartupAuthorMessages = cachedMessages.slice(0)
+        _pendingStartupAuthorAvatarLists = authorLists
+        _pendingStartupAuthorAvatarIndex = 0
+        _startupAuthorPrefetchQueued = true
+
+        _perfLog("_scheduleStartupMissingInfoScan — messages=" + cachedMessages.length
+                 + " missingAuthorFetches=" + Object.keys(missingAuthorFetchThreadIds).length
+                 + " authorAvatarLists=" + authorLists.length)
+
+        if (cachedMessages.length > 0 || authorLists.length > 0)
+            startupMissingInfoTimer.restart()
+    }
+
+    function _fallbackAuthorForMessage(message) {
+        if (!message)
+            return null
+
+        var login = String(message.repositoryOwnerLogin || "").trim()
+        if (!login)
+            return null
+
+        return {
+            login: login,
+            avatarUrl: String(message.repositoryOwnerAvatarUrl || "").trim()
+                       || (GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
+                           + "?size=" + GitHubConstants.avatarDefaultSizePx),
+            htmlUrl: GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
+        }
+    }
+
+    function _processStartupMissingInfoBatch() {
+        var profileStart = Date.now()
+        if (!token) {
+            startupMissingInfoTimer.stop()
+            return
+        }
+
+        if (fetcher.isLoading || viewApplyTimer.running) {
+            _profile("_processStartupMissingInfoBatch", profileStart, "deferredDuringStartup")
+            return
+        }
+
+        var batchSize = Math.max(1, GitHubConstants.startupMissingInfoScanBatchSize)
+        var processed = 0
+        while (processed < batchSize
+               && _pendingStartupAuthorAvatarIndex < _pendingStartupAuthorAvatarLists.length) {
+            resourceRepo.requestAuthorAvatars(_pendingStartupAuthorAvatarLists[_pendingStartupAuthorAvatarIndex])
+            _pendingStartupAuthorAvatarIndex++
+            processed++
+        }
+
+        var authorRecoveryDone = _startupAuthorPrefetchQueued
+                                 || _pendingStartupAuthorMessages.length === 0
+                                 || !loadAuthorInfo
+        if (_pendingStartupAuthorAvatarIndex >= _pendingStartupAuthorAvatarLists.length
+                && authorRecoveryDone) {
+            startupMissingInfoTimer.stop()
+            _pendingStartupAuthorMessages = []
+            _pendingStartupAuthorAvatarLists = []
+            _pendingStartupAuthorAvatarIndex = 0
+        }
+        _profile("_processStartupMissingInfoBatch", profileStart,
+                 "processedAvatars=" + processed
+                 + " remainingAvatarLists=" + Math.max(0, _pendingStartupAuthorAvatarLists.length - _pendingStartupAuthorAvatarIndex)
+                 + " authorRecoveryQueued=" + _startupAuthorPrefetchQueued)
     }
 
     function _tryFinalizeAuthorPrefetch() {
@@ -570,8 +841,20 @@ PluginComponent {
     }
 
     function _finalizeFetchCycle() {
+        _pruneAuthorCaches()
         ApiCallStats.recordRefreshComplete()
         fetcher.retryIfQueued()
+    }
+
+    function _applyFetchedMessages(items, unread) {
+        var nextItems = items || []
+        inboxMessages = nextItems
+        unreadCount = Math.max(0, unread || 0)
+        _queueViewMessages(nextItems)
+        errorMessage = ""
+        lastUpdated = Date.now()
+        cacheCoord.updateMessages(nextItems)
+        _detectAndNotifyNewMessages(nextItems)
     }
 
     function _pruneAuthorCaches() {
@@ -613,6 +896,7 @@ PluginComponent {
     // -- View helpers ---------------------------------------------------------
 
     function _queueViewMessages(items) {
+        var profileStart = Date.now()
         pendingViewMessages = (items || []).slice(0)
         pendingViewIndex = 0
         messagesForView = []
@@ -620,9 +904,20 @@ PluginComponent {
             viewApplyTimer.restart()
         else
             viewApplyTimer.stop()
+        _profile("_queueViewMessages", profileStart, "items=" + pendingViewMessages.length)
+    }
+
+    function _replaceViewMessages(items) {
+        var profileStart = Date.now()
+        pendingViewMessages = []
+        pendingViewIndex = 0
+        viewApplyTimer.stop()
+        messagesForView = (items || []).slice(0)
+        _profile("_replaceViewMessages", profileStart, "items=" + messagesForView.length)
     }
 
     function _appendViewMessages(items) {
+        var profileStart = Date.now()
         if (!items || items.length === 0)
             return
 
@@ -633,9 +928,11 @@ PluginComponent {
 
         if (!viewApplyTimer.running)
             viewApplyTimer.restart()
+        _profile("_appendViewMessages", profileStart, "items=" + items.length + " pending=" + pendingViewMessages.length)
     }
 
     function _applyViewChunk() {
+        var profileStart = Date.now()
         if (pendingViewMessages.length === 0) {
             viewApplyTimer.stop()
             return
@@ -654,6 +951,9 @@ PluginComponent {
 
         if (pendingViewMessages.length === 0)
             viewApplyTimer.stop()
+        _profile("_applyViewChunk", profileStart,
+                 "count=" + count + " visible=" + messagesForView.length
+                 + " remaining=" + pendingViewMessages.length)
     }
 
     function _recalculateUnread(items) {
@@ -690,9 +990,14 @@ PluginComponent {
         if (!token) {
             inboxMessages = []
             messagesForView = []
+            _pendingFetchedMessages = []
+            _pendingFetchedUnreadCount = 0
             pendingViewMessages = []
             pendingViewIndex = 0
             viewApplyTimer.stop()
+            startupMissingInfoTimer.stop()
+            backgroundEnrichmentTimer.stop()
+            _pendingEnrichmentMessages = []
             unreadCount = 0
             errorMessage = ""
             lastUpdated = 0
@@ -718,11 +1023,12 @@ PluginComponent {
             authorsByThread = ({})
             authorFetch.clearAllState()
             avatarPreloader.reset()
+            backgroundEnrichmentTimer.stop()
             return
         }
 
         if (token && inboxMessages.length > 0)
-            authorFetch.prefetchForMessages(inboxMessages)
+            _scheduleBackgroundEnrichment(inboxMessages)
     }
 
     onGroupItemLimitChanged: {
@@ -733,6 +1039,13 @@ PluginComponent {
     onFetchPageCountChanged: {
         if (token && cacheCoord.initialized)
             _fetchInbox()
+    }
+
+    onPopoutVisibleChanged: {
+        if (popoutVisible || !_refreshAfterPopoutClose)
+            return
+        _refreshAfterPopoutClose = false
+        Qt.callLater(_fetchInbox)
     }
 
     Component.onCompleted: {
@@ -755,6 +1068,8 @@ PluginComponent {
             GitHubIcon {
                 size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
                 iconOpacity: GitHubConstants.githubIconBarOpacity
+                iconColor: Theme.surfaceText
+                followThemeColor: true
                 sourcePrimary: root.githubIconPrimary
                 sourceFallback: root.githubIconFallback
                 anchors.verticalCenter: parent.verticalCenter
@@ -778,6 +1093,8 @@ PluginComponent {
             GitHubIcon {
                 size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
                 iconOpacity: GitHubConstants.githubIconBarOpacity
+                iconColor: Theme.surfaceText
+                followThemeColor: true
                 sourcePrimary: root.githubIconPrimary
                 sourceFallback: root.githubIconFallback
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -807,6 +1124,9 @@ PluginComponent {
             detailsText: root.popoutDetails
             showCloseButton: false
 
+            Component.onCompleted: root.popoutVisible = true
+            Component.onDestruction: root.popoutVisible = false
+
             PopoutPanel {
                 width: parent.width
                 implicitHeight: root.popoutHeight
@@ -818,6 +1138,7 @@ PluginComponent {
                 unreadCount: root.unreadCount
                 tokenConfigured: root.token !== ""
                 isLoading: fetcher.isLoading
+                isAuthorFetching: authorFetch.isBusy
                 isOperating: operations.isOperating
                 isDownloadingAvatars: cacheCoord.isDownloadingAvatars
                 errorMessage: root.errorMessage
@@ -839,13 +1160,19 @@ PluginComponent {
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
                     if (!root.loadAuthorInfo) return
                     var notifUpdatedAt = ""
+                    var resolvedSubjectApiUrl = subjectApiUrl || ""
+                    var resolvedSubjectType = subjectType || ""
                     for (var ni = 0; ni < root.inboxMessages.length; ni++) {
                         if (root.inboxMessages[ni].threadId === threadId) {
                             notifUpdatedAt = root.inboxMessages[ni].updatedAt || ""
+                            if (!resolvedSubjectApiUrl)
+                                resolvedSubjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(root.inboxMessages[ni])
+                            if (!resolvedSubjectType)
+                                resolvedSubjectType = root.inboxMessages[ni].subjectType || ""
                             break
                         }
                     }
-                    authorFetch.enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, notifUpdatedAt)
+                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, true)
                 }
                 onClosePopout: root.closePopout()
                 onPersistExpandedRepos: function(state) {

@@ -1,4 +1,4 @@
-// CacheWorker.js - background JSON parse/stringify for the disk cache.
+// CacheBackgroundWorker.js - background JSON parse/stringify for the disk cache.
 
 WorkerScript.onMessage = function (message) {
     if (!message || !message.action) {

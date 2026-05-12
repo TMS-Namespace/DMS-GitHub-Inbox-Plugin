@@ -1,14 +1,14 @@
-// InboxGroupModel.qml - Filters and groups inbox messages by repository
+// InboxGrouper.qml - Filters and groups inbox messages by repository
 //
 // Owns the filtering (read / participation), grouping by repo, and
 // expanded-state management that was previously mixed into PopoutPanel.
-// PopoutPanel now binds to this model's outputs for a clean view/logic split.
+// PopoutPanel binds to this component's outputs for a clean view/logic split.
 
 import QtQuick
 import ".."
 
 QtObject {
-    id: groupModel
+    id: grouper
 
     // -- Inputs ---------------------------------------------------------------
     property var messages: []
@@ -63,13 +63,7 @@ QtObject {
             var repo = item.repository || "Unknown repository"
 
             if (!groupsByRepo[repo]) {
-                groupsByRepo[repo] = {
-                    repository: repo,
-                    unreadCount: 0,
-                    repoOwnerLogin: "",
-                    repoAvatarUrl: "",
-                    items: []
-                }
+                groupsByRepo[repo] = _createGroup(repo)
                 repoOrder.push(repo)
             }
 
@@ -143,6 +137,16 @@ QtObject {
     }
 
     // -- Internal -------------------------------------------------------------
+
+    function _createGroup(repository) {
+        return {
+            repository: repository,
+            unreadCount: 0,
+            repoOwnerLogin: "",
+            repoAvatarUrl: "",
+            items: []
+        }
+    }
 
     function _persistExpandedState(state) {
         persistExpandedRepos(normalizeExpandedState(state))

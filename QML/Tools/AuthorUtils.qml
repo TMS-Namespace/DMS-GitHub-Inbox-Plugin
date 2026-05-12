@@ -1,7 +1,7 @@
 // AuthorUtils.qml - Pure helper functions for author data processing
 //
 // Contains URL normalization, author validation, merge logic, and URL building.
-// These are stateless utility functions used by AuthorFetcher and Widget.
+// These are stateless utility functions used by AuthorBackgroundWorker and Widget.
 
 pragma Singleton
 

@@ -1,6 +1,6 @@
 # GitHub Inbox Plugin for DMS
 
-A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your GitHub notifications in a popup and lets you mark them as read.
+A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your GitHub notifications (aka inbox) in a popup and lets you mark them as read.
 
 ## Features
 
@@ -23,6 +23,7 @@ This plugin uses a **GitHub classic personal access token** from plugin settings
 Recommended token scope:
 
 - `notifications`
+- If you want full details for notifications originated from private repositories, you need also to enable full `repo` permission for this token.
 
 Create token: <https://github.com/settings/tokens>
 

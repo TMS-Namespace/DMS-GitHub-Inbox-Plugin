@@ -14,6 +14,7 @@ Item {
     property int titleLines: 2
     property var authors: []
     property bool showAuthors: true
+    property bool allowAuthorRequests: true
 
     signal markRead(string threadId)
     signal markUnread(string threadId)
@@ -34,6 +35,11 @@ Item {
     property bool authorRequestSent: false
 
     property var resolvedAuthors: authors || []
+    property bool shouldRequestAuthors: allowAuthorRequests
+                                        && showAuthors
+                                        && !authorRequestSent
+                                        && threadId !== ""
+                                        && resolvedAuthors.length === 0
 
     property var limitedAuthors: {
         var list = resolvedAuthors || []
@@ -91,20 +97,42 @@ Item {
     }
 
     function requestAuthorsIfNeeded() {
-        // Authors are pre-fetched during refresh in Widget.qml.
+        if (!shouldRequestAuthors)
+            return
+
+        authorRequestSent = true
+        requestAuthors(threadId, subjectApiUrl, subjectType)
+    }
+
+    function authorRequestDelayMs() {
+        var numericId = parseInt(threadId || "0")
+        if (isNaN(numericId))
+            numericId = 0
+        return 300 + (numericId % 8) * 120
     }
 
     height: Math.max(GitHubConstants.messageRowMinHeightPx, rowHeight)
 
+    onThreadIdChanged: authorRequestSent = false
+    onUpdatedAtChanged: authorRequestSent = false
+    onResolvedAuthorsChanged: {
+        if (resolvedAuthors.length > 0)
+            authorRequestSent = true
+    }
+
+    Timer {
+        id: authorRequestTimer
+        interval: row.authorRequestDelayMs()
+        repeat: false
+        running: row.shouldRequestAuthors
+        onTriggered: row.requestAuthorsIfNeeded()
+    }
+
     Rectangle {
         anchors.fill: parent
         radius: Theme.cornerRadius
-        color: row.unread
-               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.messageRowUnreadBackgroundOpacity)
-               : Theme.surfaceContainer
-        border.color: row.unread
-                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.messageRowUnreadBorderOpacity)
-                      : Theme.outlineVariant
+        color: row.unread ? Theme.primaryContainer : Theme.nestedSurface
+        border.color: row.unread ? Theme.primary : Theme.outlineMedium
         border.width: GitHubConstants.messageRowBorderWidthPx
     }
 

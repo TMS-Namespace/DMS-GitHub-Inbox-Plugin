@@ -1,4 +1,4 @@
-// InboxFetcher.qml - Fetches GitHub inbox messages via curl, parses in background
+// InboxBackgroundWorker.qml - Fetches GitHub inbox messages via curl, parses in background
 //
 // Encapsulates the multi-page curl fetch and WorkerScript-based JSON parsing.
 // Emits signals for each phase of the result so the parent can update state.
@@ -36,7 +36,7 @@ Item {
     // -- Perf logging helper --------------------------------------------------
     function _perfLog(label) {
         if (!GitHubConstants.debugPerformanceLogging) return
-        console.warn("[GitHubInbox PERF] InboxFetcher: " + label)
+        console.warn("[GitHubInbox PERF] InboxBackgroundWorker: " + label)
     }
 
     function fetch() {
@@ -165,11 +165,11 @@ Item {
 
     WorkerScript {
         id: parseWorker
-        source: Qt.resolvedUrl("../../JS/InboxParserWorker.js")
+        source: Qt.resolvedUrl("../../JS/BackgroundWorkers/InboxParserBackgroundWorker.js")
 
         onMessage: function(message) {
             fetcher._perfLog("WorkerScript message: action=" + (message.action || "inbox") + " phase=" + (message.phase || "n/a"))
-            // Author parse results are forwarded to the parent (AuthorFetcher
+            // Author parse results are forwarded to the parent (AuthorBackgroundWorker
             // will connect to the authorResultReceived signal).
             if (message.action === "authorsResult") {
                 fetcher.authorResultReceived(message)
@@ -218,7 +218,7 @@ Item {
         }
     }
 
-    // Expose sendMessage for AuthorFetcher to offload parsing
+    // Expose sendMessage for AuthorBackgroundWorker to offload parsing
     function sendWorkerMessage(msg) {
         parseWorker.sendMessage(msg)
     }

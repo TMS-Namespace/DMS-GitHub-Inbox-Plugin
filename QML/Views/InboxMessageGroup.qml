@@ -24,9 +24,9 @@ Rectangle {
     signal closePopout()
 
     radius: Theme.cornerRadius
-    color: Theme.surfaceContainerHigh
+    color: Theme.nestedSurface
     border.width: 1
-    border.color: Theme.outlineVariant
+    border.color: Theme.outlineMedium
     implicitHeight: groupColumn.implicitHeight + Theme.spacingS * 2
 
     Column {
@@ -169,6 +169,7 @@ Rectangle {
                     messageData: modelData
                     authors: groupCard.showAuthorInfo ? (groupCard.authorsByThread[modelData.threadId] || []) : []
                     showAuthors: groupCard.showAuthorInfo
+                    allowAuthorRequests: false
                     isBusy: groupCard.isBusy
                     titleLines: groupCard.titleLines
                     onMarkRead: function(threadId) { groupCard.markThreadRead(threadId) }

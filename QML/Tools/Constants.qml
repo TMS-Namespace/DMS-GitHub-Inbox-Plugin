@@ -126,7 +126,7 @@ QtObject {
     readonly property int maxAuthorUrlsPerThreadFetch: 8
 
     /// Maximum number of author-fetch curl requests in flight at the same time.
-    readonly property int maxConcurrentAuthorFetches: 1
+    readonly property int maxConcurrentAuthorFetches: 3
 
     /// Number of inbox message items sent in each worker-script chunk message
     /// so that the main thread processes results incrementally.
@@ -135,26 +135,45 @@ QtObject {
     /// Number of parsed inbox messages applied to the visible popout model per
     /// UI tick.  Keeps startup/cache refreshes from rebuilding delegates in one
     /// long main-thread turn.
-    readonly property int viewApplyChunkSize: 20
+    readonly property int viewApplyChunkSize: 5
 
     /// Number of inbox messages inspected per author-prefetch timer tick.
-    readonly property int authorPrefetchBatchSize: 3
+    readonly property int authorPrefetchBatchSize: 1
 
     /// Delay between author-prefetch batches.
-    readonly property int authorPrefetchBatchIntervalMs: 25
+    readonly property int authorPrefetchBatchIntervalMs: 500
 
     /// Maximum notification threads whose extra author metadata is prefetched
-    /// automatically during one refresh. More threads can still fetch authors
-    /// on demand when their row requests it.
-    readonly property int maxAuthorPrefetchMessagesPerRefresh: 0
+    /// automatically during one refresh. The automatic path fetches only the
+    /// lightweight subject object, not large timeline/review expansions.
+    readonly property int maxAuthorPrefetchMessagesPerRefresh: 300
 
-    /// Automatic author enrichment can be expensive because GitHub timeline
-    /// responses can be large. Keep it off for shell responsiveness; cached
-    /// author data is still displayed when present.
-    readonly property bool automaticAuthorPrefetchEnabled: false
+    /// Delay after inbox messages are applied before starting background
+    /// author/avatar enrichment. Keeps startup focused on showing inbox counts
+    /// and rows before lower-priority metadata work begins.
+    readonly property int backgroundEnrichmentDelayMs: 3500
+
+    /// Automatic author enrichment runs in the background and intentionally
+    /// avoids large detail endpoints so popup opening does not trigger this work.
+    readonly property bool automaticAuthorPrefetchEnabled: true
 
     /// Maximum queued author-fetch requests retained at once.
     readonly property int maxAuthorRequestQueueLength: 160
+
+    /// Delay used to batch parsed author updates before notifying the UI model.
+    /// This prevents one re-render per fetched thread during background refresh.
+    readonly property int authorMergeFlushIntervalMs: 2000
+
+    /// Maximum changed author threads applied to the UI/cache in one batch.
+    readonly property int authorMergeFlushBatchSize: 12
+
+    /// Number of cached author-thread entries inspected per startup recovery
+    /// tick for missing avatar files.
+    readonly property int startupMissingInfoScanBatchSize: 2
+
+    /// Delay between startup recovery ticks.  This keeps cache-repair work off
+    /// the first render frame and lets avatar downloads enter their own queue.
+    readonly property int startupMissingInfoScanIntervalMs: 1000
 
 
     // =========================================================================
@@ -177,6 +196,22 @@ QtObject {
     /// attempt (exponential back-off).
     readonly property int avatarImageRetryBaseDelayMs: 1500
 
+    /// Delay used to batch local-avatar propagation into live QML models after
+    /// curl finishes a background avatar download.
+    readonly property int localAvatarPropagationDelayMs: 350
+
+    /// Maximum downloaded avatars propagated to live models in one UI tick.
+    readonly property int localAvatarPropagationBatchSize: 16
+
+    /// Minimum delay between resource-ready UI notifications. Avatar/author
+    /// workers may finish several resources close together; the view consumes
+    /// those updates in batches instead of re-rendering for each file.
+    readonly property int resourceReadyFlushIntervalMs: 1000
+
+    /// Maximum avatar downloads running at the same time.  Keep this modest:
+    /// avatar work is background I/O, but every completed file still notifies QML.
+    readonly property int maxConcurrentAvatarDownloads: 3
+
 
     // =========================================================================
     // Disk Cache
@@ -185,8 +220,9 @@ QtObject {
     /// JSON cache file format version. Bump when structure changes.
     readonly property int cacheFormatVersion: 1
 
-    /// Default sub-directory name under XDG_CACHE_HOME for the plugin cache.
-    readonly property string cacheSubdirectory: "github-inbox"
+    /// Directory name under XDG_CACHE_HOME for every cache artifact owned by
+    /// this plugin.
+    readonly property string cacheRootDirectoryName: "dms-github-inbox-plugin"
 
     /// Default freshness TTL for the disk cache in minutes.  Data older than
     /// this is considered stale and a background re-fetch is started immediately.
@@ -202,6 +238,10 @@ QtObject {
     /// disk write, so that rapid updates get batched into one write.
     readonly property int cacheSaveDebounceMs: 2000
 
+    /// Delay (ms) used to batch author-cache metadata before merging it into
+    /// the disk payload.  This avoids one whole-map update per author result.
+    readonly property int cacheMetadataFlushIntervalMs: 2000
+
     /// connect-timeout (seconds) for avatar image downloads via curl.
     readonly property string avatarDownloadConnectTimeoutSeconds: "10"
 
@@ -211,13 +251,16 @@ QtObject {
     /// Name of the JSON metadata file stored inside the cache directory.
     readonly property string cacheFileName: "cache.json"
 
+    /// Sub-directory under the cache root for serialized object/cache metadata.
+    readonly property string cacheObjectsSubdirectory: "objects"
+
     /// Name of the sub-directory inside the cache directory where avatar image
     /// files are stored.
     readonly property string cacheAvatarsSubdirectory: "avatars"
 
     /// Fallback cache directory path used when XDG_CACHE_HOME cannot be
     /// resolved at runtime.
-    readonly property string cacheFallbackDirPath: "/tmp/github-inbox-cache"
+    readonly property string cacheFallbackDirPath: "/tmp/dms-github-inbox-plugin"
 
 
     // =========================================================================
@@ -451,6 +494,13 @@ QtObject {
     /// Width of the thin scroll-position indicator strip on the right edge of
     /// the notification list.
     readonly property int popoutScrollIndicatorWidthPx: 4
+
+    /// Interactive gutter width around the scroll indicator.  The thumb stays
+    /// visually thin, but this gives the mouse a usable target.
+    readonly property int popoutScrollGutterWidthPx: 10
+
+    /// Gap between the message cards and the scroll gutter.
+    readonly property int popoutScrollContentGapPx: 2
 
     /// Corner radius of the scroll thumb rectangle.
     readonly property int popoutScrollIndicatorRadiusPx: 2
@@ -719,10 +769,31 @@ QtObject {
 
     /// Developer mode enables opt-in performance instrumentation. Keep this
     /// false for normal shell use so metrics/logging do not add UI-thread work.
-    readonly property bool isDevMode: false
+    /// Public flag used by the plugin to enable profiling and development UI.
+    readonly property bool isDevMode: true
 
-    /// Set to true to emit timing breadcrumbs to journalctl during startup.
-    readonly property bool debugPerformanceLogging: isDevMode
+    /// Enables duration profiles for slow/anomalous QML-side operations.
+    readonly property bool profileLoggingEnabled: isDevMode
+
+    /// Set to true to emit verbose timing breadcrumbs. Keep this false during
+    /// normal diagnosis because log spam can itself slow the shell at startup.
+    readonly property bool verbosePerformanceLogging: false
+
+    /// Backward-compatible name for existing perf breadcrumb guards.
+    readonly property bool debugPerformanceLogging: verbosePerformanceLogging
+
+    /// Duration threshold for profile logs. Values above this are suspicious
+    /// because they can cost a visible frame on the shell UI thread.
+    readonly property int profileSlowOperationThresholdMs: 12
+
+    /// How often the UI-thread stall probe checks for delayed timer delivery.
+    readonly property int uiStallProbeIntervalMs: 250
+
+    /// Minimum delayed timer gap logged as a UI-thread stall in DevMode.
+    readonly property int uiStallLogThresholdMs: 750
+
+    /// When true, log every profiled operation, not only slow ones.
+    readonly property bool profileLogAllOperations: false
 
     /// Enables lightweight API/refresh metric collection shown in settings.
     readonly property bool apiCallStatsEnabled: isDevMode
