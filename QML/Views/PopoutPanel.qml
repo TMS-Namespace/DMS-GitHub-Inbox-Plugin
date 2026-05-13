@@ -1,7 +1,7 @@
 // PopoutPanel.qml - Popup content for GitHub inbox messages list
 //
-// Pure visual component.  All filtering, grouping and expanded-state
-// management lives in InboxGrouper.
+// Pure visual component.  Filtering, grouping and expanded-state
+// management lives in the grouping models.
 
 import QtQuick
 import qs.Common
@@ -21,15 +21,22 @@ Item {
     property bool isDownloadingAvatars: false
     property string errorMessage: ""
     property real headerOffset: 0
+    property real headerHoverHeight: headerOffset
+    property real headerHoverBottomInset: 0
     property int titleLines: 2
     property int groupItemLimit: 25
     property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
+    property var expandedDateGroupsState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
     property bool showAuthorInfo: true
+    property string groupingMode: "repo"              // repo | date
+    property string readFilter: "both"                // yes | no | both
+    property string participationFilter: "both"       // yes | no | both
 
     // -- Actions --------------------------------------------------------------
     signal refreshNow()
     signal markAllRead()
+    signal markRepoRead(string repositoryFullName)
     signal markRepoDone(string repositoryFullName)
     signal markThreadRead(string threadId)
     signal markThreadUnread(string threadId)
@@ -37,6 +44,9 @@ Item {
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
     signal closePopout()
     signal persistExpandedRepos(var state)
+    signal persistExpandedDateGroups(var state)
+    signal markDateGroupRead(var items)
+    signal markDateGroupDone(var items)
 
     property bool hasError: errorMessage !== ""
     property bool hasBlockingError: hasError && messages.length === 0 && !isLoading
@@ -49,13 +59,33 @@ Item {
                                   || markAllArea.containsMouse
                                   || closeArea.containsMouse
 
-    // -- Model ----------------------------------------------------------------
-    InboxGrouper {
-        id: grouper
+    property bool hasDisplayedMessages: groupingMode === "date"
+                                        ? dateGrouping.hasDisplayedMessages
+                                        : repoGrouping.hasDisplayedMessages
+
+    function activeGroupingModel() {
+        return groupingMode === "date" ? dateGrouping : repoGrouping
+    }
+
+    // -- Models ---------------------------------------------------------------
+    RepoGroupingModel {
+        id: repoGrouping
         messages: panel.messages
         groupItemLimit: panel.groupItemLimit
-        expandedReposState: panel.expandedReposState
-        onPersistExpandedRepos: function(state) { panel.persistExpandedRepos(state) }
+        expandedGroupsState: panel.expandedReposState
+        readFilter: panel.readFilter
+        participationFilter: panel.participationFilter
+        onPersistExpandedGroups: function(state) { panel.persistExpandedRepos(state) }
+    }
+
+    DateGroupingModel {
+        id: dateGrouping
+        messages: panel.messages
+        groupItemLimit: panel.groupItemLimit
+        readFilter: panel.readFilter
+        participationFilter: panel.participationFilter
+        expandedGroupsState: panel.expandedDateGroupsState
+        onPersistExpandedGroups: function(state) { panel.persistExpandedDateGroups(state) }
     }
 
     // =========================================================================
@@ -66,8 +96,8 @@ Item {
         id: headerHoverArea
         x: 0
         width: parent.width
-        y: -panel.headerOffset
-        height: panel.headerOffset
+        y: -panel.headerHoverBottomInset - panel.headerHoverHeight
+        height: panel.headerHoverHeight
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         z: 100
@@ -77,7 +107,7 @@ Item {
         id: headerButtons
         anchors.right: parent.right
         anchors.rightMargin: Theme.spacingXS
-        y: -panel.headerOffset + Theme.spacingS
+        y: -panel.headerOffset + Theme.spacingXS
         spacing: GitHubConstants.popoutHeaderButtonSpacingPx
         visible: panel.anyBusy || panel.hasError || panel._headerHovered
         z: 101
@@ -102,7 +132,7 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 enabled: panel.tokenConfigured
-                onClicked: grouper.expandAllGroups()
+                onClicked: panel.activeGroupingModel().expandAllGroups()
             }
 
             DankIcon {
@@ -128,7 +158,7 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 enabled: panel.tokenConfigured
-                onClicked: grouper.collapseAllGroups()
+                onClicked: panel.activeGroupingModel().collapseAllGroups()
             }
 
             DankIcon {
@@ -275,34 +305,53 @@ Item {
         contentHeight: groupsColumn.implicitHeight
         visible: panel.tokenConfigured
                  && !panel.hasBlockingError
-                 && (grouper.filteredMessages.length > 0 || panel.isLoading)
+                 && (panel.hasDisplayedMessages || panel.isLoading)
 
         Column {
             id: groupsColumn
             width: groupedFlick.width
             spacing: Theme.spacingS
 
-            Repeater {
-                model: grouper.groupedMessages
-
-                delegate: InboxMessageGroup {
-                    width: groupsColumn.width
-                    groupData: modelData
-                    expanded: grouper.isRepoExpanded(modelData.repository)
-                    authorsByThread: panel.authorsByThread
-                    showAuthorInfo: panel.showAuthorInfo
-                    isBusy: panel.anyBusy
-                    titleLines: panel.titleLines
-                    onToggleExpanded: grouper.toggleRepo(modelData.repository)
-                    onMarkRepoDone: panel.markRepoDone(modelData.repository)
-                    onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
-                    onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
-                    onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
-                    onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
-                        panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
-                    }
-                    onClosePopout: panel.closePopout()
+            RepoGroupingView {
+                width: groupsColumn.width
+                visible: panel.groupingMode === "repo"
+                height: visible ? implicitHeight : 0
+                groups: repoGrouping.groups
+                groupingModel: repoGrouping
+                authorsByThread: panel.authorsByThread
+                showAuthorInfo: panel.showAuthorInfo
+                isBusy: panel.anyBusy
+                titleLines: panel.titleLines
+                onMarkRepoRead: function(repositoryFullName) { panel.markRepoRead(repositoryFullName) }
+                onMarkRepoDone: function(repositoryFullName) { panel.markRepoDone(repositoryFullName) }
+                onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
+                onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
+                onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
+                    panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
                 }
+                onClosePopout: panel.closePopout()
+            }
+
+            DateGroupingView {
+                width: groupsColumn.width
+                visible: panel.groupingMode === "date"
+                height: visible ? implicitHeight : 0
+                groups: dateGrouping.groups
+                groupingModel: dateGrouping
+                authorsByThread: panel.authorsByThread
+                showAuthorInfo: panel.showAuthorInfo
+                isBusy: panel.anyBusy
+                titleLines: panel.titleLines
+                onMarkGroupRead: function(items) { panel.markDateGroupRead(items) }
+                onMarkGroupDone: function(items) { panel.markDateGroupDone(items) }
+                onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
+                onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
+                onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
+                    panel.requestThreadAuthors(threadId, subjectApiUrl, subjectType)
+                }
+                onClosePopout: panel.closePopout()
             }
         }
     }
@@ -371,20 +420,20 @@ Item {
                                 width: (parent.width - 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
-                                color: grouper.readFilter === modelData.value ? Theme.primaryContainer : "transparent"
+                                color: panel.readFilter === modelData.value ? Theme.primaryContainer : "transparent"
 
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: grouper.readFilter = modelData.value
+                                    onClicked: panel.readFilter = modelData.value
                                 }
 
                                 StyledText {
                                     anchors.centerIn: parent
                                     text: modelData.label
                                     font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: grouper.readFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                    color: grouper.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                    font.weight: panel.readFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                    color: panel.readFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
                                 }
                             }
                         }
@@ -432,20 +481,20 @@ Item {
                                 width: (parent.width - 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
-                                color: grouper.participationFilter === modelData.value ? Theme.primaryContainer : "transparent"
+                                color: panel.participationFilter === modelData.value ? Theme.primaryContainer : "transparent"
 
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: grouper.participationFilter = modelData.value
+                                    onClicked: panel.participationFilter = modelData.value
                                 }
 
                                 StyledText {
                                     anchors.centerIn: parent
                                     text: modelData.label
                                     font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: grouper.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
-                                    color: grouper.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                    font.weight: panel.participationFilter === modelData.value ? Font.DemiBold : Font.Normal
+                                    color: panel.participationFilter === modelData.value ? Theme.primary : Theme.surfaceVariantText
                                 }
                             }
                         }
@@ -459,7 +508,7 @@ Item {
         id: scrollGutter
         visible: groupedFlick.visible && groupedFlick.contentHeight > groupedFlick.height
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: groupedFlick.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
         width: GitHubConstants.popoutScrollGutterWidthPx
         z: 10
@@ -577,7 +626,7 @@ Item {
     Column {
         visible: panel.tokenConfigured
                  && !panel.hasBlockingError
-                 && grouper.filteredMessages.length === 0
+                 && !panel.hasDisplayedMessages
                  && panel.isLoading
         anchors.centerIn: parent
         spacing: Theme.spacingM
@@ -600,7 +649,7 @@ Item {
     Column {
         visible: panel.tokenConfigured
                  && !panel.hasBlockingError
-                 && grouper.filteredMessages.length === 0
+                 && !panel.hasDisplayedMessages
                  && !panel.isLoading
         anchors.centerIn: parent
         spacing: Theme.spacingM

@@ -615,13 +615,13 @@ QtObject {
     // =========================================================================
 
     /// Total pixel width of the action-button overlay host item that sits in
-    /// the top-right corner of an inbox message row.
-    readonly property int messageActionsHostWidthPx: 74
+    /// the bottom-left corner of an inbox message row.
+    readonly property int messageActionsHostWidthPx: 48
 
     /// Total pixel height of the action-button overlay host item.
     readonly property int messageActionsHostHeightPx: 24
 
-    /// Right and top margin (px) between the action-button overlay and the
+    /// Left and bottom margin (px) between the action-button overlay and the
     /// inbox message row border.
     readonly property int messageActionsHostMarginPx: 4
 

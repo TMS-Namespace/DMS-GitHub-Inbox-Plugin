@@ -22,6 +22,7 @@ Item {
     property bool isLoading: false
     property bool fetchQueued: false
     property int parseRequestSeq: 0
+    property int fetchGeneration: 0
 
     // -- Signals --------------------------------------------------------------
     signal fetchBegin(int totalCount, int unreadCount)
@@ -50,6 +51,7 @@ Item {
         }
 
         isLoading = true
+        var generation = fetchGeneration
         ApiCallStats.resetSession()
 
         var pages = Math.max(1, fetchPageCount)
@@ -91,12 +93,15 @@ Item {
 
         ApiCallStats.recordCalls(pages * 2)
         _perfLog("fetch — spawning curl, pages=" + pages)
-        var process = fetchComponentDef.createObject(fetcher)
+        var process = fetchComponentDef.createObject(fetcher, {
+            generation: generation
+        })
         process.command = command
         process.running = true
     }
 
     function cancel() {
+        fetchGeneration = fetchGeneration + 1
         parseRequestSeq = parseRequestSeq + 1
         isLoading = false
         fetchQueued = false
@@ -117,6 +122,7 @@ Item {
         id: fetchComponentDef
 
         Process {
+            property int generation: 0
             property var _chunks: []
 
             stdout: SplitParser {
@@ -131,6 +137,11 @@ Item {
             }
 
             onExited: exitCode => {
+                if (generation !== fetcher.fetchGeneration) {
+                    destroy()
+                    return
+                }
+
                 if (exitCode !== 0) {
                     ApiCallStats.recordRefreshComplete()
                     fetcher.isLoading = false

@@ -1,4 +1,4 @@
-// InboxMessageGroup.qml - Grouped inbox message list card for a single repository
+// DateGroupingGroupView.qml - expandable message group for one date bucket.
 
 import QtQuick
 import qs.Common
@@ -14,9 +14,13 @@ Rectangle {
     property bool showAuthorInfo: true
     property bool isBusy: false
     property int titleLines: 2
+    property bool headerActionsHovered: dateHeaderArea.containsMouse
+                                        || dateReadArea.containsMouse
+                                        || dateDoneArea.containsMouse
 
     signal toggleExpanded()
-    signal markRepoDone()
+    signal markGroupRead(var items)
+    signal markGroupDone(var items)
     signal markThreadRead(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
@@ -38,51 +42,32 @@ Rectangle {
         spacing: Theme.spacingS
 
         Item {
-            id: repoHeader
+            id: dateHeader
             width: parent.width
             height: GitHubConstants.popoutRepoHeaderHeightPx
 
             MouseArea {
-                id: repoHeaderArea
+                id: dateHeaderArea
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: groupCard.toggleExpanded()
             }
 
-            Row {
+            StyledText {
                 anchors.left: parent.left
-                anchors.right: repoMeta.left
+                anchors.right: dateMeta.left
                 anchors.rightMargin: Theme.spacingS
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: Theme.spacingXS
-
-                Item {
-                    width: GitHubConstants.popoutRepoAvatarSizePx
-                    height: GitHubConstants.popoutRepoAvatarSizePx
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    RoundedAvatar {
-                        anchors.fill: parent
-                        source: groupCard.groupData.repoAvatarUrl || ""
-                        fallbackIcon: "folder"
-                        fallbackIconSize: GitHubConstants.popoutRepoAvatarFallbackIconSizePx
-                    }
-                }
-
-                StyledText {
-                    width: parent.width - 30
-                    text: groupCard.groupData.repository || ""
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.weight: Font.Medium
-                    color: Theme.surfaceText
-                    elide: Text.ElideRight
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                text: groupCard.groupData.label || ""
+                font.pixelSize: Theme.fontSizeSmall
+                font.weight: Font.Medium
+                color: Theme.surfaceText
+                elide: Text.ElideRight
             }
 
             Row {
-                id: repoMeta
+                id: dateMeta
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spacingXS
@@ -92,24 +77,51 @@ Rectangle {
                     height: GitHubConstants.popoutRepoDoneButtonSizePx
                     radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
                     visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
-                             && (repoHeaderArea.containsMouse || repoDoneArea.containsMouse)
+                             && (groupCard.groupData.unreadCount || 0) > 0
+                             && groupCard.headerActionsHovered
                     color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
                     z: 2
 
                     MouseArea {
-                        id: repoDoneArea
+                        id: dateReadArea
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: groupCard.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
                         enabled: !groupCard.isBusy
-                        onClicked: groupCard.markRepoDone()
+                        onClicked: groupCard.markGroupRead(groupCard.groupData.items || [])
+                    }
+
+                    DankIcon {
+                        anchors.centerIn: parent
+                        name: "mark_email_read"
+                        size: GitHubConstants.popoutRepoDoneIconSizePx
+                        color: dateReadArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                    }
+                }
+
+                Rectangle {
+                    width: GitHubConstants.popoutRepoDoneButtonSizePx
+                    height: GitHubConstants.popoutRepoDoneButtonSizePx
+                    radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
+                    visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
+                             && groupCard.headerActionsHovered
+                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
+                    z: 2
+
+                    MouseArea {
+                        id: dateDoneArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: groupCard.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
+                        enabled: !groupCard.isBusy
+                        onClicked: groupCard.markGroupDone(groupCard.groupData.items || [])
                     }
 
                     DankIcon {
                         anchors.centerIn: parent
                         name: "done"
                         size: GitHubConstants.popoutRepoDoneIconSizePx
-                        color: repoDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                        color: dateDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
                     }
                 }
 
@@ -154,7 +166,7 @@ Rectangle {
         }
 
         Column {
-            id: repoItems
+            id: dateItems
             width: parent.width
             spacing: Theme.spacingXS
             visible: groupCard.expanded
@@ -169,6 +181,7 @@ Rectangle {
                     messageData: modelData
                     authors: groupCard.showAuthorInfo ? (groupCard.authorsByThread[modelData.threadId] || []) : []
                     showAuthors: groupCard.showAuthorInfo
+                    showRepositoryInfo: true
                     allowAuthorRequests: false
                     isBusy: groupCard.isBusy
                     titleLines: groupCard.titleLines

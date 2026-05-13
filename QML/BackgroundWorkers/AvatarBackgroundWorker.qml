@@ -17,6 +17,7 @@ Item {
     property int _avatarInFlight: 0
     property var _avatarActiveLogins: ({})
     property var _avatarFailedLogins: ({})
+    property int _generation: 0
 
     signal avatarDownloaded(string login, string localUrl, var avatarLocalPaths)
 
@@ -37,6 +38,7 @@ Item {
     }
 
     function reset() {
+        _generation = _generation + 1
         _avatarQueue = []
         _avatarInFlight = 0
         _avatarActiveLogins = ({})
@@ -110,12 +112,20 @@ Item {
     Component {
         id: avatarDlComponent
         Process {
+            property int generation: 0
             property string login: ""
             property string localPath: ""
             property string remoteUrl: ""
             stdout: SplitParser { onRead: function(line) {} }
             stderr: SplitParser { onRead: function(line) {} }
             onExited: function(exitCode) {
+                if (generation !== worker._generation) {
+                    if (localPath)
+                        worker._removeLocalFile(localPath)
+                    destroy()
+                    return
+                }
+
                 if (exitCode === 0 && login)
                     worker._onAvatarDlDone(login, localPath)
                 else if (login)
@@ -162,6 +172,7 @@ Item {
             var localPath = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory + "/" + item.login + ".png"
 
             var proc = avatarDlComponent.createObject(worker, {
+                generation: _generation,
                 login: item.login,
                 localPath: localPath,
                 remoteUrl: item.remoteUrl
@@ -195,10 +206,14 @@ Item {
         _avatarFailedLogins = failed
 
         if (localPath) {
-            var proc = removeFileComponent.createObject(worker)
-            proc.command = ["rm", "-f", localPath]
-            proc.running = true
+            _removeLocalFile(localPath)
         }
+    }
+
+    function _removeLocalFile(localPath) {
+        var proc = removeFileComponent.createObject(worker)
+        proc.command = ["rm", "-f", localPath]
+        proc.running = true
     }
 
     function _cloneMap(source) {

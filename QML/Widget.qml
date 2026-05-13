@@ -59,6 +59,8 @@ PluginComponent {
     }
     property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
     property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, GitHubConstants.defaultEnableNotifications)
+    property string groupingMode: _normalizeGroupingMode(pluginData.groupingMode || "repo")
+    property string clearCacheRequestFlag: pluginData.clearCacheRequested || ""
     property int cacheTtlMinutes: {
         var value = parseInt(pluginData.cacheTtlMinutes || GitHubConstants.defaultCacheTtlMinutes)
         if (isNaN(value))
@@ -82,6 +84,7 @@ PluginComponent {
     property string errorMessage: ""
     property real lastUpdated: 0
     property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
+    property var expandedDateGroupsState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
     property var _previousThreadIds: ({})
     property var _pendingLocalAvatarUpdates: ({})
@@ -113,6 +116,20 @@ PluginComponent {
 
         var counts = unreadCount + " unread / " + readCount + " read / " + totalCount + " total"
         return counts
+    }
+
+    function _normalizeGroupingMode(value) {
+        return String(value || "") === "date" ? "date" : "repo"
+    }
+
+    function setGroupingMode(value) {
+        var nextMode = _normalizeGroupingMode(value)
+        if (groupingMode === nextMode)
+            return
+
+        groupingMode = nextMode
+        if (pluginService)
+            pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "groupingMode", nextMode)
     }
 
     // =========================================================================
@@ -237,6 +254,10 @@ PluginComponent {
 
         onExpansionUrlsDiscovered: function(threadId, urls) {
             authorFetch.enqueueAuthorUrls(threadId, urls)
+        }
+
+        onActionRunUrlResolved: function(threadId, webUrl) {
+            root._updateMessageWebUrl(threadId, webUrl)
         }
 
         onPrefetchMaybeComplete: root._tryFinalizeAuthorPrefetch()
@@ -863,6 +884,63 @@ PluginComponent {
         _detectAndNotifyNewMessages(nextItems)
     }
 
+    function _updateMessageWebUrl(threadId, webUrl) {
+        if (!threadId || !webUrl)
+            return
+
+        var changed = false
+        var nextItems = []
+        for (var index = 0; index < inboxMessages.length; index++) {
+            var item = inboxMessages[index]
+            if (item && item.threadId === threadId && item.webUrl !== webUrl) {
+                var copy = {}
+                for (var key in item)
+                    copy[key] = item[key]
+                copy.webUrl = webUrl
+                nextItems.push(copy)
+                changed = true
+            } else {
+                nextItems.push(item)
+            }
+        }
+
+        if (!changed)
+            return
+
+        inboxMessages = nextItems
+        _replaceViewMessages(nextItems)
+        cacheCoord.updateMessages(nextItems)
+    }
+
+    function _clearRuntimeCacheState() {
+        inboxMessages = []
+        messagesForView = []
+        _pendingFetchedMessages = []
+        _pendingFetchedUnreadCount = 0
+        pendingViewMessages = []
+        pendingViewIndex = 0
+        viewApplyTimer.stop()
+        startupMissingInfoTimer.stop()
+        backgroundEnrichmentTimer.stop()
+        _pendingEnrichmentMessages = []
+        unreadCount = 0
+        errorMessage = ""
+        lastUpdated = 0
+        fetcher.cancel()
+        authorFetch.clearAllState()
+        operations.resetState()
+        avatarPreloader.reset()
+        authorsByThread = ({})
+        _previousThreadIds = ({})
+    }
+
+    function _handleClearCacheRequest() {
+        var flag = String(pluginData.clearCacheRequested || "").trim().toLowerCase()
+        if (flag === "true" || flag === "1")
+            _clearRuntimeCacheState()
+        cacheCoord.handleClearCacheRequest(pluginData, pluginService)
+    }
+
     function _pruneAuthorCaches() {
         var keep = {}
         for (var index = 0; index < inboxMessages.length; index++) {
@@ -1013,6 +1091,7 @@ PluginComponent {
             avatarPreloader.reset()
             authorsByThread = ({})
             expandedReposState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
+            expandedDateGroupsState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
             _previousThreadIds = ({})
             return
         }
@@ -1057,10 +1136,14 @@ PluginComponent {
     Component.onCompleted: {
         _perfStartMs = Date.now()
         _perfLog("Component.onCompleted — start")
-        cacheCoord.handleClearCacheRequest(pluginData, pluginService)
+        _handleClearCacheRequest()
         if (token)
             cacheCoord.initialize()
         _perfLog("Component.onCompleted — end (cache init requested)")
+    }
+
+    onClearCacheRequestFlagChanged: {
+        _handleClearCacheRequest()
     }
 
     // =========================================================================
@@ -1127,17 +1210,111 @@ PluginComponent {
             id: popout
 
             headerText: "GitHub Inbox"
-            detailsText: root.popoutDetails
+            detailsText: ""
             showCloseButton: false
 
             Component.onCompleted: root.popoutVisible = true
             Component.onDestruction: root.popoutVisible = false
 
+            Item {
+                id: popoutDetailsRow
+                width: parent.width
+                height: GitHubConstants.popoutFilterSegmentHeightPx + Theme.spacingS
+
+                StyledText {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.spacingS
+                    anchors.right: groupingControl.visible ? groupingControl.left : parent.right
+                    anchors.rightMargin: groupingControl.visible ? Theme.spacingS : Theme.spacingS
+                    anchors.verticalCenter: groupingControl.visible ? groupingControl.verticalCenter : parent.verticalCenter
+                    text: root.popoutDetails
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceVariantText
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    wrapMode: Text.NoWrap
+                }
+
+                Row {
+                    id: groupingControl
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.spacingS
+                    anchors.top: parent.top
+                    spacing: Theme.spacingXS
+                    height: GitHubConstants.popoutFilterSegmentHeightPx
+                    visible: root.token !== ""
+
+                    StyledText {
+                        id: groupingLabel
+                        text: "Group By:"
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceVariantText
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Rectangle {
+                        width: GitHubConstants.popoutFilterSegmentMinWidthPx
+                        height: GitHubConstants.popoutFilterSegmentHeightPx
+                        radius: Theme.cornerRadius
+                        color: Theme.nestedSurface
+                        border.width: 1
+                        border.color: Theme.outlineMedium
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.NoButton
+                            cursorShape: Qt.PointingHandCursor
+                        }
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.margins: 0
+                            spacing: 1
+
+                            Repeater {
+                                model: [
+                                    { label: "Repo", value: "repo" },
+                                    { label: "Date", value: "date" }
+                                ]
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: (parent.width - 1) / 2
+                                    height: parent.height
+                                    radius: Theme.cornerRadius
+                                    color: root.groupingMode === modelData.value ? Theme.primaryContainer : "transparent"
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.setGroupingMode(modelData.value)
+                                    }
+
+                                    StyledText {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 2
+                                        anchors.rightMargin: 2
+                                        text: modelData.label
+                                        font.pixelSize: Theme.fontSizeSmall
+                                        font.weight: root.groupingMode === modelData.value ? Font.DemiBold : Font.Normal
+                                        color: root.groupingMode === modelData.value ? Theme.primary : Theme.surfaceVariantText
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             PopoutPanel {
                 width: parent.width
                 implicitHeight: root.popoutHeight
                                 - popout.headerHeight
-                                - popout.detailsHeight
+                                - popoutDetailsRow.height
                                 - Theme.spacingXL
 
                 messages: root.messagesForView
@@ -1148,17 +1325,40 @@ PluginComponent {
                 isOperating: operations.isOperating
                 isDownloadingAvatars: cacheCoord.isDownloadingAvatars
                 errorMessage: root.errorMessage
-                headerOffset: popout.headerHeight + popout.detailsHeight
+                headerOffset: popout.headerHeight + popoutDetailsRow.height
+                headerHoverHeight: popout.headerHeight
+                headerHoverBottomInset: popoutDetailsRow.height
                 titleLines: root.titleLines
                 groupItemLimit: root.groupItemLimit
                 expandedReposState: root.expandedReposState
+                expandedDateGroupsState: root.expandedDateGroupsState
                 authorsByThread: root.authorsByThread
                 showAuthorInfo: root.loadAuthorInfo
+                groupingMode: root.groupingMode
 
                 onRefreshNow: root._refreshNow()
                 onMarkAllRead: operations.markAllAsRead()
+                onMarkRepoRead: function(repositoryFullName) {
+                    operations.markRepoAsRead(repositoryFullName)
+                }
                 onMarkRepoDone: function(repositoryFullName) {
                     operations.markRepoDone(repositoryFullName, root.inboxMessages)
+                }
+                onMarkDateGroupRead: function(items) {
+                    var groupItems = items || []
+                    for (var gi = 0; gi < groupItems.length; gi++) {
+                        var item = groupItems[gi]
+                        if (item && item.unread && item.threadId)
+                            operations.markThreadAsRead(item.threadId)
+                    }
+                }
+                onMarkDateGroupDone: function(items) {
+                    var groupItems = items || []
+                    for (var gi = 0; gi < groupItems.length; gi++) {
+                        var item = groupItems[gi]
+                        if (item && item.threadId)
+                            operations.markThreadDone(item.threadId)
+                    }
                 }
                 onMarkThreadRead: function(threadId) { operations.markThreadAsRead(threadId) }
                 onMarkThreadUnread: function(threadId) { operations.markThreadAsUnread(threadId) }
@@ -1168,9 +1368,11 @@ PluginComponent {
                     var notifUpdatedAt = ""
                     var resolvedSubjectApiUrl = subjectApiUrl || ""
                     var resolvedSubjectType = subjectType || ""
+                    var resolvedSubjectTitle = ""
                     for (var ni = 0; ni < root.inboxMessages.length; ni++) {
                         if (root.inboxMessages[ni].threadId === threadId) {
                             notifUpdatedAt = root.inboxMessages[ni].updatedAt || ""
+                            resolvedSubjectTitle = root.inboxMessages[ni].title || ""
                             if (!resolvedSubjectApiUrl)
                                 resolvedSubjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(root.inboxMessages[ni])
                             if (!resolvedSubjectType)
@@ -1178,11 +1380,14 @@ PluginComponent {
                             break
                         }
                     }
-                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, true)
+                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, true, null, resolvedSubjectTitle)
                 }
                 onClosePopout: root.closePopout()
                 onPersistExpandedRepos: function(state) {
                     root.expandedReposState = root._cloneExpandedState(state)
+                }
+                onPersistExpandedDateGroups: function(state) {
+                    root.expandedDateGroupsState = root._cloneExpandedState(state)
                 }
             }
         }

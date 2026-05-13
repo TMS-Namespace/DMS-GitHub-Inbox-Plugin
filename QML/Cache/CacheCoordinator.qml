@@ -219,7 +219,7 @@ Item {
     function handleClearCacheRequest(pluginData, pluginService) {
         var flag = (pluginData.clearCacheRequested || "").trim().toLowerCase()
         if (flag === "true" || flag === "1") {
-            diskCache.clearCache()
+            coordinator.clearCache()
             if (pluginService)
                 pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "clearCacheRequested", "")
         }

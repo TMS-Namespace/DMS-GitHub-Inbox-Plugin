@@ -1,4 +1,4 @@
-// InboxGroup.qml - contract for one repository group in the popout.
+// RepoGroupingGroup.qml - contract for one repository grouping in the popout.
 
 import QtQuick
 

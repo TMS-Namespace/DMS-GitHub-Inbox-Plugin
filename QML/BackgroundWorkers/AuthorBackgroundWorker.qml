@@ -55,6 +55,9 @@ Item {
     /// Emitted when expansion URLs are discovered and need enqueueing.
     signal expansionUrlsDiscovered(string threadId, var urls)
 
+    /// Emitted when a CI/action notification is matched to a concrete run URL.
+    signal actionRunUrlResolved(string threadId, string webUrl)
+
     /// Emitted when the prefetch cycle may have completed.
     signal prefetchMaybeComplete()
 
@@ -98,7 +101,7 @@ Item {
         onTriggered: authorFetcher._flushMerges()
     }
 
-    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt, automaticPrefetch, fallbackAuthor) {
+    function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle) {
         if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl || typeof subjectApiUrl !== 'string')
             return
 
@@ -106,10 +109,11 @@ Item {
             AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, subjectType || "", !automaticPrefetch),
             updatedAt || "",
             !!automaticPrefetch,
-            fallbackAuthor || null)
+            fallbackAuthor || null,
+            subjectTitle || "")
     }
 
-    function enqueueAuthorUrls(threadId, urls, updatedAt, automaticPrefetch, fallbackAuthor) {
+    function enqueueAuthorUrls(threadId, urls, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle) {
         var profileStart = Date.now()
         if (!token || !threadId || !urls || urls.length === 0)
             return
@@ -154,7 +158,8 @@ Item {
             urls: filtered,
             updatedAt: updatedAt || "",
             automaticPrefetch: !!automaticPrefetch,
-            fallbackAuthor: fallbackAuthor || null
+            fallbackAuthor: fallbackAuthor || null,
+            subjectTitle: subjectTitle || ""
         }
 
         if (automaticPrefetch && nextQueue.length >= GitHubConstants.maxAuthorRequestQueueLength)
@@ -211,6 +216,7 @@ Item {
                 subjectApiUrl: subjectApiUrl,
                 subjectType: item.subjectType || "",
                 updatedAt: item.updatedAt || "",
+                subjectTitle: item.title || "",
                 fallbackAuthor: fallbackAuthorForMessage(item)
             })
             accepted++
@@ -270,6 +276,7 @@ Item {
                 subjectApiUrl: subjectApiUrl,
                 subjectType: item.subjectType || "",
                 updatedAt: item.updatedAt || "",
+                subjectTitle: item.title || "",
                 fallbackAuthor: fallbackAuthorForMessage(item)
             })
             enqueued++
@@ -404,6 +411,9 @@ Item {
             }
         }
 
+        if (message.actionRunUrl && threadId)
+            actionRunUrlResolved(threadId, message.actionRunUrl)
+
         if (!_mergeFlushQueued) {
             _mergeFlushQueued = true
             mergeFlushTimer.restart()
@@ -447,7 +457,8 @@ Item {
                 requestedUrls: urls,
                 updatedAt: request.updatedAt || "",
                 automaticPrefetch: !!request.automaticPrefetch,
-                fallbackAuthor: request.fallbackAuthor || null
+                fallbackAuthor: request.fallbackAuthor || null,
+                subjectTitle: request.subjectTitle || ""
             })
 
             var command = request.automaticPrefetch
@@ -511,7 +522,8 @@ Item {
                                item.subjectType || "",
                                item.updatedAt || "",
                                true,
-                               item.fallbackAuthor || null)
+                               item.fallbackAuthor || null,
+                               item.subjectTitle || "")
         }
 
         _prefetchQueue = remaining
@@ -765,7 +777,7 @@ Item {
             + "api_version=$6\n"
             + "shift 6\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
-            + "filter='[.. | objects | select(((.login? // \"\") != \"\") and ((((.avatar_url? // .avatarUrl? // \"\") != \"\")) or (((.html_url? // .htmlUrl? // \"\") != \"\")))) | {login:(.login // \"\"), avatarUrl:(.avatar_url // .avatarUrl // \"\"), htmlUrl:(.html_url // .htmlUrl // \"\"), type:(.type // \"\")} ] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)'\n"
+            + "filter='{authors:([.. | objects | select(((.login? // \"\") != \"\") and ((((.avatar_url? // .avatarUrl? // \"\") != \"\")) or (((.html_url? // .htmlUrl? // \"\") != \"\")))) | {login:(.login // \"\"), avatarUrl:(.avatar_url // .avatarUrl // \"\"), htmlUrl:(.html_url // .htmlUrl // \"\"), type:(.type // \"\")} ] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)), actionRuns:((.workflow_runs? // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")}))}'\n"
             + "for url in \"$@\"; do\n"
             + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"
@@ -803,6 +815,7 @@ Item {
             property int generation: 0
             property bool automaticPrefetch: false
             property var fallbackAuthor: null
+            property string subjectTitle: ""
             property string _buffer: ""
             property int _bufferBytes: 0
             property real _startedAt: Date.now()
@@ -863,6 +876,7 @@ Item {
                     requestedUrls: requestedUrls || [],
                     shouldExpand: !automaticPrefetch && authorFetcher.shouldExpandFromRequestedUrls(requestedUrls || []),
                     fallbackAuthor: fallbackAuthor || null,
+                    subjectTitle: subjectTitle || "",
                     buffer: _buffer,
                     splitToken: authorFetcher.authorSplitToken
                 })

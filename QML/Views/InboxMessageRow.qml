@@ -14,7 +14,9 @@ Item {
     property int titleLines: 2
     property var authors: []
     property bool showAuthors: true
+    property bool showRepositoryInfo: false
     property bool allowAuthorRequests: true
+    property int extraHeight: 0
 
     signal markRead(string threadId)
     signal markUnread(string threadId)
@@ -29,7 +31,7 @@ Item {
     property string subjectApiUrl: messageData.subjectApiUrl || ""
     property string reason: GitHub.reasonLabel(messageData.reason)
     property string updatedAt: messageData.updatedAt || ""
-    property string webUrl: messageData.webUrl || ""
+    property string webUrl: effectiveWebUrl()
     property string updatedText: GitHub.relativeTimeFromIso(updatedAt)
     property string subjectIcon: GitHub.subjectIconName(subjectType)
     property bool authorRequestSent: false
@@ -50,7 +52,12 @@ Item {
 
     property int authorRowHeight: GitHubConstants.messageAuthorRowHeightPx
     property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
-    property int contentMinHeight: GitHubConstants.messageRowContentMinHeightPx + (Math.max(1, titleLines) * GitHubConstants.messageRowTitleLineHeightPx)
+    property int repositoryRowHeight: showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
+    property int repositoryRowSpacing: showRepositoryInfo ? GitHubConstants.messageMainInfoColumnSpacingPx : 0
+    property int contentMinHeight: GitHubConstants.messageRowContentMinHeightPx
+                                   + (Math.max(1, titleLines) * GitHubConstants.messageRowTitleLineHeightPx)
+                                   + repositoryRowHeight
+                                   + repositoryRowSpacing
     property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + GitHubConstants.messageRowAuthorColumnPaddingPx)
 
     function openAuthorProfile(url) {
@@ -104,6 +111,29 @@ Item {
         requestAuthors(threadId, subjectApiUrl, subjectType)
     }
 
+    function repositoryWebUrl() {
+        var repoUrl = String(messageData.repositoryUrl || "").trim()
+        if (repoUrl)
+            return repoUrl
+        var repo = String(messageData.repository || "").trim()
+        return repo ? (GitHubConstants.githubWebBaseUrl + "/" + repo) : ""
+    }
+
+    function effectiveWebUrl() {
+        var rawUrl = String(messageData.webUrl || "").trim()
+        if (rawUrl.indexOf(GitHubConstants.githubWebBaseUrl + "/notifications/threads/") === 0)
+            return repositoryWebUrl()
+        return rawUrl
+    }
+
+    function openRepository() {
+        var repoUrl = repositoryWebUrl()
+        if (!repoUrl)
+            return
+        row.closePopout()
+        Qt.openUrlExternally(repoUrl)
+    }
+
     function authorRequestDelayMs() {
         var numericId = parseInt(threadId || "0")
         if (isNaN(numericId))
@@ -111,7 +141,7 @@ Item {
         return 300 + (numericId % 8) * 120
     }
 
-    height: Math.max(GitHubConstants.messageRowMinHeightPx, rowHeight)
+    height: Math.max(GitHubConstants.messageRowMinHeightPx, rowHeight) + extraHeight
 
     onThreadIdChanged: authorRequestSent = false
     onUpdatedAtChanged: authorRequestSent = false
@@ -131,9 +161,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: Theme.cornerRadius
-        color: row.unread ? Theme.primaryContainer : Theme.nestedSurface
-        border.color: row.unread ? Theme.primary : Theme.outlineMedium
-        border.width: GitHubConstants.messageRowBorderWidthPx
+        color: row.unread ? Theme.withAlpha(Theme.primary, 0.1) : Theme.nestedSurface
+        border.color: row.unread ? Theme.withAlpha(Theme.primary, 0.3) : Theme.outlineMedium
+        border.width: row.unread ? 1 : GitHubConstants.messageRowBorderWidthPx
     }
 
     MouseArea {
@@ -201,6 +231,49 @@ Item {
                         wrapMode: Text.Wrap
                         maximumLineCount: Math.max(1, row.titleLines)
                         elide: Text.ElideRight
+                    }
+
+                    Item {
+                        id: repositoryInfoRow
+                        width: parent.width
+                        height: row.showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
+                        visible: row.showRepositoryInfo
+
+                        Item {
+                            id: repositoryAvatar
+                            width: GitHubConstants.popoutRepoAvatarSizePx
+                            height: GitHubConstants.popoutRepoAvatarSizePx
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            RoundedAvatar {
+                                anchors.fill: parent
+                                source: row.messageData.repositoryOwnerAvatarUrl || ""
+                                fallbackIcon: "folder"
+                                fallbackIconSize: GitHubConstants.popoutRepoAvatarFallbackIconSizePx
+                            }
+                        }
+
+                        StyledText {
+                            anchors.left: repositoryAvatar.right
+                            anchors.leftMargin: Theme.spacingXS
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: row.messageData.repository || "Unknown repository"
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.weight: Font.Medium
+                            color: Theme.surfaceVariantText
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            wrapMode: Text.NoWrap
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: row.repositoryWebUrl() ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: row.openRepository()
+                        }
                     }
 
                     Row {
@@ -307,10 +380,10 @@ Item {
     // -- Hover actions --------------------------------------------------------
     Item {
         id: actionsHost
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.rightMargin: GitHubConstants.messageActionsHostMarginPx
-        anchors.topMargin: GitHubConstants.messageActionsHostMarginPx
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: GitHubConstants.messageActionsHostMarginPx
+        anchors.bottomMargin: GitHubConstants.messageActionsHostMarginPx
         width: GitHubConstants.messageActionsHostWidthPx
         height: GitHubConstants.messageActionsHostHeightPx
         z: 10
@@ -327,39 +400,12 @@ Item {
             spacing: GitHubConstants.messageActionButtonsSpacingPx
             visible: rowArea.containsMouse
                      || actionsHoverArea.containsMouse
-                     || openArea.containsMouse
                      || readToggleArea.containsMouse
                      || doneArea.containsMouse
             opacity: visible ? 1 : 0
 
             Behavior on opacity {
                 NumberAnimation { duration: GitHubConstants.messageActionsFadeDurationMs }
-            }
-
-            Rectangle {
-                width: GitHubConstants.messageActionButtonSizePx
-                height: GitHubConstants.messageActionButtonSizePx
-                radius: GitHubConstants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
-
-                MouseArea {
-                    id: openArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    enabled: webUrl !== ""
-                    onClicked: {
-                        row.closePopout()
-                        Qt.openUrlExternally(webUrl)
-                    }
-                }
-
-                DankIcon {
-                    anchors.centerIn: parent
-                    name: "open_in_new"
-                    size: GitHubConstants.messageActionButtonIconSizePx
-                    color: Theme.surfaceVariantText
-                }
             }
 
             Rectangle {

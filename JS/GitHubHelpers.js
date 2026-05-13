@@ -257,6 +257,14 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
         return base + "/pull/" + tail[1]
     if (tail.length >= 2 && tail[0] === "commits")
         return base + "/commit/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "actions" && tail[1] === "runs")
+        return base + "/actions/runs/" + tail[2]
+    if (tail.length >= 2 && tail[0] === "check-runs")
+        return base + "/runs/" + tail[1]
+    if (tail.length >= 2 && tail[0] === "check-suites")
+        return base + "/actions/runs/" + tail[1]
+    if (tail.length >= 2 && tail[0] === "statuses")
+        return base + "/commit/" + tail[1]
     if (tail.length >= 2 && tail[0] === "discussions")
         return base + "/discussions/" + tail[1]
     if (tail.length >= 2 && tail[0] === "releases") {
@@ -311,8 +319,32 @@ function relativeTimeFromIso(isoDate) {
 
 function reasonLabel(reason) {
     if (!reason)
-        return "activity"
-    return String(reason).replace(/_/g, " ")
+        return "Activity"
+
+    var normalized = String(reason).trim().toLowerCase()
+    var labels = {
+        assign: "Assigned",
+        author: "Author",
+        ci_activity: "CI Activity",
+        comment: "Comment",
+        manual: "Manual",
+        mention: "Mention",
+        review_requested: "Review Requested",
+        security_alert: "Security Alert",
+        state_change: "State Change",
+        subscribed: "Subscribed",
+        team_mention: "Team Mention"
+    }
+    if (labels[normalized])
+        return labels[normalized]
+
+    var words = normalized.replace(/_/g, " ").split(" ")
+    for (var index = 0; index < words.length; index++) {
+        if (!words[index])
+            continue
+        words[index] = words[index].charAt(0).toUpperCase() + words[index].substring(1)
+    }
+    return words.join(" ")
 }
 
 function formatCountValue(value) {

@@ -73,6 +73,8 @@ Item {
     property int _cacheWriteSeq: 0
     property var _pendingChangedAuthors: ({})
     property var _pendingAuthorFetchedAt: ({})
+    property bool _clearCachePending: false
+    property bool _clearCacheDuringInitialize: false
 
     Timer {
         id: metadataFlushTimer
@@ -133,9 +135,13 @@ Item {
     Component {
         id: clearCacheComponent
         Process {
+            property bool duringInitialize: false
             stdout: SplitParser { onRead: function(line) {} }
             stderr: SplitParser { onRead: function(line) {} }
-            onExited: function(exitCode) { destroy() }
+            onExited: function(exitCode) {
+                cache._onClearCacheDone(exitCode, duringInitialize)
+                destroy()
+            }
         }
     }
 
@@ -330,6 +336,7 @@ Item {
 
     function clearCache() {
         metadataFlushTimer.stop()
+        saveDebounce.stop()
         _pendingChangedAuthors = ({})
         _pendingAuthorFetchedAt = ({})
         cachedMessages = []
@@ -338,17 +345,24 @@ Item {
         avatarLocalPaths = ({})
         cachedTimestamp = 0
 
-        if (cacheDir) {
-            var proc = clearCacheComponent.createObject(cache)
-            proc.command = [
-                "sh", "-c",
-                "rm -f " + _shellQuote(cacheFilePath)
-                + " && rm -rf " + _shellQuote(cacheAvatarsDir)
-                + " && mkdir -p " + _shellQuote(cacheObjectsDir)
-                + " " + _shellQuote(cacheAvatarsDir)
-            ]
-            proc.running = true
+        if (!cacheDir) {
+            _clearCachePending = true
+            return
         }
+
+        _clearCachePending = false
+        _clearCacheDuringInitialize = _initializing && !initialized
+
+        var proc = clearCacheComponent.createObject(cache, {
+            duringInitialize: _clearCacheDuringInitialize
+        })
+        proc.command = [
+            "sh", "-c",
+            "find " + _shellQuote(cacheDir) + " -mindepth 1 -exec rm -rf -- {} +"
+            + " ; mkdir -p " + _shellQuote(cacheObjectsDir)
+            + " " + _shellQuote(cacheAvatarsDir)
+        ]
+        proc.running = true
     }
 
     // =========================================================================
@@ -382,12 +396,31 @@ Item {
             return
         }
 
+        if (_clearCachePending) {
+            clearCache()
+            return
+        }
+
         // Read existing cache file via Process (FileView.reload is unreliable)
         var cachePath = cacheFileView.path || cacheFilePath
         _perfLog("_onDirReady — reading cache via cat: '" + cachePath + "'")
         var proc = readCacheComponent.createObject(cache)
         proc.command = ["cat", cachePath]
         proc.running = true
+    }
+
+    function _onClearCacheDone(exitCode, duringInitialize) {
+        _perfLog("_onClearCacheDone — exitCode=" + exitCode + " duringInitialize=" + duringInitialize)
+        _clearCacheDuringInitialize = false
+
+        if (exitCode !== 0)
+            console.warn("[GitHubInbox] Failed to clear cache directory:", cacheDir)
+
+        if (duringInitialize) {
+            _initializing = false
+            initialized = true
+            cacheReady()
+        }
     }
 
     function _onCacheFileRead(text) {
