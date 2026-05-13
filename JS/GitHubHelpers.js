@@ -224,19 +224,6 @@ function resolveWebUrl(notification) {
     return _GITHUB_INBOX_FALLBACK_URL
 }
 
-function releaseTagFromSubject(subjectType, subjectTitle) {
-    var normalizedType = String(subjectType || "").toLowerCase()
-    if (normalizedType !== "release")
-        return ""
-
-    var title = String(subjectTitle || "").trim()
-    if (!title)
-        return ""
-
-    title = title.replace(/^release\s+/i, "").trim()
-    return title
-}
-
 function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     if (!apiUrl || apiUrl.indexOf("https://api.github.com/repos/") !== 0)
         return ""
@@ -262,15 +249,14 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     if (tail.length >= 2 && tail[0] === "check-runs")
         return base + "/runs/" + tail[1]
     if (tail.length >= 2 && tail[0] === "check-suites")
-        return base + "/actions/runs/" + tail[1]
+        return base + "/actions"
     if (tail.length >= 2 && tail[0] === "statuses")
         return base + "/commit/" + tail[1]
     if (tail.length >= 2 && tail[0] === "discussions")
         return base + "/discussions/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "releases" && tail[1] === "tags")
+        return base + "/releases/tag/" + encodeURIComponent(tail.slice(2).join("/"))
     if (tail.length >= 2 && tail[0] === "releases") {
-        var releaseTag = releaseTagFromSubject(subjectType, subjectTitle)
-        if (releaseTag)
-            return base + "/releases/tag/" + encodeURIComponent(releaseTag)
         return base + "/releases"
     }
     if (tail.length >= 3 && tail[0] === "dependabot" && tail[1] === "alerts")

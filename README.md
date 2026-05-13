@@ -54,4 +54,4 @@ Support/setup-symlink.sh
 ## Privacy & Security
 
 - The token is securely stored via `Freedesktop Secret Service` API.
-- The plugin sends web requests only GitHub endpoints, so privacy is limited by what GitHub offers.
+- The plugin sends web requests only to GitHub endpoints, so privacy is limited by what GitHub offers.

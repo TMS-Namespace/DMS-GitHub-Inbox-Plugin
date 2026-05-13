@@ -107,6 +107,8 @@ PluginComponent {
     property string barCountText: unreadCount > 0 ? GitHub.formatCountValue(unreadCount) : ""
 
     property string popoutDetails: {
+        if (secretStore.secretStorageUnavailable)
+            return secretStore.statusMessage || "Secret Service is unavailable."
         if (!token)
             return "Set your GitHub classic token in Settings"
         if (fetcher.isLoading && inboxMessages.length === 0)
@@ -157,7 +159,11 @@ PluginComponent {
     SecretStore {
         id: secretStore
         pluginService: root.pluginService
-        legacyPlainTextToken: root.pluginData.githubToken || ""
+        fatalOnUnavailable: true
+
+        onActivationRefused: function(message) {
+            throw new Error(message)
+        }
     }
 
     InboxBackgroundWorker {
@@ -256,7 +262,7 @@ PluginComponent {
             authorFetch.enqueueAuthorUrls(threadId, urls)
         }
 
-        onActionRunUrlResolved: function(threadId, webUrl) {
+        onSubjectWebUrlResolved: function(threadId, webUrl) {
             root._updateMessageWebUrl(threadId, webUrl)
         }
 
@@ -506,6 +512,8 @@ PluginComponent {
 
     function _applyLocalAvatarPropagations() {
         var pending = _pendingLocalAvatarUpdates
+        _pendingLocalAvatarUpdates = ({})
+
         var batch = {}
         var remaining = {}
         var processed = 0
@@ -520,8 +528,15 @@ PluginComponent {
         }
 
         _propagateLocalAvatarBatch(batch)
-        _pendingLocalAvatarUpdates = remaining
-        if (Object.keys(remaining).length > 0)
+
+        var merged = {}
+        for (var remainingLogin in remaining)
+            merged[remainingLogin] = remaining[remainingLogin]
+        for (var queuedLogin in _pendingLocalAvatarUpdates)
+            merged[queuedLogin] = _pendingLocalAvatarUpdates[queuedLogin]
+
+        _pendingLocalAvatarUpdates = merged
+        if (Object.keys(merged).length > 0)
             localAvatarApplyTimer.restart()
     }
 
@@ -785,7 +800,7 @@ PluginComponent {
         _pendingStartupAuthorMessages = cachedMessages.slice(0)
         _pendingStartupAuthorAvatarLists = authorLists
         _pendingStartupAuthorAvatarIndex = 0
-        _startupAuthorPrefetchQueued = true
+        _startupAuthorPrefetchQueued = false
 
         _perfLog("_scheduleStartupMissingInfoScan — messages=" + cachedMessages.length
                  + " missingAuthorFetches=" + Object.keys(missingAuthorFetchThreadIds).length
@@ -831,6 +846,13 @@ PluginComponent {
             resourceRepo.requestAuthorAvatars(_pendingStartupAuthorAvatarLists[_pendingStartupAuthorAvatarIndex])
             _pendingStartupAuthorAvatarIndex++
             processed++
+        }
+
+        if (!_startupAuthorPrefetchQueued
+                && loadAuthorInfo
+                && _pendingStartupAuthorMessages.length > 0) {
+            authorFetch.prefetchMissingForMessages(_pendingStartupAuthorMessages, authorsByThread)
+            _startupAuthorPrefetchQueued = true
         }
 
         var authorRecoveryDone = _startupAuthorPrefetchQueued
@@ -892,11 +914,13 @@ PluginComponent {
         var nextItems = []
         for (var index = 0; index < inboxMessages.length; index++) {
             var item = inboxMessages[index]
-            if (item && item.threadId === threadId && item.webUrl !== webUrl) {
+            if (item && item.threadId === threadId
+                    && (item.webUrl !== webUrl || !item.webUrlResolved)) {
                 var copy = {}
                 for (var key in item)
                     copy[key] = item[key]
                 copy.webUrl = webUrl
+                copy.webUrlResolved = true
                 nextItems.push(copy)
                 changed = true
             } else {
@@ -1151,52 +1175,66 @@ PluginComponent {
     // =========================================================================
 
     horizontalBarPill: Component {
-        Row {
-            spacing: Theme.spacingXS
+        Item {
+            visible: root.token !== ""
+            implicitWidth: visible ? pillRow.implicitWidth : 0
+            implicitHeight: visible ? pillRow.implicitHeight : 0
 
-            GitHubIcon {
-                size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
-                iconOpacity: GitHubConstants.githubIconBarOpacity
-                iconColor: Theme.surfaceText
-                followThemeColor: true
-                sourcePrimary: root.githubIconPrimary
-                sourceFallback: root.githubIconFallback
-                anchors.verticalCenter: parent.verticalCenter
-            }
+            Row {
+                id: pillRow
+                spacing: Theme.spacingXS
 
-            StyledText {
-                visible: root.unreadCount > 0
-                text: root.barCountText
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceText
-                font.weight: Font.Medium
-                anchors.verticalCenter: parent.verticalCenter
+                GitHubIcon {
+                    size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
+                    iconOpacity: GitHubConstants.githubIconBarOpacity
+                    iconColor: Theme.surfaceText
+                    followThemeColor: true
+                    sourcePrimary: root.githubIconPrimary
+                    sourceFallback: root.githubIconFallback
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                StyledText {
+                    visible: root.unreadCount > 0
+                    text: root.barCountText
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceText
+                    font.weight: Font.Medium
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
         }
     }
 
     verticalBarPill: Component {
-        Column {
-            spacing: Theme.spacingXS
+        Item {
+            visible: root.token !== ""
+            implicitWidth: visible ? pillColumn.implicitWidth : 0
+            implicitHeight: visible ? pillColumn.implicitHeight : 0
 
-            GitHubIcon {
-                size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
-                iconOpacity: GitHubConstants.githubIconBarOpacity
-                iconColor: Theme.surfaceText
-                followThemeColor: true
-                sourcePrimary: root.githubIconPrimary
-                sourceFallback: root.githubIconFallback
-                anchors.horizontalCenter: parent.horizontalCenter
-            }
+            Column {
+                id: pillColumn
+                spacing: Theme.spacingXS
 
-            StyledText {
-                visible: root.unreadCount > 0
-                text: root.barCountText
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceText
-                font.weight: Font.Medium
-                anchors.horizontalCenter: parent.horizontalCenter
-                horizontalAlignment: Text.AlignHCenter
+                GitHubIcon {
+                    size: Math.max(GitHubConstants.barIconMinSizePx, root.iconSize - GitHubConstants.barIconSizeReductionPx)
+                    iconOpacity: GitHubConstants.githubIconBarOpacity
+                    iconColor: Theme.surfaceText
+                    followThemeColor: true
+                    sourcePrimary: root.githubIconPrimary
+                    sourceFallback: root.githubIconFallback
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                StyledText {
+                    visible: root.unreadCount > 0
+                    text: root.barCountText
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceText
+                    font.weight: Font.Medium
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    horizontalAlignment: Text.AlignHCenter
+                }
             }
         }
     }

@@ -12,10 +12,10 @@ WorkerScript.onMessage = function (message) {
     if (message.action === "parseAuthors") {
         var authors = []
         var expansionUrls = []
-        var actionRunUrl = ""
+        var subjectWebUrl = ""
         if (message.buffer) {
             authors = parseSubjectAuthorsMulti(message.buffer, message.splitToken || "")
-            actionRunUrl = parseActionRunUrlMulti(
+            subjectWebUrl = parseSubjectWebUrlMulti(
                 message.buffer,
                 message.splitToken || "",
                 message.subjectTitle || "",
@@ -33,7 +33,7 @@ WorkerScript.onMessage = function (message) {
             shouldExpand: !!message.shouldExpand,
             fallbackAuthor: message.fallbackAuthor || null,
             authors: authors,
-            actionRunUrl: actionRunUrl,
+            subjectWebUrl: subjectWebUrl,
             expansionUrls: expansionUrls
         })
         return
@@ -216,7 +216,8 @@ function parseMessagesPayload(payloadText) {
             subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
-            webUrl: resolveWebUrl(item)
+            webUrl: resolveWebUrl(item),
+            webUrlResolved: false
         })
     }
 
@@ -238,19 +239,6 @@ function resolveWebUrl(notification) {
         return repository.html_url
 
     return _GITHUB_INBOX_FALLBACK_URL
-}
-
-function releaseTagFromSubject(subjectType, subjectTitle) {
-    var normalizedType = String(subjectType || "").toLowerCase()
-    if (normalizedType !== "release")
-        return ""
-
-    var title = String(subjectTitle || "").trim()
-    if (!title)
-        return ""
-
-    title = title.replace(/^release\s+/i, "").trim()
-    return title
 }
 
 function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
@@ -278,15 +266,14 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     if (tail.length >= 2 && tail[0] === "check-runs")
         return base + "/runs/" + tail[1]
     if (tail.length >= 2 && tail[0] === "check-suites")
-        return base + "/actions/runs/" + tail[1]
+        return base + "/actions"
     if (tail.length >= 2 && tail[0] === "statuses")
         return base + "/commit/" + tail[1]
     if (tail.length >= 2 && tail[0] === "discussions")
         return base + "/discussions/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "releases" && tail[1] === "tags")
+        return base + "/releases/tag/" + encodeURIComponent(tail.slice(2).join("/"))
     if (tail.length >= 2 && tail[0] === "releases") {
-        var releaseTag = releaseTagFromSubject(subjectType, subjectTitle)
-        if (releaseTag)
-            return base + "/releases/tag/" + encodeURIComponent(releaseTag)
         return base + "/releases"
     }
     if (tail.length >= 3 && tail[0] === "dependabot" && tail[1] === "alerts")
@@ -481,7 +468,7 @@ function parseSubjectExpansionUrls(payloadText, splitToken) {
     return urls
 }
 
-function parseActionRunUrlMulti(payloadText, splitToken, subjectTitle, updatedAt) {
+function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedAt) {
     var marker = "\n" + (splitToken || "") + "\n"
     var normalized = String(payloadText || "")
     if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
@@ -494,10 +481,46 @@ function parseActionRunUrlMulti(payloadText, splitToken, subjectTitle, updatedAt
         if (!part) continue
         var parsed
         try { parsed = JSON.parse(part) } catch (e) { continue }
+
+        var directUrl = directSubjectWebUrlFromObject(parsed)
+        if (directUrl)
+            return directUrl
+
         best = chooseBestActionRunUrl(parsed, subjectTitle, updatedAt, best)
     }
 
     return best.url || ""
+}
+
+function directSubjectWebUrlFromObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return ""
+
+    var subjectWebUrl = String(value.subjectWebUrl || value.subject_web_url || "").trim()
+    if (subjectWebUrl)
+        return subjectWebUrl
+
+    var tagName = String(value.tagName || value.tag_name || "").trim()
+    var htmlUrl = String(value.htmlUrl || value.html_url || "").trim()
+    if (tagName && htmlUrl)
+        return htmlUrl
+    if (htmlUrl && isLikelySubjectObject(value))
+        return htmlUrl
+
+    if (value.release && typeof value.release === "object")
+        return directSubjectWebUrlFromObject(value.release)
+
+    return ""
+}
+
+function isLikelySubjectObject(value) {
+    if (!value || typeof value !== "object")
+        return false
+    if (value.url || value.node_id || value.id || value.number || value.sha)
+        return true
+    if (value.tag_name || value.name || value.title || value.state)
+        return true
+    return false
 }
 
 function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {

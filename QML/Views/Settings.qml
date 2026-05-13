@@ -40,7 +40,7 @@ PluginSettings {
         tokenSaveFailed = false
         tokenStatusMessage = trimmed ? "Saving token to Secret Service..." : "Removing token from Secret Service..."
         if (trimmed)
-            secretStore.storeToken(trimmed, false)
+            secretStore.storeToken(trimmed)
         else
             secretStore.clearToken()
     }
@@ -109,7 +109,6 @@ PluginSettings {
     SecretStore {
         id: secretStore
         pluginService: root.pluginService
-        legacyPlainTextToken: root.loadValue("githubToken", "")
 
         onTokenLoaded: function(token) {
             root.tokenValue = token || ""

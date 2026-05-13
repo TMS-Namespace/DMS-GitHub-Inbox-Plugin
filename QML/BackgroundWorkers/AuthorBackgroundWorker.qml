@@ -55,8 +55,8 @@ Item {
     /// Emitted when expansion URLs are discovered and need enqueueing.
     signal expansionUrlsDiscovered(string threadId, var urls)
 
-    /// Emitted when a CI/action notification is matched to a concrete run URL.
-    signal actionRunUrlResolved(string threadId, string webUrl)
+    /// Emitted when a fetched subject is matched to its concrete web URL.
+    signal subjectWebUrlResolved(string threadId, string webUrl)
 
     /// Emitted when the prefetch cycle may have completed.
     signal prefetchMaybeComplete()
@@ -198,7 +198,8 @@ Item {
             if (!item || !item.threadId)
                 continue
 
-            if (fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
+            var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
+            if (!needsSubjectWebUrl && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -217,6 +218,7 @@ Item {
                 subjectType: item.subjectType || "",
                 updatedAt: item.updatedAt || "",
                 subjectTitle: item.title || "",
+                force: needsSubjectWebUrl,
                 fallbackAuthor: fallbackAuthorForMessage(item)
             })
             accepted++
@@ -254,11 +256,12 @@ Item {
             if (!item || !item.threadId)
                 continue
 
-            if (fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
+            var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
+            if (!needsSubjectWebUrl && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
             var existingAuthors = knownAuthors[item.threadId] || []
-            if (existingAuthors.length > 0)
+            if (!needsSubjectWebUrl && existingAuthors.length > 0)
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -277,6 +280,7 @@ Item {
                 subjectType: item.subjectType || "",
                 updatedAt: item.updatedAt || "",
                 subjectTitle: item.title || "",
+                force: needsSubjectWebUrl,
                 fallbackAuthor: fallbackAuthorForMessage(item)
             })
             enqueued++
@@ -354,6 +358,49 @@ Item {
         return false
     }
 
+    function repositoryWebUrlForMessage(item) {
+        var repoUrl = String((item && item.repositoryUrl) || "").trim()
+        if (repoUrl)
+            return repoUrl
+
+        var repo = String((item && item.repository) || "").trim()
+        return repo ? (GitHubConstants.githubWebBaseUrl + "/" + repo) : ""
+    }
+
+    function requiresSubjectWebUrlResolution(item) {
+        if (!item)
+            return false
+
+        var subjectType = String(item.subjectType || "").toLowerCase()
+        var reason = String(item.reason || "").toLowerCase()
+        var rawUrl = String(item.webUrl || "").trim()
+        var repoUrl = repositoryWebUrlForMessage(item)
+        var subjectApiUrl = String(item.subjectApiUrl || "").trim()
+
+        if (reason === "ci_activity"
+                || subjectType === "checksuite"
+                || subjectType === "checkrun"
+                || subjectType === "workflowrun") {
+            return !rawUrl
+                   || rawUrl === repoUrl
+                   || rawUrl === repoUrl + "/actions"
+                   || rawUrl.indexOf(GitHubConstants.githubWebBaseUrl + "/notifications/threads/") === 0
+        }
+
+        if (subjectType === "release" && /\/releases\/[0-9]+$/.test(subjectApiUrl)) {
+            if (!rawUrl || rawUrl === repoUrl || rawUrl === repoUrl + "/releases")
+                return true
+
+            // Older cache entries guessed the tag from the notification title.
+            // Numeric release API subjects need one enrichment fetch to get the
+            // authoritative html_url, including suffixes like -rc15.
+            if (rawUrl.indexOf("/releases/tag/") >= 0 && !item.webUrlResolved)
+                return true
+        }
+
+        return false
+    }
+
     /// Returns the current merged authorsByThread including not-yet-flushed pending merges.
     function cloneAuthorsByThread(authorsByThread) {
         var copy = {}
@@ -411,8 +458,8 @@ Item {
             }
         }
 
-        if (message.actionRunUrl && threadId)
-            actionRunUrlResolved(threadId, message.actionRunUrl)
+        if (message.subjectWebUrl && threadId)
+            subjectWebUrlResolved(threadId, message.subjectWebUrl)
 
         if (!_mergeFlushQueued) {
             _mergeFlushQueued = true
@@ -777,7 +824,7 @@ Item {
             + "api_version=$6\n"
             + "shift 6\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
-            + "filter='{authors:([.. | objects | select(((.login? // \"\") != \"\") and ((((.avatar_url? // .avatarUrl? // \"\") != \"\")) or (((.html_url? // .htmlUrl? // \"\") != \"\")))) | {login:(.login // \"\"), avatarUrl:(.avatar_url // .avatarUrl // \"\"), htmlUrl:(.html_url // .htmlUrl // \"\"), type:(.type // \"\")} ] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)), actionRuns:((.workflow_runs? // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")}))}'\n"
+            + "filter='{authors:([.. | objects | select(((.login? // \"\") != \"\") and ((((.avatar_url? // .avatarUrl? // \"\") != \"\")) or (((.html_url? // .htmlUrl? // \"\") != \"\")))) | {login:(.login // \"\"), avatarUrl:(.avatar_url // .avatarUrl // \"\"), htmlUrl:(.html_url // .htmlUrl // \"\"), type:(.type // \"\")} ] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)), subjectWebUrl:(.html_url // \"\"), actionRuns:((.workflow_runs? // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if ((.tag_name? // \"\") != \"\" and (.html_url? // \"\") != \"\") then {tagName:(.tag_name // \"\"), htmlUrl:(.html_url // \"\")} else null end)}'\n"
             + "for url in \"$@\"; do\n"
             + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"

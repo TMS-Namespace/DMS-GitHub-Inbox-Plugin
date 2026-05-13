@@ -155,8 +155,12 @@ QtObject {
         if (subjectApiUrl.indexOf("/commits/") >= 0)
             push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
 
-        if (subjectApiUrl.indexOf("/check-suites/") >= 0)
+        if (subjectApiUrl.indexOf("/check-suites/") >= 0) {
             push(appendAuthorQuery(subjectApiUrl + "/check-runs", perPageQuery))
+            var checkSuiteRepoRunsUrl = repoActionsRunsUrlFromSubjectApiUrl(subjectApiUrl)
+            if (checkSuiteRepoRunsUrl)
+                push(appendAuthorQuery(checkSuiteRepoRunsUrl, "per_page=5"))
+        }
 
         if (subjectApiUrl.indexOf("/actions/runs") >= 0
                 && subjectApiUrl.indexOf("/actions/runs/") < 0)
@@ -166,6 +170,20 @@ QtObject {
             push(appendAuthorQuery(subjectApiUrl + "/jobs", perPageQuery))
 
         return urls
+    }
+
+    function repoActionsRunsUrlFromSubjectApiUrl(subjectApiUrl) {
+        var normalized = normalizeApiUrl(subjectApiUrl)
+        if (!normalized)
+            return ""
+
+        var prefix = GitHubConstants.githubApiReposPrefix
+        var path = normalized.substring(prefix.length)
+        var parts = path.split("/")
+        if (parts.length < 4 || parts[2] !== "check-suites")
+            return ""
+
+        return prefix + parts[0] + "/" + parts[1] + "/actions/runs"
     }
 
     // =========================================================================

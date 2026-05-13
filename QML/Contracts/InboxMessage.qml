@@ -18,6 +18,7 @@ QtObject {
     property string title: "(untitled)"
     property string subjectApiUrl: ""
     property string webUrl: ""
+    property bool webUrlResolved: false
 
     function readFromObject(value) {
         var source = value || ({})
@@ -34,6 +35,7 @@ QtObject {
         title = String(source.title || "(untitled)")
         subjectApiUrl = String(source.subjectApiUrl || "")
         webUrl = String(source.webUrl || "")
+        webUrlResolved = !!source.webUrlResolved
     }
 
     function toObject() {
@@ -50,7 +52,8 @@ QtObject {
             subjectType: subjectType,
             title: title,
             subjectApiUrl: subjectApiUrl,
-            webUrl: webUrl
+            webUrl: webUrl,
+            webUrlResolved: webUrlResolved
         }
     }
 }

@@ -123,6 +123,11 @@ Item {
         var rawUrl = String(messageData.webUrl || "").trim()
         if (rawUrl.indexOf(GitHubConstants.githubWebBaseUrl + "/notifications/threads/") === 0)
             return repositoryWebUrl()
+        if (String(row.subjectType || "").toLowerCase() === "release"
+                && String(row.subjectApiUrl || "").match(/\/releases\/[0-9]+$/)
+                && rawUrl.indexOf("/releases/tag/") >= 0
+                && !messageData.webUrlResolved)
+            return repositoryWebUrl() + "/releases"
         return rawUrl
     }
 
