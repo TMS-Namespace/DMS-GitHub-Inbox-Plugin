@@ -3,7 +3,7 @@
     "name": "GitHub Inbox",
     "capabilities": ["dankbar-widget"],
     "category": "productivity",
-    "repo": "https://github.com/AvengeMedia/DMS-Github-Inbox",
+    "repo": "https://github.com/TMS-Namespace/DMS-GitHub-Inbox-Plugin",
     "description": "View and manage GitHub inbox messages from a DMS popup widget",
     "version": "1.0.0",
     "author": "TMS-Namespace",
