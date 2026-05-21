@@ -1,18 +1,35 @@
 # GitHub Inbox Plugin for DMS
 
-A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your GitHub notifications (aka inbox) in a popup and lets you mark them as read.
+A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your GitHub notifications (aka inbox) in a popup and lets you mark them as read or done.
+
+<div align="center">
+
+| Group by repo | Group by date |
+|:---:|:---:|
+| <img src="Images/plugin_group_by_repo.png" width="400"/> | <img src="Images/plugin_group_by_date.png" width="400"/> |
+
+</div>
 
 ## Features
 
 - DankBar widget with unread count
-- Popup inbox grouped by repository with expandable sections.
-- Open notifications directly in your browser
-- Mark single thread, group of threads, or all threads, as read
+- Popup inbox grouped by repository or date with expandable sections.
+- Open thread source, repo page, or author's page directly in your browser
+- Mark single thread, group of threads, or all threads, as read/done.
 - Configurable refresh interval and fetch size.
 - Configurable popup item limit and title line count.
+- Show `DMS` notification on new incoming threads.
 - Filter options:
-  - include read notifications
-  - participating threads only
+  - Show already read/not read/all thread.
+  - Show messages that you participated in/not participated/all.
+
+<div align="center">
+
+| Settings |
+|:---:|
+| <img src="Images/plugin_settings.png" width="400"/> |
+
+</div>
 
 ## Authentication
 
@@ -21,7 +38,7 @@ This plugin uses a **GitHub classic personal access token**, it can be created o
 *Recommended token scope*:
 
 - `notifications`
-- If you need also full details for notifications originated from private repositories, you need also to enable full `repo` permission for this token.
+- If you need also full details for threads originated from private repositories, you need also to enable full `repo` permission for this token.
 
 ## Requirements
 
@@ -55,3 +72,8 @@ Support/setup-symlink.sh
 
 - The token is securely stored via `Freedesktop Secret Service` API.
 - The plugin sends web requests only to GitHub endpoints, so privacy is limited by what GitHub offers.
+
+## Disclaimers
+
+- The developer has no affiliation with data provider.
+- This plugin was vibe-coded under my supervision as a software engineer.
