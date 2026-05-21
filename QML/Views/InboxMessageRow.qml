@@ -14,6 +14,9 @@ Item {
     property int titleLines: 2
     property var authors: []
     property bool showAuthors: true
+    property bool showRepositoryInfo: false
+    property bool allowAuthorRequests: true
+    property int extraHeight: 0
 
     signal markRead(string threadId)
     signal markUnread(string threadId)
@@ -28,24 +31,34 @@ Item {
     property string subjectApiUrl: messageData.subjectApiUrl || ""
     property string reason: GitHub.reasonLabel(messageData.reason)
     property string updatedAt: messageData.updatedAt || ""
-    property string webUrl: messageData.webUrl || ""
+    property string webUrl: effectiveWebUrl()
     property string updatedText: GitHub.relativeTimeFromIso(updatedAt)
     property string subjectIcon: GitHub.subjectIconName(subjectType)
     property bool authorRequestSent: false
 
     property var resolvedAuthors: authors || []
+    property bool shouldRequestAuthors: allowAuthorRequests
+                                        && showAuthors
+                                        && !authorRequestSent
+                                        && threadId !== ""
+                                        && resolvedAuthors.length === 0
 
     property var limitedAuthors: {
         var list = resolvedAuthors || []
-        if (list.length <= Constants.maxAuthorsDisplayedPerMessage)
+        if (list.length <= GitHubConstants.maxAuthorsDisplayedPerMessage)
             return list
-        return list.slice(0, Constants.maxAuthorsDisplayedPerMessage)
+        return list.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
     }
 
-    property int authorRowHeight: Constants.messageAuthorRowHeightPx
+    property int authorRowHeight: GitHubConstants.messageAuthorRowHeightPx
     property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
-    property int contentMinHeight: Constants.messageRowContentMinHeightPx + (Math.max(1, titleLines) * Constants.messageRowTitleLineHeightPx)
-    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Constants.messageRowAuthorColumnPaddingPx)
+    property int repositoryRowHeight: showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
+    property int repositoryRowSpacing: showRepositoryInfo ? GitHubConstants.messageMainInfoColumnSpacingPx : 0
+    property int contentMinHeight: GitHubConstants.messageRowContentMinHeightPx
+                                   + (Math.max(1, titleLines) * GitHubConstants.messageRowTitleLineHeightPx)
+                                   + repositoryRowHeight
+                                   + repositoryRowSpacing
+    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + GitHubConstants.messageRowAuthorColumnPaddingPx)
 
     function openAuthorProfile(url) {
         if (url) {
@@ -87,38 +100,82 @@ Item {
         var login = String(author.login || "").trim()
         if (!login)
             return ""
-        return Constants.githubWebBaseUrl + "/" + encodeURIComponent(login) + ".png?size=" + Constants.avatarDefaultSizePx
+        return GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login) + "?size=" + GitHubConstants.avatarDefaultSizePx
     }
 
     function requestAuthorsIfNeeded() {
-        // Authors are pre-fetched during refresh in Widget.qml.
+        if (!shouldRequestAuthors)
+            return
+
+        authorRequestSent = true
+        requestAuthors(threadId, subjectApiUrl, subjectType)
     }
 
-    height: Math.max(Constants.messageRowMinHeightPx, rowHeight)
+    function repositoryWebUrl() {
+        var repoUrl = String(messageData.repositoryUrl || "").trim()
+        if (repoUrl)
+            return repoUrl
+        var repo = String(messageData.repository || "").trim()
+        return repo ? (GitHubConstants.githubWebBaseUrl + "/" + repo) : ""
+    }
+
+    function effectiveWebUrl() {
+        var rawUrl = String(messageData.webUrl || "").trim()
+        if (rawUrl.indexOf(GitHubConstants.githubWebBaseUrl + "/notifications/threads/") === 0)
+            return repositoryWebUrl()
+        if (String(row.subjectType || "").toLowerCase() === "release"
+                && String(row.subjectApiUrl || "").match(/\/releases\/[0-9]+$/)
+                && rawUrl.indexOf("/releases/tag/") >= 0
+                && !messageData.webUrlResolved)
+            return repositoryWebUrl() + "/releases"
+        return rawUrl
+    }
+
+    function openRepository() {
+        var repoUrl = repositoryWebUrl()
+        if (!repoUrl)
+            return
+        row.closePopout()
+        Qt.openUrlExternally(repoUrl)
+    }
+
+    function authorRequestDelayMs() {
+        var numericId = parseInt(threadId || "0")
+        if (isNaN(numericId))
+            numericId = 0
+        return 300 + (numericId % 8) * 120
+    }
+
+    height: Math.max(GitHubConstants.messageRowMinHeightPx, rowHeight) + extraHeight
+
+    onThreadIdChanged: authorRequestSent = false
+    onUpdatedAtChanged: authorRequestSent = false
+    onResolvedAuthorsChanged: {
+        if (resolvedAuthors.length > 0)
+            authorRequestSent = true
+    }
+
+    Timer {
+        id: authorRequestTimer
+        interval: row.authorRequestDelayMs()
+        repeat: false
+        running: row.shouldRequestAuthors
+        onTriggered: row.requestAuthorsIfNeeded()
+    }
 
     Rectangle {
         anchors.fill: parent
         radius: Theme.cornerRadius
-        color: row.unread
-               ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.messageRowUnreadBackgroundOpacity)
-               : Theme.surfaceContainer
-        border.color: row.unread
-                      ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Constants.messageRowUnreadBorderOpacity)
-                      : Theme.outlineVariant
-        border.width: Constants.messageRowBorderWidthPx
+        color: row.unread ? Theme.withAlpha(Theme.primary, 0.1) : Theme.nestedSurface
+        border.color: row.unread ? Theme.withAlpha(Theme.primary, 0.3) : Theme.outlineMedium
+        border.width: row.unread ? 1 : GitHubConstants.messageRowBorderWidthPx
     }
 
     MouseArea {
         id: rowArea
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: {
-            if (webUrl) {
-                row.closePopout()
-                Qt.openUrlExternally(webUrl)
-            }
-        }
+        acceptedButtons: Qt.NoButton
     }
 
     Row {
@@ -128,20 +185,20 @@ Item {
 
         Item {
             id: iconSlot
-            width: Constants.messageIconSlotWidthPx
+            width: GitHubConstants.messageIconSlotWidthPx
             height: parent.height
 
             Rectangle {
-                width: Constants.messageIconBadgeWidthPx
-                height: Constants.messageIconBadgeHeightPx
-                radius: Constants.messageIconBadgeRadiusPx
+                width: GitHubConstants.messageIconBadgeWidthPx
+                height: GitHubConstants.messageIconBadgeHeightPx
+                radius: GitHubConstants.messageIconBadgeRadiusPx
                 anchors.top: parent.top
-                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, Constants.messageIconBadgeBackgroundOpacity)
+                color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, GitHubConstants.messageIconBadgeBackgroundOpacity)
 
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.subjectIcon
-                    size: Constants.messageSubjectIconSizePx
+                    size: GitHubConstants.messageSubjectIconSizePx
                     color: row.unread ? Theme.primary : Theme.surfaceVariantText
                 }
             }
@@ -159,20 +216,83 @@ Item {
                 Column {
                     id: mainInfo
                     width: (showAuthors && row.limitedAuthors.length > 0)
-                           ? Math.max(Constants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * Constants.messageMainInfoWidthRatio))
+                           ? Math.max(GitHubConstants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * GitHubConstants.messageMainInfoWidthRatio))
                            : bodySlot.width
                     anchors.top: parent.top
-                    spacing: Constants.messageMainInfoColumnSpacingPx
+                    spacing: GitHubConstants.messageMainInfoColumnSpacingPx
 
-                    StyledText {
+                    Item {
+                        id: titleHost
                         width: parent.width
-                        text: row.title
-                        font.pixelSize: Theme.fontSizeSmall
-                        font.weight: row.unread ? Font.DemiBold : Font.Medium
-                        color: Theme.surfaceText
-                        wrapMode: Text.Wrap
-                        maximumLineCount: Math.max(1, row.titleLines)
-                        elide: Text.ElideRight
+                        height: Math.max(titleText.paintedHeight, titleText.implicitHeight)
+
+                        StyledText {
+                            id: titleText
+                            width: parent.width
+                            text: row.title
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: row.unread ? Font.DemiBold : Font.Medium
+                            color: Theme.surfaceText
+                            wrapMode: Text.Wrap
+                            maximumLineCount: Math.max(1, row.titleLines)
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            width: Math.min(titleText.paintedWidth, titleText.width)
+                            height: titleHost.height
+                            hoverEnabled: true
+                            cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (webUrl) {
+                                    row.closePopout()
+                                    Qt.openUrlExternally(webUrl)
+                                }
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: repositoryInfoRow
+                        width: parent.width
+                        height: row.showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
+                        visible: row.showRepositoryInfo
+
+                        Item {
+                            id: repositoryAvatar
+                            width: GitHubConstants.popoutRepoAvatarSizePx
+                            height: GitHubConstants.popoutRepoAvatarSizePx
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            RoundedAvatar {
+                                anchors.fill: parent
+                                source: row.messageData.repositoryOwnerAvatarUrl || ""
+                                fallbackIcon: "folder"
+                                fallbackIconSize: GitHubConstants.popoutRepoAvatarFallbackIconSizePx
+                            }
+                        }
+
+                        StyledText {
+                            anchors.left: repositoryAvatar.right
+                            anchors.leftMargin: Theme.spacingXS
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: row.messageData.repository || "Unknown repository"
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.weight: Font.Medium
+                            color: Theme.surfaceVariantText
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            wrapMode: Text.NoWrap
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: row.repositoryWebUrl() ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: row.openRepository()
+                        }
                     }
 
                     Row {
@@ -181,31 +301,31 @@ Item {
 
                         StyledText {
                             text: row.subjectType
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.reason
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.updatedText
-                            font.pixelSize: Constants.messageMetadataFontSizePx
+                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                             elide: Text.ElideRight
                         }
@@ -214,7 +334,7 @@ Item {
 
                 Item {
                     id: authorInfo
-                    width: Math.max(Constants.messageAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
+                    width: Math.max(GitHubConstants.messageAuthorColumnMinWidthPx, bodySlot.width - mainInfo.width - Theme.spacingS)
                     height: parent.height
                     visible: row.showAuthors && row.limitedAuthors.length > 0
 
@@ -222,7 +342,7 @@ Item {
                         id: authorColumn
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: Constants.messageAuthorColumnItemSpacingPx
+                        spacing: GitHubConstants.messageAuthorColumnItemSpacingPx
 
                         Repeater {
                             model: row.limitedAuthors
@@ -239,21 +359,21 @@ Item {
 
                                     Item {
                                         id: avatarHost
-                                        width: Constants.authorAvatarSizePx
-                                        height: Constants.authorAvatarSizePx
+                                        width: GitHubConstants.authorAvatarSizePx
+                                        height: GitHubConstants.authorAvatarSizePx
 
                                         RoundedAvatar {
                                             anchors.fill: parent
                                             source: row.avatarSource(modelData)
                                             fallbackIcon: "person"
-                                            fallbackIconSize: Constants.authorAvatarFallbackIconSizePx
+                                            fallbackIconSize: GitHubConstants.authorAvatarFallbackIconSizePx
                                         }
                                     }
 
                                     StyledText {
-                                        width: Math.max(Constants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
+                                        width: Math.max(GitHubConstants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
                                         text: row.authorDisplayName(modelData)
-                                        font.pixelSize: Constants.authorNameFontSizePx
+                                        font.pixelSize: GitHubConstants.authorNameFontSizePx
                                         color: Theme.surfaceVariantText
                                         elide: Text.ElideRight
                                         maximumLineCount: 1
@@ -279,12 +399,12 @@ Item {
     // -- Hover actions --------------------------------------------------------
     Item {
         id: actionsHost
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.rightMargin: Constants.messageActionsHostMarginPx
-        anchors.topMargin: Constants.messageActionsHostMarginPx
-        width: Constants.messageActionsHostWidthPx
-        height: Constants.messageActionsHostHeightPx
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: GitHubConstants.messageActionsHostMarginPx
+        anchors.bottomMargin: GitHubConstants.messageActionsHostMarginPx
+        width: GitHubConstants.messageActionsHostWidthPx
+        height: GitHubConstants.messageActionsHostHeightPx
         z: 10
 
         MouseArea {
@@ -296,57 +416,33 @@ Item {
 
         Row {
             id: actionButtons
-            spacing: Constants.messageActionButtonsSpacingPx
+            spacing: GitHubConstants.messageActionButtonsSpacingPx
             visible: rowArea.containsMouse
                      || actionsHoverArea.containsMouse
-                     || openArea.containsMouse
                      || readToggleArea.containsMouse
                      || doneArea.containsMouse
             opacity: visible ? 1 : 0
 
             Behavior on opacity {
-                NumberAnimation { duration: Constants.messageActionsFadeDurationMs }
+                NumberAnimation { duration: GitHubConstants.messageActionsFadeDurationMs }
             }
 
             Rectangle {
-                width: Constants.messageActionButtonSizePx
-                height: Constants.messageActionButtonSizePx
-                radius: Constants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
-
-                MouseArea {
-                    id: openArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    enabled: webUrl !== ""
-                    onClicked: {
-                        row.closePopout()
-                        Qt.openUrlExternally(webUrl)
-                    }
-                }
-
-                DankIcon {
-                    anchors.centerIn: parent
-                    name: "open_in_new"
-                    size: Constants.messageActionButtonIconSizePx
-                    color: Theme.surfaceVariantText
-                }
-            }
-
-            Rectangle {
-                width: Constants.messageActionButtonSizePx
-                height: Constants.messageActionButtonSizePx
-                radius: Constants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
+                width: GitHubConstants.messageActionButtonSizePx
+                height: GitHubConstants.messageActionButtonSizePx
+                radius: GitHubConstants.messageActionButtonRadiusPx
+                color: row.isBusy
+                       ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
+                       : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: readToggleArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: row.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    enabled: !row.isBusy && row.threadId !== ""
                     onClicked: {
+                        if (row.isBusy || row.threadId === "")
+                            return
                         if (row.unread)
                             row.markRead(row.threadId)
                         else
@@ -357,32 +453,62 @@ Item {
                 DankIcon {
                     anchors.centerIn: parent
                     name: row.unread ? "mark_email_read" : "mark_email_unread"
-                    size: Constants.messageActionButtonIconSizePx
-                    color: readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                    size: GitHubConstants.messageActionButtonIconSizePx
+                    color: row.isBusy
+                           ? Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                           : (readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
                 }
             }
 
             Rectangle {
-                width: Constants.messageActionButtonSizePx
-                height: Constants.messageActionButtonSizePx
-                radius: Constants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, Constants.messageActionButtonBgOpacity)
+                width: GitHubConstants.messageActionButtonSizePx
+                height: GitHubConstants.messageActionButtonSizePx
+                radius: GitHubConstants.messageActionButtonRadiusPx
+                color: row.isBusy
+                       ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
+                       : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: doneArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: row.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    enabled: !row.isBusy && row.threadId !== ""
-                    onClicked: row.markDone(row.threadId)
+                    onClicked: {
+                        if (!row.isBusy && row.threadId !== "")
+                            row.markDone(row.threadId)
+                    }
                 }
 
                 DankIcon {
                     anchors.centerIn: parent
                     name: "done"
-                    size: Constants.messageActionButtonIconSizePx
-                    color: doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                    size: GitHubConstants.messageActionButtonIconSizePx
+                    color: row.isBusy
+                           ? Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                           : (doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
                 }
+            }
+        }
+
+        Rectangle {
+            visible: row.isBusy && (readToggleArea.containsMouse || doneArea.containsMouse)
+            anchors.left: actionButtons.left
+            anchors.bottom: actionButtons.top
+            anchors.bottomMargin: Theme.spacingXS
+            width: rowActionTooltipText.implicitWidth + Theme.spacingS * 2
+            height: rowActionTooltipText.implicitHeight + Theme.spacingXS * 2
+            radius: Theme.cornerRadius
+            color: Theme.surfaceContainerHighest
+            border.width: 1
+            border.color: Theme.outlineMedium
+            z: 20
+
+            StyledText {
+                id: rowActionTooltipText
+                anchors.centerIn: parent
+                text: "Not available during refresh"
+                font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                color: Theme.surfaceVariantText
             }
         }
     }

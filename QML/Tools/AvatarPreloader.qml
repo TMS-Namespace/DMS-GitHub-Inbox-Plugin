@@ -5,6 +5,7 @@
 // inbox message owners and author lists.
 
 import QtQuick
+import ".."
 
 Item {
     id: preloader
@@ -15,7 +16,7 @@ Item {
     // -- State ----------------------------------------------------------------
     property var entries: []         // Array of { key, source }
     property var entryMap: ({})      // key -> source (dedup)
-    property int limit: Constants.avatarPreloadTotalCacheLimit
+    property int limit: GitHubConstants.avatarPreloadTotalCacheLimit
 
     // =========================================================================
     //  PUBLIC API
@@ -23,13 +24,13 @@ Item {
 
     // -- Perf logging helper --------------------------------------------------
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
+        if (!GitHubConstants.debugPerformanceLogging) return
         console.warn("[GitHubInbox PERF] AvatarPreloader: " + label)
     }
 
     function queueFromAuthors(authors) {
         _perfLog("queueFromAuthors — input=" + (authors ? authors.length : 0) + " existing=" + entries.length)
-        if (!authors || authors.length === 0 || entries.length >= limit)
+        if (limit <= 0 || !authors || authors.length === 0 || entries.length >= limit)
             return
 
         var nextEntries = entries.slice(0)
@@ -44,6 +45,8 @@ Item {
             var login = String((author && author.login) || "").trim()
             var avatarUrl = AuthorUtils.authorAvatarUrl(author)
             var key = AuthorUtils.authorKey(login, (author && author.htmlUrl) || "", avatarUrl)
+            if (String(avatarUrl || "").indexOf("file://") === 0)
+                continue
             if (!key || !avatarUrl || nextMap.hasOwnProperty(key))
                 continue
 
@@ -60,7 +63,7 @@ Item {
     }
 
     function queueFromMessages(items) {
-        if (!items || items.length === 0)
+        if (limit <= 0 || !items || items.length === 0)
             return
 
         var ownerAuthors = []
@@ -70,7 +73,7 @@ Item {
                 login: item.repositoryOwnerLogin || "",
                 avatarUrl: item.repositoryOwnerAvatarUrl || "",
                 htmlUrl: item.repositoryOwnerLogin
-                    ? (Constants.githubWebBaseUrl + "/" + encodeURIComponent(item.repositoryOwnerLogin))
+                    ? (GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(item.repositoryOwnerLogin))
                     : ""
             })
         }
@@ -109,8 +112,8 @@ Item {
             source: modelData.source || ""
             asynchronous: true
             cache: true
-            sourceSize.width: Constants.avatarPreloadSourceSizePx
-            sourceSize.height: Constants.avatarPreloadSourceSizePx
+            sourceSize.width: GitHubConstants.avatarPreloadSourceSizePx
+            sourceSize.height: GitHubConstants.avatarPreloadSourceSizePx
             visible: false
         }
     }

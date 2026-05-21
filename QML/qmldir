@@ -1,18 +1,35 @@
 singleton ApiCallStats 1.0 Tools/ApiCallStats.qml
 singleton AuthorUtils 1.0 Tools/AuthorUtils.qml
-singleton Constants 1.0 Tools/Constants.qml
+singleton GitHubConstants 1.0 Tools/Constants.qml
 
-AuthorFetcher 1.0 Tools/AuthorFetcher.qml
+AuthorBackgroundWorker 1.0 BackgroundWorkers/AuthorBackgroundWorker.qml
+AvatarBackgroundWorker 1.0 BackgroundWorkers/AvatarBackgroundWorker.qml
+InboxBackgroundWorker 1.0 BackgroundWorkers/InboxBackgroundWorker.qml
+
+Author 1.0 Contracts/Author.qml
+AvatarCacheEntry 1.0 Cache/Contracts/AvatarCacheEntry.qml
+CachedState 1.0 Cache/Contracts/CachedState.qml
+CachePayload 1.0 Cache/Contracts/CachePayload.qml
+DateGroupingGroup 1.0 Contracts/DateGroupingGroup.qml
+InboxMessage 1.0 Contracts/InboxMessage.qml
+RepoGroupingGroup 1.0 Contracts/RepoGroupingGroup.qml
+ThreadAuthors 1.0 Contracts/ThreadAuthors.qml
+
 AvatarPreloader 1.0 Tools/AvatarPreloader.qml
-CacheCoordinator 1.0 Tools/CacheCoordinator.qml
-InboxCache 1.0 Tools/InboxCache.qml
-InboxFetcher 1.0 Tools/InboxFetcher.qml
-InboxGroupModel 1.0 Tools/InboxGroupModel.qml
+CacheCoordinator 1.0 Cache/CacheCoordinator.qml
+DateGroupingModel 1.0 Tools/DateGroupingModel.qml
 InboxOperations 1.0 Tools/InboxOperations.qml
+PluginCache 1.0 Cache/PluginCache.qml
+RepoGroupingModel 1.0 Tools/RepoGroupingModel.qml
+ResourceRepository 1.0 Tools/ResourceRepository.qml
+SecretStore 1.0 Tools/SecretStore.qml
 
+DateGroupingGroupView 1.0 Views/DateGroupingGroupView.qml
+DateGroupingView 1.0 Views/DateGroupingView.qml
 GitHubIcon 1.0 Views/GitHubIcon.qml
-InboxMessageGroup 1.0 Views/InboxMessageGroup.qml
 InboxMessageRow 1.0 Views/InboxMessageRow.qml
 PopoutPanel 1.0 Views/PopoutPanel.qml
+RepoGroupingGroupView 1.0 Views/RepoGroupingGroupView.qml
+RepoGroupingView 1.0 Views/RepoGroupingView.qml
 RoundedAvatar 1.0 Views/RoundedAvatar.qml
 Settings 1.0 Views/Settings.qml

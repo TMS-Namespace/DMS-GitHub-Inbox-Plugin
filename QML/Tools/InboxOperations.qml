@@ -6,6 +6,7 @@
 
 import QtQuick
 import Quickshell.Io
+import ".."
 
 Item {
     id: operations
@@ -19,9 +20,15 @@ Item {
     property bool isLoading: false    // bound from outside — blocks operations
     property var doneThreadState: ({})
     property var pendingThreadDoneQueue: []
+    property var pendingThreadReadQueue: []
+    property int pendingThreadDoneIndex: 0
+    property int pendingThreadReadIndex: 0
+    readonly property bool isBusy: isOperating
+                                   || pendingThreadDoneIndex < pendingThreadDoneQueue.length
+                                   || pendingThreadReadIndex < pendingThreadReadQueue.length
 
     // -- Signals --------------------------------------------------------------
-    signal operationApplied(string actionType, string threadId, string repositoryFullName)
+    signal operationApplied(string actionType, string threadId, string repositoryFullName, var threadIds)
     signal operationError(string errorMessage)
     signal stateUpdated()
 
@@ -31,33 +38,66 @@ Item {
 
     function markThreadAsRead(threadId) {
         if (!threadId) return
+        if (!_canStartPublicOperation()) return
         _runMutation(
             "PATCH",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_read", threadId, "", ""
         )
     }
 
     function markThreadAsUnread(threadId) {
         if (!threadId) return
+        if (!_canStartPublicOperation()) return
         _runMutation(
             "PATCH",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_unread", threadId, "", "{\"read\":false}"
         )
     }
 
     function markThreadDone(threadId) {
         if (!threadId) return
+        if (!_canStartPublicOperation()) return
         _runMutation(
             "DELETE",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_done", threadId, "", ""
         )
     }
 
+    function markThreadsAsRead(messages) {
+        if (!_canStartPublicOperation())
+            return
+
+        var threadIds = _collectThreadIds(messages, true)
+        if (threadIds.length === 0)
+            return
+
+        operationApplied("threads_read", "", "", threadIds)
+        _queueThreadReadSync(threadIds)
+    }
+
+    function markThreadsDone(messages) {
+        if (!_canStartPublicOperation())
+            return
+
+        var threadIds = _collectThreadIds(messages, false)
+        if (threadIds.length === 0)
+            return
+
+        var doneCopy = _cloneMap(doneThreadState)
+        for (var index = 0; index < threadIds.length; index++)
+            doneCopy[threadIds[index]] = true
+        doneThreadState = doneCopy
+
+        operationApplied("threads_done", "", "", threadIds)
+        _queueThreadDoneSync(threadIds)
+    }
+
     function markRepoDone(repositoryFullName, messages) {
         if (!repositoryFullName) return
+        if (!_canStartPublicOperation()) return
 
         var doneCopy = _cloneMap(doneThreadState)
         var threadIds = []
@@ -73,12 +113,13 @@ Item {
         if (threadIds.length === 0) return
 
         doneThreadState = doneCopy
-        operationApplied("repo_done", "", repositoryFullName)
+        operationApplied("repo_done", "", repositoryFullName, threadIds)
         _queueThreadDoneSync(threadIds)
     }
 
     function markRepoAsRead(repositoryFullName) {
         if (!repositoryFullName) return
+        if (!_canStartPublicOperation()) return
 
         var parts = repositoryFullName.split("/")
         if (parts.length !== 2) return
@@ -87,25 +128,28 @@ Item {
         var repo = encodeURIComponent(parts[1])
         _runMutation(
             "PUT",
-            Constants.githubApiReposPrefix + owner + "/" + repo + "/notifications",
+            GitHubConstants.githubApiReposPrefix + owner + "/" + repo + "/notifications",
             "repo_read", "", repositoryFullName, ""
         )
     }
 
     function markAllAsRead() {
+        if (!_canStartPublicOperation()) return
+
         _runMutation(
             "PUT",
-            Constants.githubInboxApiUrl,
+            GitHubConstants.githubInboxApiUrl,
             "all_read", "", "", ""
         )
     }
 
     /// Apply operation result to a messages list and return updated state.
-    function applyResult(actionType, threadId, repositoryFullName, messages) {
+    function applyResult(actionType, threadId, repositoryFullName, messages, threadIds) {
         var updated = []
         var doneCopy = _cloneMap(doneThreadState)
+        var threadIdSet = _threadIdSet(threadIds || [])
 
-        if (actionType === "thread_done_sync")
+        if (actionType === "thread_done_sync" || actionType === "thread_read_sync")
             return { items: messages, unreadChanged: false }
 
         if (actionType === "all_read") {
@@ -132,6 +176,27 @@ Item {
                         && doneCopy[repoDoneItem.threadId])
                     continue
                 updated.push(repoDoneItem)
+            }
+            return { items: updated, unreadChanged: true }
+        }
+
+        if (actionType === "threads_read") {
+            for (var readIndex = 0; readIndex < messages.length; readIndex++) {
+                var readItem = messages[readIndex]
+                if (readItem.threadId && threadIdSet[readItem.threadId])
+                    updated.push(_markAsReadItem(readItem))
+                else
+                    updated.push(readItem)
+            }
+            return { items: updated, unreadChanged: true }
+        }
+
+        if (actionType === "threads_done") {
+            for (var batchDoneIndex = 0; batchDoneIndex < messages.length; batchDoneIndex++) {
+                var batchDoneItem = messages[batchDoneIndex]
+                if (batchDoneItem.threadId && threadIdSet[batchDoneItem.threadId])
+                    continue
+                updated.push(batchDoneItem)
             }
             return { items: updated, unreadChanged: true }
         }
@@ -183,16 +248,16 @@ Item {
     function processPendingDoneQueue() {
         if (!token || isOperating || isLoading)
             return
-        if (pendingThreadDoneQueue.length === 0)
+        if (pendingThreadDoneIndex >= pendingThreadDoneQueue.length)
             return
 
-        var nextQueue = pendingThreadDoneQueue.slice(0)
-        var threadId = nextQueue.shift()
-        pendingThreadDoneQueue = nextQueue
+        var threadId = pendingThreadDoneQueue[pendingThreadDoneIndex]
+        pendingThreadDoneIndex++
+        _compactDoneQueueIfNeeded()
 
         _runMutation(
             "DELETE",
-            Constants.githubThreadApiPrefix + threadId,
+            GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_done_sync", threadId, "", ""
         )
     }
@@ -200,6 +265,9 @@ Item {
     function resetState() {
         isOperating = false
         pendingThreadDoneQueue = []
+        pendingThreadReadQueue = []
+        pendingThreadDoneIndex = 0
+        pendingThreadReadIndex = 0
         doneThreadState = ({})
     }
 
@@ -222,12 +290,12 @@ Item {
         var cmd = [
             "curl", "-sS",
             "-o", "/dev/null",
-            "-w", Constants.curlStatusCodeFormat,
-            "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-            "--max-time", Constants.curlMaxTimeSeconds,
+            "-w", GitHubConstants.curlStatusCodeFormat,
+            "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+            "--max-time", GitHubConstants.curlMaxTimeSeconds,
             "-X", method,
-            "-H", "Accept: " + Constants.httpAcceptHeader,
-            "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+            "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+            "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
             "-H", "Authorization: token " + token,
             url
         ]
@@ -239,12 +307,17 @@ Item {
         process.running = true
     }
 
+    function _canStartPublicOperation() {
+        return token !== "" && !isLoading && !isBusy
+    }
+
     function _queueThreadDoneSync(threadIds) {
         if (!threadIds || threadIds.length === 0) return
 
-        var nextQueue = pendingThreadDoneQueue.slice(0)
+        _compactDoneQueueIfNeeded()
+        var nextQueue = pendingThreadDoneQueue
         var seen = {}
-        for (var existingIndex = 0; existingIndex < nextQueue.length; existingIndex++)
+        for (var existingIndex = pendingThreadDoneIndex; existingIndex < nextQueue.length; existingIndex++)
             seen[nextQueue[existingIndex]] = true
 
         for (var index = 0; index < threadIds.length; index++) {
@@ -256,6 +329,103 @@ Item {
 
         pendingThreadDoneQueue = nextQueue
         processPendingDoneQueue()
+    }
+
+    function _queueThreadReadSync(threadIds) {
+        if (!threadIds || threadIds.length === 0) return
+
+        _compactReadQueueIfNeeded()
+        var nextQueue = pendingThreadReadQueue
+        var seen = {}
+        for (var existingIndex = pendingThreadReadIndex; existingIndex < nextQueue.length; existingIndex++)
+            seen[nextQueue[existingIndex]] = true
+
+        for (var index = 0; index < threadIds.length; index++) {
+            var threadId = threadIds[index]
+            if (!threadId || seen[threadId]) continue
+            seen[threadId] = true
+            nextQueue.push(threadId)
+        }
+
+        pendingThreadReadQueue = nextQueue
+        processPendingReadQueue()
+    }
+
+    function processPendingReadQueue() {
+        if (!token || isOperating || isLoading)
+            return
+        if (pendingThreadReadIndex >= pendingThreadReadQueue.length)
+            return
+
+        var threadId = pendingThreadReadQueue[pendingThreadReadIndex]
+        pendingThreadReadIndex++
+        _compactReadQueueIfNeeded()
+
+        _runMutation(
+            "PATCH",
+            GitHubConstants.githubThreadApiPrefix + threadId,
+            "thread_read_sync", threadId, "", ""
+        )
+    }
+
+    function _processPendingOperationQueues() {
+        processPendingReadQueue()
+        if (!isOperating)
+            processPendingDoneQueue()
+    }
+
+    function _compactDoneQueueIfNeeded() {
+        if (pendingThreadDoneIndex === 0)
+            return
+        if (pendingThreadDoneIndex >= pendingThreadDoneQueue.length) {
+            pendingThreadDoneQueue = []
+            pendingThreadDoneIndex = 0
+            return
+        }
+        if (pendingThreadDoneIndex >= 32) {
+            pendingThreadDoneQueue = pendingThreadDoneQueue.slice(pendingThreadDoneIndex)
+            pendingThreadDoneIndex = 0
+        }
+    }
+
+    function _compactReadQueueIfNeeded() {
+        if (pendingThreadReadIndex === 0)
+            return
+        if (pendingThreadReadIndex >= pendingThreadReadQueue.length) {
+            pendingThreadReadQueue = []
+            pendingThreadReadIndex = 0
+            return
+        }
+        if (pendingThreadReadIndex >= 32) {
+            pendingThreadReadQueue = pendingThreadReadQueue.slice(pendingThreadReadIndex)
+            pendingThreadReadIndex = 0
+        }
+    }
+
+    function _collectThreadIds(messages, unreadOnly) {
+        var result = []
+        var seen = {}
+        var items = messages || []
+        for (var index = 0; index < items.length; index++) {
+            var item = items[index]
+            if (!item || !item.threadId || seen[item.threadId])
+                continue
+            if (unreadOnly && !item.unread)
+                continue
+            seen[item.threadId] = true
+            result.push(item.threadId)
+        }
+        return result
+    }
+
+    function _threadIdSet(threadIds) {
+        var result = {}
+        var ids = threadIds || []
+        for (var index = 0; index < ids.length; index++) {
+            if (ids[index])
+                result[ids[index]] = true
+        }
+        return result
     }
 
     function _markAsReadItem(item) {
@@ -313,15 +483,15 @@ Item {
 
                 var statusCode = parseInt((_buffer || "").trim())
                 if (!isNaN(statusCode)
-                        && statusCode >= Constants.httpSuccessMin
-                        && statusCode < Constants.httpSuccessMax) {
-                    operations.operationApplied(actionType, threadId, repositoryFullName)
+                        && statusCode >= GitHubConstants.httpSuccessMin
+                        && statusCode < GitHubConstants.httpSuccessMax) {
+                    operations.operationApplied(actionType, threadId, repositoryFullName, [])
                 } else {
                     operations.operationError("Action failed (HTTP "
                                           + (isNaN(statusCode) ? "?" : statusCode) + ").")
                 }
 
-                Qt.callLater(operations.processPendingDoneQueue)
+                Qt.callLater(operations._processPendingOperationQueues)
                 destroy()
             }
         }

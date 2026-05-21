@@ -1,9 +1,9 @@
-// InboxParserWorker.js - background parser for GitHub inbox messages
+// InboxParserBackgroundWorker.js - background parser for GitHub inbox messages
 
 // Local mirrors of QML/Constants.qml values.
 // WorkerScript files cannot access QML singletons; constants are inlined here.
 var _FETCH_PAYLOAD_SPLIT_TOKEN = "__GH_PARTICIPATING_SPLIT__"
-var _MESSAGES_PARSE_CHUNK_SIZE = 80
+var _MESSAGES_PARSE_CHUNK_SIZE = 40
 var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
 var _AVATAR_DEFAULT_SIZE_PX = 128
 
@@ -12,18 +12,28 @@ WorkerScript.onMessage = function (message) {
     if (message.action === "parseAuthors") {
         var authors = []
         var expansionUrls = []
+        var subjectWebUrl = ""
         if (message.buffer) {
             authors = parseSubjectAuthorsMulti(message.buffer, message.splitToken || "")
+            subjectWebUrl = parseSubjectWebUrlMulti(
+                message.buffer,
+                message.splitToken || "",
+                message.subjectTitle || "",
+                message.updatedAt || ""
+            )
             if (message.shouldExpand)
                 expansionUrls = parseSubjectExpansionUrls(message.buffer, message.splitToken || "")
         }
         WorkerScript.sendMessage({
             action: "authorsResult",
+            generation: message.generation || 0,
             threadId: message.threadId || "",
             updatedAt: message.updatedAt || "",
             requestedUrls: message.requestedUrls || [],
             shouldExpand: !!message.shouldExpand,
+            fallbackAuthor: message.fallbackAuthor || null,
             authors: authors,
+            subjectWebUrl: subjectWebUrl,
             expansionUrls: expansionUrls
         })
         return
@@ -159,8 +169,8 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
     mergedItems.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
-        var tA = Date.parse(a.updatedAt) || 0
-        var tB = Date.parse(b.updatedAt) || 0
+        var tA = a.updatedAtMs || 0
+        var tB = b.updatedAtMs || 0
         return tB - tA
     })
 
@@ -188,6 +198,7 @@ function parseMessagesPayload(payloadText) {
         var repository = item.repository || {}
 
         var reason = item.reason || ""
+        var updatedAt = item.updated_at || ""
         var participatingReasons = {
             comment: true, author: true, assign: true,
             review_requested: true, mention: true, team_mention: true
@@ -198,7 +209,8 @@ function parseMessagesPayload(payloadText) {
             unread: !!item.unread,
             reason: reason,
             participated: !!participatingReasons[reason],
-            updatedAt: item.updated_at || "",
+            updatedAt: updatedAt,
+            updatedAtMs: Date.parse(updatedAt) || 0,
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",
             repositoryOwnerLogin: (repository.owner && repository.owner.login) || "",
@@ -206,7 +218,8 @@ function parseMessagesPayload(payloadText) {
             subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
-            webUrl: resolveWebUrl(item)
+            webUrl: resolveWebUrl(item),
+            webUrlResolved: false
         })
     }
 
@@ -230,19 +243,6 @@ function resolveWebUrl(notification) {
     return _GITHUB_INBOX_FALLBACK_URL
 }
 
-function releaseTagFromSubject(subjectType, subjectTitle) {
-    var normalizedType = String(subjectType || "").toLowerCase()
-    if (normalizedType !== "release")
-        return ""
-
-    var title = String(subjectTitle || "").trim()
-    if (!title)
-        return ""
-
-    title = title.replace(/^release\s+/i, "").trim()
-    return title
-}
-
 function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     if (!apiUrl || apiUrl.indexOf("https://api.github.com/repos/") !== 0)
         return ""
@@ -263,12 +263,19 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
         return base + "/pull/" + tail[1]
     if (tail.length >= 2 && tail[0] === "commits")
         return base + "/commit/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "actions" && tail[1] === "runs")
+        return base + "/actions/runs/" + tail[2]
+    if (tail.length >= 2 && tail[0] === "check-runs")
+        return base + "/runs/" + tail[1]
+    if (tail.length >= 2 && tail[0] === "check-suites")
+        return base + "/actions"
+    if (tail.length >= 2 && tail[0] === "statuses")
+        return base + "/commit/" + tail[1]
     if (tail.length >= 2 && tail[0] === "discussions")
         return base + "/discussions/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "releases" && tail[1] === "tags")
+        return base + "/releases/tag/" + encodeURIComponent(tail.slice(2).join("/"))
     if (tail.length >= 2 && tail[0] === "releases") {
-        var releaseTag = releaseTagFromSubject(subjectType, subjectTitle)
-        if (releaseTag)
-            return base + "/releases/tag/" + encodeURIComponent(releaseTag)
         return base + "/releases"
     }
     if (tail.length >= 3 && tail[0] === "dependabot" && tail[1] === "alerts")
@@ -286,7 +293,7 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
 function defaultAvatarUrlForLogin(login) {
     var normalized = String(login || "").trim()
     if (!normalized) return ""
-    return "https://github.com/" + encodeURIComponent(normalized) + ".png?size=" + _AVATAR_DEFAULT_SIZE_PX
+    return "https://avatars.githubusercontent.com/" + encodeURIComponent(normalized) + "?size=" + _AVATAR_DEFAULT_SIZE_PX
 }
 
 function authorAvatarUrl(authorLike) {
@@ -461,4 +468,155 @@ function parseSubjectExpansionUrls(payloadText, splitToken) {
         }
     }
     return urls
+}
+
+function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedAt) {
+    var marker = "\n" + (splitToken || "") + "\n"
+    var normalized = String(payloadText || "")
+    if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+        normalized += "\n"
+    var parts = normalized.split(marker)
+    var best = { score: -1, url: "" }
+
+    for (var i = 0; i < parts.length; i++) {
+        var part = String(parts[i] || "").trim()
+        if (!part) continue
+        var parsed
+        try { parsed = JSON.parse(part) } catch (e) { continue }
+
+        var directUrl = directSubjectWebUrlFromObject(parsed)
+        if (directUrl)
+            return directUrl
+
+        best = chooseBestActionRunUrl(parsed, subjectTitle, updatedAt, best)
+    }
+
+    return best.url || ""
+}
+
+function directSubjectWebUrlFromObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return ""
+
+    var subjectWebUrl = String(value.subjectWebUrl || value.subject_web_url || "").trim()
+    if (subjectWebUrl)
+        return subjectWebUrl
+
+    var tagName = String(value.tagName || value.tag_name || "").trim()
+    var htmlUrl = String(value.htmlUrl || value.html_url || "").trim()
+    if (tagName && htmlUrl)
+        return htmlUrl
+    if (htmlUrl && isLikelySubjectObject(value))
+        return htmlUrl
+
+    if (value.release && typeof value.release === "object")
+        return directSubjectWebUrlFromObject(value.release)
+
+    return ""
+}
+
+function isLikelySubjectObject(value) {
+    if (!value || typeof value !== "object")
+        return false
+    if (value.url || value.node_id || value.id || value.number || value.sha)
+        return true
+    if (value.tag_name || value.name || value.title || value.state)
+        return true
+    return false
+}
+
+function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
+    var best = currentBest || { score: -1, url: "" }
+    var runs = []
+
+    if (value && typeof value === "object") {
+        if (value.actionRunUrl)
+            return { score: 1000000, url: String(value.actionRunUrl) }
+        if (Array.isArray(value.actionRuns))
+            runs = runs.concat(value.actionRuns)
+        if (Array.isArray(value.workflow_runs))
+            runs = runs.concat(value.workflow_runs)
+    }
+
+    var expectedName = workflowNameFromNotificationTitle(subjectTitle)
+    var expectedBranch = branchFromNotificationTitle(subjectTitle)
+    var expectedConclusion = conclusionFromNotificationTitle(subjectTitle)
+    var expectedTime = Date.parse(updatedAt || "") || 0
+
+    for (var index = 0; index < runs.length; index++) {
+        var run = runs[index] || {}
+        var url = String(run.htmlUrl || run.html_url || "").trim()
+        if (!url)
+            continue
+
+        var score = 0
+        var runName = String(run.name || "").trim()
+        var displayTitle = String(run.displayTitle || run.display_title || "").trim()
+        var headBranch = String(run.headBranch || run.head_branch || "").trim()
+        var conclusion = String(run.conclusion || "").trim().toLowerCase()
+
+        if (expectedName) {
+            if (runName.toLowerCase() === expectedName.toLowerCase())
+                score += 100
+            else if (displayTitle.toLowerCase().indexOf(expectedName.toLowerCase()) >= 0)
+                score += 40
+            else
+                score -= 100
+        }
+
+        if (expectedBranch) {
+            if (headBranch === expectedBranch)
+                score += 100
+            else
+                score -= 100
+        }
+
+        if (expectedConclusion) {
+            if (conclusion === expectedConclusion)
+                score += 50
+            else
+                score -= 40
+        }
+
+        var runTime = Date.parse(run.updatedAt || run.updated_at || "") || 0
+        if (expectedTime && runTime) {
+            var deltaMinutes = Math.abs(runTime - expectedTime) / 60000
+            if (deltaMinutes <= 10)
+                score += 40
+            else if (deltaMinutes <= 120)
+                score += 20
+            else
+                score -= Math.min(40, Math.floor(deltaMinutes / 60))
+        } else {
+            score += Math.max(0, runs.length - index)
+        }
+
+        if (score > best.score)
+            best = { score: score, url: url }
+    }
+
+    return best
+}
+
+function workflowNameFromNotificationTitle(title) {
+    var match = String(title || "").match(/^(.+?) workflow run/i)
+    return match ? match[1].trim() : ""
+}
+
+function branchFromNotificationTitle(title) {
+    var match = String(title || "").match(/ for (.+) branch$/i)
+    return match ? match[1].trim() : ""
+}
+
+function conclusionFromNotificationTitle(title) {
+    var normalized = String(title || "").toLowerCase()
+    if (normalized.indexOf(" failed ") >= 0)
+        return "failure"
+    if (normalized.indexOf(" succeeded ") >= 0)
+        return "success"
+    if (normalized.indexOf(" cancelled ") >= 0 || normalized.indexOf(" canceled ") >= 0)
+        return "cancelled"
+    if (normalized.indexOf(" skipped ") >= 0)
+        return "skipped"
+    return ""
 }

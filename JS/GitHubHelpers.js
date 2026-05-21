@@ -6,8 +6,8 @@
 // Local mirrors of QML/Constants.qml values.
 // This file uses .pragma library and cannot importScripts, so constants are inlined here.
 var _DEFAULT_POLL_INTERVAL_SECONDS = 120
-var _MIN_POLL_INTERVAL_SECONDS     = 60
-var _UNREAD_COUNT_DISPLAY_MAX      = 999
+var _MIN_POLL_INTERVAL_SECONDS = 60
+var _UNREAD_COUNT_DISPLAY_MAX = 999
 var _GITHUB_INBOX_FALLBACK_URL = "https://github.com/notifications"
 
 function pluginDataBool(value, defaultValue) {
@@ -76,7 +76,7 @@ function parseMessagesPayload(payloadText) {
     }
 
     // Keep unread items first, then most recently updated.
-    items.sort(function(a, b) {
+    items.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
         var tA = Date.parse(a.updatedAt) || 0
@@ -193,7 +193,7 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
         mergedItems.push(mergedItem)
     }
 
-    mergedItems.sort(function(a, b) {
+    mergedItems.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
         var tA = Date.parse(a.updatedAt) || 0
@@ -224,19 +224,6 @@ function resolveWebUrl(notification) {
     return _GITHUB_INBOX_FALLBACK_URL
 }
 
-function releaseTagFromSubject(subjectType, subjectTitle) {
-    var normalizedType = String(subjectType || "").toLowerCase()
-    if (normalizedType !== "release")
-        return ""
-
-    var title = String(subjectTitle || "").trim()
-    if (!title)
-        return ""
-
-    title = title.replace(/^release\s+/i, "").trim()
-    return title
-}
-
 function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     if (!apiUrl || apiUrl.indexOf("https://api.github.com/repos/") !== 0)
         return ""
@@ -257,12 +244,19 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
         return base + "/pull/" + tail[1]
     if (tail.length >= 2 && tail[0] === "commits")
         return base + "/commit/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "actions" && tail[1] === "runs")
+        return base + "/actions/runs/" + tail[2]
+    if (tail.length >= 2 && tail[0] === "check-runs")
+        return base + "/runs/" + tail[1]
+    if (tail.length >= 2 && tail[0] === "check-suites")
+        return base + "/actions"
+    if (tail.length >= 2 && tail[0] === "statuses")
+        return base + "/commit/" + tail[1]
     if (tail.length >= 2 && tail[0] === "discussions")
         return base + "/discussions/" + tail[1]
+    if (tail.length >= 3 && tail[0] === "releases" && tail[1] === "tags")
+        return base + "/releases/tag/" + encodeURIComponent(tail.slice(2).join("/"))
     if (tail.length >= 2 && tail[0] === "releases") {
-        var releaseTag = releaseTagFromSubject(subjectType, subjectTitle)
-        if (releaseTag)
-            return base + "/releases/tag/" + encodeURIComponent(releaseTag)
         return base + "/releases"
     }
     if (tail.length >= 3 && tail[0] === "dependabot" && tail[1] === "alerts")
@@ -311,8 +305,32 @@ function relativeTimeFromIso(isoDate) {
 
 function reasonLabel(reason) {
     if (!reason)
-        return "activity"
-    return String(reason).replace(/_/g, " ")
+        return "Activity"
+
+    var normalized = String(reason).trim().toLowerCase()
+    var labels = {
+        assign: "Assigned",
+        author: "Author",
+        ci_activity: "CI Activity",
+        comment: "Comment",
+        manual: "Manual",
+        mention: "Mention",
+        review_requested: "Review Requested",
+        security_alert: "Security Alert",
+        state_change: "State Change",
+        subscribed: "Subscribed",
+        team_mention: "Team Mention"
+    }
+    if (labels[normalized])
+        return labels[normalized]
+
+    var words = normalized.replace(/_/g, " ").split(" ")
+    for (var index = 0; index < words.length; index++) {
+        if (!words[index])
+            continue
+        words[index] = words[index].charAt(0).toUpperCase() + words[index].substring(1)
+    }
+    return words.join(" ")
 }
 
 function formatCountValue(value) {
@@ -346,11 +364,11 @@ function subjectIconName(subjectType) {
     if (type === "commit")
         return "account_tree"
     if (type === "repositoryvulnerabilityalert"
-            || type === "repositoryadvisory"
-            || type === "repositorydependabotalert"
-            || type === "vulnerabilityalert"
-            || type === "dependabotalert"
-            || type === "codescanningalert")
+        || type === "repositoryadvisory"
+        || type === "repositorydependabotalert"
+        || type === "vulnerabilityalert"
+        || type === "dependabotalert"
+        || type === "codescanningalert")
         return "shield"
     if (type === "checksuite")
         return "fact_check"

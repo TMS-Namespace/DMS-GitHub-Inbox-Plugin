@@ -1,11 +1,12 @@
 // AuthorUtils.qml - Pure helper functions for author data processing
 //
 // Contains URL normalization, author validation, merge logic, and URL building.
-// These are stateless utility functions used by AuthorFetcher and Widget.
+// These are stateless utility functions used by AuthorBackgroundWorker and Widget.
 
 pragma Singleton
 
 import QtQuick
+import ".."
 
 QtObject {
 
@@ -25,7 +26,7 @@ QtObject {
         if (normalized.indexOf("{") >= 0)
             return ""
 
-        if (normalized.indexOf(Constants.githubApiReposPrefix) !== 0)
+        if (normalized.indexOf(GitHubConstants.githubApiReposPrefix) !== 0)
             return ""
 
         return normalized
@@ -33,11 +34,11 @@ QtObject {
 
     function apiUrlFromWebUrl(webUrl) {
         var normalized = String(webUrl || "").trim()
-        if (!normalized || normalized.indexOf(Constants.githubWebBaseUrl + "/") !== 0)
+        if (!normalized || normalized.indexOf(GitHubConstants.githubWebBaseUrl + "/") !== 0)
             return ""
 
         var pathOnly = normalized.split("#")[0].split("?")[0]
-        var path = pathOnly.substring((Constants.githubWebBaseUrl + "/").length)
+        var path = pathOnly.substring((GitHubConstants.githubWebBaseUrl + "/").length)
         var parts = path.split("/")
         if (parts.length < 4)
             return ""
@@ -55,14 +56,14 @@ QtObject {
         if (section === "issues" || section === "pulls" || section === "discussions") {
             if (!/^[0-9]+$/.test(subjectId))
                 return ""
-            return Constants.githubApiReposPrefix
+            return GitHubConstants.githubApiReposPrefix
                    + encodeURIComponent(owner) + "/"
                    + encodeURIComponent(repo) + "/"
                    + section + "/" + subjectId
         }
 
         if (section === "commit")
-            return Constants.githubApiReposPrefix
+            return GitHubConstants.githubApiReposPrefix
                    + encodeURIComponent(owner) + "/"
                    + encodeURIComponent(repo) + "/commits/" + subjectId
 
@@ -90,7 +91,7 @@ QtObject {
         var normalizedType = String(subjectType || "").toLowerCase()
         if (normalizedType !== "checksuite" && normalizedType !== "workflowrun")
             return ""
-        return Constants.githubApiReposPrefix + repoFullName + "/actions/runs"
+        return GitHubConstants.githubApiReposPrefix + repoFullName + "/actions/runs"
     }
 
     function isThreadParentApiUrl(url) {
@@ -121,9 +122,9 @@ QtObject {
     //  Author Fetch URL Building
     // =========================================================================
 
-    function buildAuthorFetchUrls(subjectApiUrl, subjectType) {
+    function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails) {
         var urls = []
-        var perPageQuery = Constants.authorFetchPerPageQuery
+        var perPageQuery = GitHubConstants.authorFetchPerPageQuery
 
         function push(url) {
             if (!url || urls.indexOf(url) >= 0)
@@ -132,6 +133,9 @@ QtObject {
         }
 
         push(subjectApiUrl)
+
+        if (includeDetails === false)
+            return urls
 
         if (isThreadParentApiUrl(subjectApiUrl)) {
             var isPR = subjectApiUrl.indexOf("/pulls/") >= 0
@@ -151,8 +155,12 @@ QtObject {
         if (subjectApiUrl.indexOf("/commits/") >= 0)
             push(appendAuthorQuery(subjectApiUrl + "/comments", perPageQuery))
 
-        if (subjectApiUrl.indexOf("/check-suites/") >= 0)
+        if (subjectApiUrl.indexOf("/check-suites/") >= 0) {
             push(appendAuthorQuery(subjectApiUrl + "/check-runs", perPageQuery))
+            var checkSuiteRepoRunsUrl = repoActionsRunsUrlFromSubjectApiUrl(subjectApiUrl)
+            if (checkSuiteRepoRunsUrl)
+                push(appendAuthorQuery(checkSuiteRepoRunsUrl, "per_page=5"))
+        }
 
         if (subjectApiUrl.indexOf("/actions/runs") >= 0
                 && subjectApiUrl.indexOf("/actions/runs/") < 0)
@@ -162,6 +170,20 @@ QtObject {
             push(appendAuthorQuery(subjectApiUrl + "/jobs", perPageQuery))
 
         return urls
+    }
+
+    function repoActionsRunsUrlFromSubjectApiUrl(subjectApiUrl) {
+        var normalized = normalizeApiUrl(subjectApiUrl)
+        if (!normalized)
+            return ""
+
+        var prefix = GitHubConstants.githubApiReposPrefix
+        var path = normalized.substring(prefix.length)
+        var parts = path.split("/")
+        if (parts.length < 4 || parts[2] !== "check-suites")
+            return ""
+
+        return prefix + parts[0] + "/" + parts[1] + "/actions/runs"
     }
 
     // =========================================================================
@@ -226,8 +248,8 @@ QtObject {
         var normalized = String(login || "").trim()
         if (!normalized)
             return ""
-        return Constants.githubWebBaseUrl + "/" + encodeURIComponent(normalized)
-               + ".png?size=" + Constants.avatarDefaultSizePx
+        return GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(normalized)
+               + "?size=" + GitHubConstants.avatarDefaultSizePx
     }
 
     function authorAvatarUrl(authorLike) {
@@ -287,15 +309,15 @@ QtObject {
         var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
         if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0)
             return true
-        if (normalizedAvatar.indexOf(Constants.githubWebBaseUrl + "/") === 0
+        if (normalizedAvatar.indexOf(GitHubConstants.githubWebBaseUrl + "/") === 0
                 && normalizedAvatar.indexOf(".png") > 0)
             return true
 
         var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
         var lowerLogin = normalizedLogin.toLowerCase()
-        if (normalizedHtml === Constants.githubWebBaseUrl + "/" + lowerLogin)
+        if (normalizedHtml === GitHubConstants.githubWebBaseUrl + "/" + lowerLogin)
             return true
-        if (normalizedHtml.indexOf(Constants.githubWebBaseUrl + "/" + lowerLogin + "/") === 0)
+        if (normalizedHtml.indexOf(GitHubConstants.githubWebBaseUrl + "/" + lowerLogin + "/") === 0)
             return true
 
         return false
@@ -317,7 +339,7 @@ QtObject {
 
         htmlUrl = String(htmlUrl || "").trim()
         if (!htmlUrl)
-            htmlUrl = Constants.githubWebBaseUrl + "/" + encodeURIComponent(login)
+            htmlUrl = GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
 
         avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl })
 
@@ -375,7 +397,7 @@ QtObject {
         }
 
         function walk(value, depth) {
-            if (!value || depth > Constants.authorWalkMaxDepth)
+            if (!value || depth > GitHubConstants.authorWalkMaxDepth)
                 return
 
             if (Array.isArray(value)) {

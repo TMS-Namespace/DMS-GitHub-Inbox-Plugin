@@ -1,10 +1,11 @@
-// InboxFetcher.qml - Fetches GitHub inbox messages via curl, parses in background
+// InboxBackgroundWorker.qml - Fetches GitHub inbox messages via curl, parses in background
 //
 // Encapsulates the multi-page curl fetch and WorkerScript-based JSON parsing.
 // Emits signals for each phase of the result so the parent can update state.
 
 import QtQuick
 import Quickshell.Io
+import ".."
 import "../../JS/GitHubHelpers.js" as GitHub
 
 Item {
@@ -14,13 +15,14 @@ Item {
     // -- Configuration --------------------------------------------------------
     property string token: ""
     property int fetchPageCount: 1
-    property string fetchSplitToken: Constants.fetchPayloadSplitToken
+    property string fetchSplitToken: GitHubConstants.fetchPayloadSplitToken
     property var doneThreadState: ({})
 
     // -- State ----------------------------------------------------------------
     property bool isLoading: false
     property bool fetchQueued: false
     property int parseRequestSeq: 0
+    property int fetchGeneration: 0
 
     // -- Signals --------------------------------------------------------------
     signal fetchBegin(int totalCount, int unreadCount)
@@ -34,8 +36,8 @@ Item {
 
     // -- Perf logging helper --------------------------------------------------
     function _perfLog(label) {
-        if (!Constants.debugPerformanceLogging) return
-        console.warn("[GitHubInbox PERF] InboxFetcher: " + label)
+        if (!GitHubConstants.debugPerformanceLogging) return
+        console.warn("[GitHubInbox PERF] InboxBackgroundWorker: " + label)
     }
 
     function fetch() {
@@ -49,12 +51,13 @@ Item {
         }
 
         isLoading = true
+        var generation = fetchGeneration
         ApiCallStats.resetSession()
 
         var pages = Math.max(1, fetchPageCount)
-        var baseQuery = "per_page=" + Constants.messagesApiPageSize
-        var allBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
-        var participatingBaseUrl = Constants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
+        var baseQuery = "per_page=" + GitHubConstants.messagesApiPageSize
+        var allBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
+        var participatingBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
         var command = ["curl"]
 
         // Fetch "all" pages first
@@ -63,10 +66,10 @@ Item {
                 command.push("--next")
             command.push(
                 "-sS",
-                "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-                "--max-time", Constants.curlMaxTimeSeconds,
-                "-H", "Accept: " + Constants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+                "--max-time", GitHubConstants.curlMaxTimeSeconds,
+                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
                 "-H", "Authorization: token " + token,
                 "-w", "\n" + fetchSplitToken + "\n",
                 allBaseUrl + "&page=" + page
@@ -78,10 +81,10 @@ Item {
             command.push("--next")
             command.push(
                 "-sS",
-                "--connect-timeout", Constants.curlConnectTimeoutSeconds,
-                "--max-time", Constants.curlMaxTimeSeconds,
-                "-H", "Accept: " + Constants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + Constants.githubApiVersionHeader,
+                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
+                "--max-time", GitHubConstants.curlMaxTimeSeconds,
+                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
+                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
                 "-H", "Authorization: token " + token,
                 "-w", "\n" + fetchSplitToken + "\n",
                 participatingBaseUrl + "&page=" + pPage
@@ -90,12 +93,15 @@ Item {
 
         ApiCallStats.recordCalls(pages * 2)
         _perfLog("fetch — spawning curl, pages=" + pages)
-        var process = fetchComponentDef.createObject(fetcher)
+        var process = fetchComponentDef.createObject(fetcher, {
+            generation: generation
+        })
         process.command = command
         process.running = true
     }
 
     function cancel() {
+        fetchGeneration = fetchGeneration + 1
         parseRequestSeq = parseRequestSeq + 1
         isLoading = false
         fetchQueued = false
@@ -116,6 +122,7 @@ Item {
         id: fetchComponentDef
 
         Process {
+            property int generation: 0
             property var _chunks: []
 
             stdout: SplitParser {
@@ -130,6 +137,11 @@ Item {
             }
 
             onExited: exitCode => {
+                if (generation !== fetcher.fetchGeneration) {
+                    destroy()
+                    return
+                }
+
                 if (exitCode !== 0) {
                     ApiCallStats.recordRefreshComplete()
                     fetcher.isLoading = false
@@ -148,7 +160,7 @@ Item {
                     separator: fetcher.fetchSplitToken,
                     allSegmentCount: fetcher.fetchPageCount,
                     doneThreadState: fetcher.doneThreadState,
-                    chunkSize: Constants.messagesParseChunkSize
+                    chunkSize: GitHubConstants.messagesParseChunkSize
                 })
 
                 destroy()
@@ -164,11 +176,11 @@ Item {
 
     WorkerScript {
         id: parseWorker
-        source: Qt.resolvedUrl("../../JS/InboxParserWorker.js")
+        source: Qt.resolvedUrl("../../JS/BackgroundWorkers/InboxParserBackgroundWorker.js")
 
         onMessage: function(message) {
             fetcher._perfLog("WorkerScript message: action=" + (message.action || "inbox") + " phase=" + (message.phase || "n/a"))
-            // Author parse results are forwarded to the parent (AuthorFetcher
+            // Author parse results are forwarded to the parent (AuthorBackgroundWorker
             // will connect to the authorResultReceived signal).
             if (message.action === "authorsResult") {
                 fetcher.authorResultReceived(message)
@@ -217,7 +229,7 @@ Item {
         }
     }
 
-    // Expose sendMessage for AuthorFetcher to offload parsing
+    // Expose sendMessage for AuthorBackgroundWorker to offload parsing
     function sendWorkerMessage(msg) {
         parseWorker.sendMessage(msg)
     }
