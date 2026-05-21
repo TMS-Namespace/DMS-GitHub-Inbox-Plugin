@@ -130,9 +130,7 @@ Item {
                     worker._onAvatarDlDone(login, localPath)
                 else if (login)
                     worker._onAvatarDlFailed(login, localPath)
-                var active = worker._cloneMap(worker._avatarActiveLogins)
-                delete active[login]
-                worker._avatarActiveLogins = active
+                delete worker._avatarActiveLogins[login]
                 worker._avatarInFlight = Math.max(0, worker._avatarInFlight - 1)
                 worker._processAvatarQueue()
                 destroy()
@@ -155,18 +153,17 @@ Item {
             return
 
         var maxConcurrent = Math.max(1, GitHubConstants.maxConcurrentAvatarDownloads)
-        var nextQueue = _avatarQueue.slice(0)
         var started = 0
+        var queueOffset = 0
 
-        while (_avatarInFlight < maxConcurrent && nextQueue.length > 0) {
-            var item = nextQueue.shift()
+        while (_avatarInFlight < maxConcurrent && queueOffset < _avatarQueue.length) {
+            var item = _avatarQueue[queueOffset]
+            queueOffset++
             if (!item || !item.login || avatarLocalPaths.hasOwnProperty(item.login)
                     || _avatarActiveLogins[item.login] || _avatarFailedLogins[item.login])
                 continue
 
-            var active = _cloneMap(_avatarActiveLogins)
-            active[item.login] = true
-            _avatarActiveLogins = active
+            _avatarActiveLogins[item.login] = true
             _avatarInFlight++
 
             var localPath = cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory + "/" + item.login + ".png"
@@ -184,26 +181,25 @@ Item {
                 "-o", localPath,
                 item.remoteUrl
             ]
+            ApiCallStats.recordCalls(1)
             proc.running = true
             started++
         }
 
-        _avatarQueue = nextQueue
+        if (queueOffset > 0)
+            _avatarQueue = _avatarQueue.slice(queueOffset)
         _profile("_processAvatarQueue", profileStart,
                  "started=" + started + " inFlight=" + _avatarInFlight + " queue=" + _avatarQueue.length)
     }
 
     function _onAvatarDlDone(login, localPath) {
-        var nextPaths = _cloneMap(avatarLocalPaths)
-        nextPaths[login] = "file://" + localPath
-        avatarLocalPaths = nextPaths
-        avatarDownloaded(login, "file://" + localPath, nextPaths)
+        var localUrl = "file://" + localPath
+        avatarLocalPaths[login] = localUrl
+        avatarDownloaded(login, localUrl, avatarLocalPaths)
     }
 
     function _onAvatarDlFailed(login, localPath) {
-        var failed = _cloneMap(_avatarFailedLogins)
-        failed[login] = true
-        _avatarFailedLogins = failed
+        _avatarFailedLogins[login] = true
 
         if (localPath) {
             _removeLocalFile(localPath)
@@ -216,10 +212,4 @@ Item {
         proc.running = true
     }
 
-    function _cloneMap(source) {
-        var copy = {}
-        for (var key in source)
-            copy[key] = source[key]
-        return copy
-    }
 }

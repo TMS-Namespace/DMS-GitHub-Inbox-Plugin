@@ -10,6 +10,7 @@ QtObject {
     property string reason: ""
     property bool participated: false
     property string updatedAt: ""
+    property double updatedAtMs: 0
     property string repository: ""
     property string repositoryUrl: ""
     property string repositoryOwnerLogin: ""
@@ -27,6 +28,9 @@ QtObject {
         reason = String(source.reason || "")
         participated = !!source.participated
         updatedAt = String(source.updatedAt || "")
+        updatedAtMs = parseFloat(source.updatedAtMs || 0)
+        if (isNaN(updatedAtMs))
+            updatedAtMs = 0
         repository = String(source.repository || "")
         repositoryUrl = String(source.repositoryUrl || "")
         repositoryOwnerLogin = String(source.repositoryOwnerLogin || "")
@@ -45,6 +49,7 @@ QtObject {
             reason: reason,
             participated: participated,
             updatedAt: updatedAt,
+            updatedAtMs: updatedAtMs,
             repository: repository,
             repositoryUrl: repositoryUrl,
             repositoryOwnerLogin: repositoryOwnerLogin,

@@ -73,6 +73,7 @@ Item {
     property int _cacheWriteSeq: 0
     property var _pendingChangedAuthors: ({})
     property var _pendingAuthorFetchedAt: ({})
+    property var _pendingAvatarLocalPaths: ({})
     property bool _clearCachePending: false
     property bool _clearCacheDuringInitialize: false
 
@@ -295,17 +296,33 @@ Item {
 
     function hasLocalAvatar(login) {
         return avatarLocalPaths.hasOwnProperty(login)
+               || _pendingAvatarLocalPaths.hasOwnProperty(login)
     }
 
     function resolveAvatarUrl(remoteUrl, login) {
         if (!login || !remoteUrl)
             return remoteUrl || ""
+        if (_pendingAvatarLocalPaths[login])
+            return _pendingAvatarLocalPaths[login]
         return avatarLocalPaths[login] || remoteUrl
     }
 
     function updateAvatarLocalPaths(paths) {
         avatarLocalPaths = paths || ({})
         _queueSave()
+    }
+
+    function updateAvatarLocalPath(login, localUrl) {
+        if (!login || !localUrl)
+            return
+        if ((avatarLocalPaths[login] || "") === localUrl
+                || (_pendingAvatarLocalPaths[login] || "") === localUrl)
+            return
+
+        var nextPending = _cloneMap(_pendingAvatarLocalPaths)
+        nextPending[login] = localUrl
+        _pendingAvatarLocalPaths = nextPending
+        metadataFlushTimer.restart()
     }
 
     // -- Pruning --------------------------------------------------------------
@@ -339,6 +356,7 @@ Item {
         saveDebounce.stop()
         _pendingChangedAuthors = ({})
         _pendingAuthorFetchedAt = ({})
+        _pendingAvatarLocalPaths = ({})
         cachedMessages = []
         cachedAuthorsByThread = ({})
         cachedAuthorFetchedAt = ({})
@@ -526,8 +544,10 @@ Item {
         var profileStart = Date.now()
         var pendingAuthors = _pendingChangedAuthors || ({})
         var pendingFetchedAt = _pendingAuthorFetchedAt || ({})
+        var pendingAvatars = _pendingAvatarLocalPaths || ({})
         var hasAuthorChanges = false
         var hasFetchedAtChanges = false
+        var hasAvatarChanges = false
 
         for (var authorThreadId in pendingAuthors) {
             cachedAuthorsByThread[authorThreadId] = pendingAuthors[authorThreadId] || []
@@ -543,18 +563,30 @@ Item {
             hasFetchedAtChanges = true
         }
 
-        if (!hasAuthorChanges && !hasFetchedAtChanges)
+        for (var avatarLogin in pendingAvatars) {
+            var localUrl = pendingAvatars[avatarLogin] || ""
+            if (!localUrl)
+                continue
+            if ((avatarLocalPaths[avatarLogin] || "") === localUrl)
+                continue
+            avatarLocalPaths[avatarLogin] = localUrl
+            hasAvatarChanges = true
+        }
+
+        if (!hasAuthorChanges && !hasFetchedAtChanges && !hasAvatarChanges)
             return false
 
         _pendingChangedAuthors = ({})
         _pendingAuthorFetchedAt = ({})
+        _pendingAvatarLocalPaths = ({})
 
         if (queueSaveAfterFlush)
             _queueSave()
 
         _profile("_flushPendingMetadata", profileStart,
                  "authors=" + Object.keys(pendingAuthors).length
-                 + " fetchedAt=" + Object.keys(pendingFetchedAt).length)
+                 + " fetchedAt=" + Object.keys(pendingFetchedAt).length
+                 + " avatars=" + Object.keys(pendingAvatars).length)
         return true
     }
 

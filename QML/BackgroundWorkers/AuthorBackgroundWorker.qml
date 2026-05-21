@@ -186,7 +186,7 @@ Item {
             return
 
         var nextQueue = _prefetchQueue.slice(0)
-        var nextQueuedIds = _cloneMap(_prefetchQueuedThreadIds)
+        var nextQueuedIds = _prefetchQueuedThreadIds
         var accepted = _prefetchAcceptedCount
         var enqueued = 0
 
@@ -248,7 +248,7 @@ Item {
 
         var knownAuthors = authorsByThread || ({})
         var nextQueue = _prefetchQueue.slice(0)
-        var nextQueuedIds = _cloneMap(_prefetchQueuedThreadIds)
+        var nextQueuedIds = _prefetchQueuedThreadIds
         var enqueued = 0
 
         for (var index = 0; index < items.length; index++) {
@@ -484,12 +484,13 @@ Item {
         if (!token || !loadAuthorInfo)
             return
 
-        while (requestsInFlight < GitHubConstants.maxConcurrentAuthorFetches && requestQueue.length > 0) {
+        var queue = requestQueue
+        var queueOffset = 0
+        while (requestsInFlight < GitHubConstants.maxConcurrentAuthorFetches && queueOffset < queue.length) {
             _perfLog("processQueue — queueLen=" + requestQueue.length + " inFlight=" + requestsInFlight)
 
-            var nextQueue = requestQueue.slice(0)
-            var request = nextQueue.shift()
-            requestQueue = nextQueue
+            var request = queue[queueOffset]
+            queueOffset++
 
             var urls = filterThreadUnfetchedUrls(request.threadId, request.urls || [])
             if (urls.length === 0)
@@ -516,6 +517,8 @@ Item {
             process.command = command
             process.running = true
         }
+        if (queueOffset > 0)
+            requestQueue = queue.slice(queueOffset)
         profileOperation("processQueue", profileStart,
                  "started=" + startedRequests + " inFlight=" + requestsInFlight
                  + " queue=" + requestQueue.length)
@@ -539,12 +542,12 @@ Item {
         }
 
         var batchSize = Math.max(1, GitHubConstants.authorPrefetchBatchSize)
-        var remaining = _prefetchQueue.slice(0)
-        var nextQueuedIds = _cloneMap(_prefetchQueuedThreadIds)
+        var queue = _prefetchQueue
+        var nextQueuedIds = _prefetchQueuedThreadIds
         var processed = 0
 
-        while (processed < batchSize && remaining.length > 0) {
-            var item = remaining.shift()
+        while (processed < batchSize && processed < queue.length) {
+            var item = queue[processed]
             processed++
 
             if (item.threadId)
@@ -559,9 +562,7 @@ Item {
             // then let the normal URL filter avoid duplicate subrequests.
             if ((forceFetch || lastFetchedUpdatedAt !== "")
                     && fetchedUrlsByThread.hasOwnProperty(item.threadId)) {
-                var nextFetchedState = _cloneFetchedUrlsByThread()
-                delete nextFetchedState[item.threadId]
-                fetchedUrlsByThread = nextFetchedState
+                delete fetchedUrlsByThread[item.threadId]
             }
 
             enqueueAuthorFetch(item.threadId,
@@ -573,7 +574,7 @@ Item {
                                item.subjectTitle || "")
         }
 
-        _prefetchQueue = remaining
+        _prefetchQueue = queue.slice(processed)
         _prefetchQueuedThreadIds = nextQueuedIds
 
         if (_prefetchQueue.length === 0) {
@@ -609,8 +610,7 @@ Item {
         if (!threadId || !urls || urls.length === 0)
             return
 
-        var nextByThread = _cloneActiveUrlsByThread()
-        var nextThreadMap = _cloneThreadActiveUrlMap(threadId)
+        var nextThreadMap = activeUrlsByThread[threadId] || {}
 
         for (var index = 0; index < urls.length; index++) {
             var url = AuthorUtils.normalizeApiUrl(urls[index])
@@ -618,16 +618,14 @@ Item {
                 nextThreadMap[url] = true
         }
 
-        nextByThread[threadId] = nextThreadMap
-        activeUrlsByThread = nextByThread
+        activeUrlsByThread[threadId] = nextThreadMap
     }
 
     function markThreadUrlsInactive(threadId, urls) {
         if (!threadId || !urls || urls.length === 0)
             return
 
-        var nextByThread = _cloneActiveUrlsByThread()
-        var nextThreadMap = _cloneThreadActiveUrlMap(threadId)
+        var nextThreadMap = activeUrlsByThread[threadId] || {}
         var changed = false
 
         for (var index = 0; index < urls.length; index++) {
@@ -648,18 +646,16 @@ Item {
         }
 
         if (hasRemaining)
-            nextByThread[threadId] = nextThreadMap
+            activeUrlsByThread[threadId] = nextThreadMap
         else
-            delete nextByThread[threadId]
-        activeUrlsByThread = nextByThread
+            delete activeUrlsByThread[threadId]
     }
 
     function markThreadUrlsFetched(threadId, urls) {
         if (!threadId || !urls || urls.length === 0)
             return
 
-        var nextByThread = _cloneFetchedUrlsByThread()
-        var nextThreadMap = _cloneThreadFetchedUrlMap(threadId)
+        var nextThreadMap = fetchedUrlsByThread[threadId] || {}
 
         for (var index = 0; index < urls.length; index++) {
             var url = AuthorUtils.normalizeApiUrl(urls[index])
@@ -667,8 +663,7 @@ Item {
                 nextThreadMap[url] = true
         }
 
-        nextByThread[threadId] = nextThreadMap
-        fetchedUrlsByThread = nextByThread
+        fetchedUrlsByThread[threadId] = nextThreadMap
     }
 
     function _flushMerges() {
@@ -681,9 +676,11 @@ Item {
 
         var changedIds = []
         var processed = 0
+        var remainingCount = 0
         for (var changedId in pending) {
             if (processed >= GitHubConstants.authorMergeFlushBatchSize) {
                 remainingPending[changedId] = pending[changedId]
+                remainingCount++
                 continue
             }
             changedIds.push(changedId)
@@ -693,7 +690,7 @@ Item {
         if (changedIds.length === 0) {
             _pendingMerges = remainingPending
             _pendingAvatarPreloadAuthors = pendingAvatars
-            if (Object.keys(remainingPending).length > 0) {
+            if (remainingCount > 0) {
                 _mergeFlushQueued = true
                 mergeFlushTimer.restart()
             }
@@ -720,44 +717,12 @@ Item {
 
         authorsMerged(next, pendingAvatars, changedIds)
 
-        if (Object.keys(remainingPending).length > 0) {
+        if (remainingCount > 0) {
             _mergeFlushQueued = true
             mergeFlushTimer.restart()
         }
         profileOperation("_flushMerges", profileStart,
-                 "changed=" + changedIds.length + " remaining=" + Object.keys(remainingPending).length)
-    }
-
-    function _cloneActiveUrlsByThread() {
-        var copy = {}
-        for (var threadId in activeUrlsByThread) {
-            var threadCopy = {}
-            var source = activeUrlsByThread[threadId] || {}
-            for (var url in source)
-                threadCopy[url] = source[url]
-            copy[threadId] = threadCopy
-        }
-        return copy
-    }
-
-    function _cloneFetchedUrlsByThread() {
-        var copy = {}
-        for (var threadId in fetchedUrlsByThread) {
-            var threadCopy = {}
-            var source = fetchedUrlsByThread[threadId] || {}
-            for (var url in source)
-                threadCopy[url] = source[url]
-            copy[threadId] = threadCopy
-        }
-        return copy
-    }
-
-    function _cloneThreadFetchedUrlMap(threadId) {
-        var source = fetchedUrlsByThread[threadId] || {}
-        var copy = {}
-        for (var url in source)
-            copy[url] = source[url]
-        return copy
+                 "changed=" + changedIds.length + " remaining=" + remainingCount)
     }
 
     function _cloneThreadActiveUrlMap(threadId) {
@@ -765,13 +730,6 @@ Item {
         var copy = {}
         for (var url in source)
             copy[url] = source[url]
-        return copy
-    }
-
-    function _cloneMap(source) {
-        var copy = {}
-        for (var key in source)
-            copy[key] = source[key]
         return copy
     }
 

@@ -14,8 +14,8 @@ Column {
     property bool isBusy: false
     property int titleLines: 2
 
-    signal markRepoRead(string repositoryFullName)
-    signal markRepoDone(string repositoryFullName)
+    signal markRepoRead(var items)
+    signal markRepoDone(var items)
     signal markThreadRead(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
@@ -47,8 +47,8 @@ Column {
             isBusy: view.isBusy
             titleLines: view.titleLines
             onToggleExpanded: view.toggleGroup(modelData.repository)
-            onMarkRepoRead: view.markRepoRead(modelData.repository)
-            onMarkRepoDone: view.markRepoDone(modelData.repository)
+            onMarkRepoRead: function(items) { view.markRepoRead(items) }
+            onMarkRepoDone: function(items) { view.markRepoDone(items) }
             onMarkThreadRead: function(threadId) { view.markThreadRead(threadId) }
             onMarkThreadUnread: function(threadId) { view.markThreadUnread(threadId) }
             onMarkThreadDone: function(threadId) { view.markThreadDone(threadId) }

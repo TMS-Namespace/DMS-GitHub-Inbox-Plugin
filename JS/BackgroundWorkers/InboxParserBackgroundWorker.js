@@ -169,8 +169,8 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
     mergedItems.sort(function (a, b) {
         if (a.unread !== b.unread)
             return a.unread ? -1 : 1
-        var tA = Date.parse(a.updatedAt) || 0
-        var tB = Date.parse(b.updatedAt) || 0
+        var tA = a.updatedAtMs || 0
+        var tB = b.updatedAtMs || 0
         return tB - tA
     })
 
@@ -198,6 +198,7 @@ function parseMessagesPayload(payloadText) {
         var repository = item.repository || {}
 
         var reason = item.reason || ""
+        var updatedAt = item.updated_at || ""
         var participatingReasons = {
             comment: true, author: true, assign: true,
             review_requested: true, mention: true, team_mention: true
@@ -208,7 +209,8 @@ function parseMessagesPayload(payloadText) {
             unread: !!item.unread,
             reason: reason,
             participated: !!participatingReasons[reason],
-            updatedAt: item.updated_at || "",
+            updatedAt: updatedAt,
+            updatedAtMs: Date.parse(updatedAt) || 0,
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",
             repositoryOwnerLogin: (repository.owner && repository.owner.login) || "",

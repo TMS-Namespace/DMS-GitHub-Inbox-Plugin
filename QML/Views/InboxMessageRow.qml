@@ -175,13 +175,7 @@ Item {
         id: rowArea
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: {
-            if (webUrl) {
-                row.closePopout()
-                Qt.openUrlExternally(webUrl)
-            }
-        }
+        acceptedButtons: Qt.NoButton
     }
 
     Row {
@@ -227,15 +221,35 @@ Item {
                     anchors.top: parent.top
                     spacing: GitHubConstants.messageMainInfoColumnSpacingPx
 
-                    StyledText {
+                    Item {
+                        id: titleHost
                         width: parent.width
-                        text: row.title
-                        font.pixelSize: Theme.fontSizeSmall
-                        font.weight: row.unread ? Font.DemiBold : Font.Medium
-                        color: Theme.surfaceText
-                        wrapMode: Text.Wrap
-                        maximumLineCount: Math.max(1, row.titleLines)
-                        elide: Text.ElideRight
+                        height: Math.max(titleText.paintedHeight, titleText.implicitHeight)
+
+                        StyledText {
+                            id: titleText
+                            width: parent.width
+                            text: row.title
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: row.unread ? Font.DemiBold : Font.Medium
+                            color: Theme.surfaceText
+                            wrapMode: Text.Wrap
+                            maximumLineCount: Math.max(1, row.titleLines)
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            width: Math.min(titleText.paintedWidth, titleText.width)
+                            height: titleHost.height
+                            hoverEnabled: true
+                            cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (webUrl) {
+                                    row.closePopout()
+                                    Qt.openUrlExternally(webUrl)
+                                }
+                            }
+                        }
                     }
 
                     Item {
@@ -417,15 +431,18 @@ Item {
                 width: GitHubConstants.messageActionButtonSizePx
                 height: GitHubConstants.messageActionButtonSizePx
                 radius: GitHubConstants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
+                color: row.isBusy
+                       ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
+                       : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: readToggleArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: row.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    enabled: !row.isBusy && row.threadId !== ""
                     onClicked: {
+                        if (row.isBusy || row.threadId === "")
+                            return
                         if (row.unread)
                             row.markRead(row.threadId)
                         else
@@ -437,7 +454,9 @@ Item {
                     anchors.centerIn: parent
                     name: row.unread ? "mark_email_read" : "mark_email_unread"
                     size: GitHubConstants.messageActionButtonIconSizePx
-                    color: readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                    color: row.isBusy
+                           ? Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                           : (readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
                 }
             }
 
@@ -445,23 +464,51 @@ Item {
                 width: GitHubConstants.messageActionButtonSizePx
                 height: GitHubConstants.messageActionButtonSizePx
                 radius: GitHubConstants.messageActionButtonRadiusPx
-                color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
+                color: row.isBusy
+                       ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
+                       : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
 
                 MouseArea {
                     id: doneArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: row.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    enabled: !row.isBusy && row.threadId !== ""
-                    onClicked: row.markDone(row.threadId)
+                    onClicked: {
+                        if (!row.isBusy && row.threadId !== "")
+                            row.markDone(row.threadId)
+                    }
                 }
 
                 DankIcon {
                     anchors.centerIn: parent
                     name: "done"
                     size: GitHubConstants.messageActionButtonIconSizePx
-                    color: doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                    color: row.isBusy
+                           ? Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                           : (doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
                 }
+            }
+        }
+
+        Rectangle {
+            visible: row.isBusy && (readToggleArea.containsMouse || doneArea.containsMouse)
+            anchors.left: actionButtons.left
+            anchors.bottom: actionButtons.top
+            anchors.bottomMargin: Theme.spacingXS
+            width: rowActionTooltipText.implicitWidth + Theme.spacingS * 2
+            height: rowActionTooltipText.implicitHeight + Theme.spacingXS * 2
+            radius: Theme.cornerRadius
+            color: Theme.surfaceContainerHighest
+            border.width: 1
+            border.color: Theme.outlineMedium
+            z: 20
+
+            StyledText {
+                id: rowActionTooltipText
+                anchors.centerIn: parent
+                text: "Not available during refresh"
+                font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                color: Theme.surfaceVariantText
             }
         }
     }

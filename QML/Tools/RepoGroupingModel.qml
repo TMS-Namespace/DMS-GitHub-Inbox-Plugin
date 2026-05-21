@@ -92,8 +92,8 @@ QtObject {
     function _sortMessagesByDateDescending(items) {
         var copy = items.slice()
         copy.sort(function(a, b) {
-            var timeA = Date.parse(a.updatedAt || "") || 0
-            var timeB = Date.parse(b.updatedAt || "") || 0
+            var timeA = a.updatedAtMs || Date.parse(a.updatedAt || "") || 0
+            var timeB = b.updatedAtMs || Date.parse(b.updatedAt || "") || 0
             return timeB - timeA
         })
         return copy
@@ -112,17 +112,19 @@ QtObject {
                 repoOrder.push(repo)
             }
 
-            if (groupsByRepo[repo].items.length >= groupItemLimit)
-                continue
-
             if (!groupsByRepo[repo].repoAvatarUrl) {
                 groupsByRepo[repo].repoOwnerLogin = item.repositoryOwnerLogin || ""
                 groupsByRepo[repo].repoAvatarUrl = item.repositoryOwnerAvatarUrl || ""
             }
 
-            groupsByRepo[repo].items.push(item)
+            groupsByRepo[repo].allItems.push(item)
             if (item.unread)
                 groupsByRepo[repo].unreadCount++
+
+            if (groupsByRepo[repo].items.length >= groupItemLimit)
+                continue
+
+            groupsByRepo[repo].items.push(item)
         }
 
         var result = []
@@ -137,7 +139,8 @@ QtObject {
             unreadCount: 0,
             repoOwnerLogin: "",
             repoAvatarUrl: "",
-            items: []
+            items: [],
+            allItems: []
         }
     }
 }

@@ -14,6 +14,8 @@ Rectangle {
     property bool showAuthorInfo: true
     property bool isBusy: false
     property int titleLines: 2
+    readonly property bool hasActionItems: actionItems().length > 0
+    readonly property bool hasUnreadActionItems: visibleUnreadCount() > 0
     property bool headerActionsHovered: dateHeaderArea.containsMouse
                                         || dateReadArea.containsMouse
                                         || dateDoneArea.containsMouse
@@ -32,6 +34,24 @@ Rectangle {
     border.width: 1
     border.color: Theme.outlineMedium
     implicitHeight: groupColumn.implicitHeight + Theme.spacingS * 2
+
+    function actionItems() {
+        return groupData.items || []
+    }
+
+    function countItems() {
+        return groupData.allItems || groupData.items || []
+    }
+
+    function visibleUnreadCount() {
+        var unread = 0
+        var items = actionItems()
+        for (var index = 0; index < items.length; index++) {
+            if (items[index] && items[index].unread)
+                unread++
+        }
+        return unread
+    }
 
     Column {
         id: groupColumn
@@ -76,10 +96,12 @@ Rectangle {
                     width: GitHubConstants.popoutRepoDoneButtonSizePx
                     height: GitHubConstants.popoutRepoDoneButtonSizePx
                     radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
-                    visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
-                             && (groupCard.groupData.unreadCount || 0) > 0
-                             && groupCard.headerActionsHovered
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
+                    visible: groupCard.expanded && groupCard.hasActionItems
+                    opacity: groupCard.hasUnreadActionItems
+                             && groupCard.headerActionsHovered ? 1 : 0
+                    color: groupCard.isBusy
+                           ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
+                           : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
                     z: 2
 
                     MouseArea {
@@ -87,15 +109,19 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: groupCard.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                        enabled: !groupCard.isBusy
-                        onClicked: groupCard.markGroupRead(groupCard.groupData.items || [])
+                        onClicked: {
+                            if (!groupCard.isBusy)
+                                groupCard.markGroupRead(groupCard.actionItems())
+                        }
                     }
 
                     DankIcon {
                         anchors.centerIn: parent
                         name: "mark_email_read"
                         size: GitHubConstants.popoutRepoDoneIconSizePx
-                        color: dateReadArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                        color: groupCard.isBusy
+                               ? Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                               : (dateReadArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
                     }
                 }
 
@@ -103,9 +129,11 @@ Rectangle {
                     width: GitHubConstants.popoutRepoDoneButtonSizePx
                     height: GitHubConstants.popoutRepoDoneButtonSizePx
                     radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
-                    visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
-                             && groupCard.headerActionsHovered
-                    color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
+                    visible: groupCard.expanded && groupCard.hasActionItems
+                    opacity: groupCard.headerActionsHovered ? 1 : 0
+                    color: groupCard.isBusy
+                           ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
+                           : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
                     z: 2
 
                     MouseArea {
@@ -113,20 +141,24 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: groupCard.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                        enabled: !groupCard.isBusy
-                        onClicked: groupCard.markGroupDone(groupCard.groupData.items || [])
+                        onClicked: {
+                            if (!groupCard.isBusy)
+                                groupCard.markGroupDone(groupCard.actionItems())
+                        }
                     }
 
                     DankIcon {
                         anchors.centerIn: parent
                         name: "done"
                         size: GitHubConstants.popoutRepoDoneIconSizePx
-                        color: dateDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText
+                        color: groupCard.isBusy
+                               ? Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                               : (dateDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
                     }
                 }
 
                 Rectangle {
-                    visible: groupCard.groupData.items && groupCard.groupData.items.length > 0
+                    visible: groupCard.hasActionItems
                     height: GitHubConstants.popoutRepoCountBadgeHeightPx
                     radius: GitHubConstants.popoutRepoCountBadgeRadiusPx
                     width: groupCountText.implicitWidth + Theme.spacingS
@@ -138,7 +170,7 @@ Rectangle {
                         id: groupCountText
                         anchors.centerIn: parent
                         text: {
-                            var items = (groupCard.groupData.items || [])
+                            var items = groupCard.countItems()
                             var unread = groupCard.groupData.unreadCount || 0
                             return unread < items.length
                                    ? (unread + "/" + items.length)
@@ -161,6 +193,30 @@ Rectangle {
                     Behavior on rotation {
                         NumberAnimation { duration: GitHubConstants.popoutRepoExpandRotationDurationMs }
                     }
+                }
+            }
+
+            Rectangle {
+                visible: groupCard.isBusy
+                         && groupCard.expanded
+                         && (dateReadArea.containsMouse || dateDoneArea.containsMouse)
+                anchors.right: dateMeta.right
+                anchors.bottom: dateMeta.top
+                anchors.bottomMargin: Theme.spacingXS
+                width: dateActionTooltipText.implicitWidth + Theme.spacingS * 2
+                height: dateActionTooltipText.implicitHeight + Theme.spacingXS * 2
+                radius: Theme.cornerRadius
+                color: Theme.surfaceContainerHighest
+                border.width: 1
+                border.color: Theme.outlineMedium
+                z: 20
+
+                StyledText {
+                    id: dateActionTooltipText
+                    anchors.centerIn: parent
+                    text: "Not available during refresh"
+                    font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                    color: Theme.surfaceVariantText
                 }
             }
         }

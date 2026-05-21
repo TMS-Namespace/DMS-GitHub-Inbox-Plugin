@@ -36,8 +36,8 @@ Item {
     // -- Actions --------------------------------------------------------------
     signal refreshNow()
     signal markAllRead()
-    signal markRepoRead(string repositoryFullName)
-    signal markRepoDone(string repositoryFullName)
+    signal markRepoRead(var items)
+    signal markRepoDone(var items)
     signal markThreadRead(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
@@ -50,8 +50,8 @@ Item {
 
     property bool hasError: errorMessage !== ""
     property bool hasBlockingError: hasError && messages.length === 0 && !isLoading
-    property bool isRefreshBusy: isLoading || isAuthorFetching || isDownloadingAvatars
-    property bool anyBusy: isRefreshBusy || isOperating
+    property bool isRefreshBusy: isLoading || isAuthorFetching || isDownloadingAvatars || isOperating
+    property bool anyBusy: isRefreshBusy
     property bool _headerHovered: headerHoverArea.containsMouse
                                   || expandAllArea.containsMouse
                                   || collapseAllArea.containsMouse
@@ -192,12 +192,12 @@ Item {
                 anchors.centerIn: parent
                 name: "refresh"
                 size: GitHubConstants.popoutHeaderButtonIconSizePx
-                color: panel.hasError ? Theme.error : (panel.isRefreshBusy ? Theme.primary : Theme.surfaceText)
+                color: panel.hasError ? Theme.error : (panel.anyBusy ? Theme.primary : Theme.surfaceText)
 
                 RotationAnimation {
                     target: refreshIcon
                     property: "rotation"
-                    running: panel.isRefreshBusy
+                    running: panel.anyBusy
                     from: 0
                     to: 360
                     duration: GitHubConstants.popoutRefreshIconSpinDurationMs
@@ -206,15 +206,15 @@ Item {
 
                 Connections {
                     target: panel
-                    function onIsRefreshBusyChanged() {
-                        if (!panel.isRefreshBusy)
+                    function onAnyBusyChanged() {
+                        if (!panel.anyBusy)
                             refreshIcon.rotation = 0
                     }
                 }
             }
 
             Rectangle {
-                visible: panel.hasError && !panel.isRefreshBusy
+                visible: panel.hasError && !panel.anyBusy
                 width: 12
                 height: 12
                 radius: 6
@@ -322,8 +322,8 @@ Item {
                 showAuthorInfo: panel.showAuthorInfo
                 isBusy: panel.anyBusy
                 titleLines: panel.titleLines
-                onMarkRepoRead: function(repositoryFullName) { panel.markRepoRead(repositoryFullName) }
-                onMarkRepoDone: function(repositoryFullName) { panel.markRepoDone(repositoryFullName) }
+                onMarkRepoRead: function(items) { panel.markRepoRead(items) }
+                onMarkRepoDone: function(items) { panel.markRepoDone(items) }
                 onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
                 onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
                 onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
@@ -420,7 +420,9 @@ Item {
                                 width: (parent.width - 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
-                                color: panel.readFilter === modelData.value ? Theme.primaryContainer : "transparent"
+                                color: panel.readFilter === modelData.value
+                                       ? Theme.withAlpha(Theme.primary, GitHubConstants.popoutFilterActiveTintOpacity)
+                                       : "transparent"
 
                                 MouseArea {
                                     anchors.fill: parent
@@ -481,7 +483,9 @@ Item {
                                 width: (parent.width - 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
-                                color: panel.participationFilter === modelData.value ? Theme.primaryContainer : "transparent"
+                                color: panel.participationFilter === modelData.value
+                                       ? Theme.withAlpha(Theme.primary, GitHubConstants.popoutFilterActiveTintOpacity)
+                                       : "transparent"
 
                                 MouseArea {
                                     anchors.fill: parent

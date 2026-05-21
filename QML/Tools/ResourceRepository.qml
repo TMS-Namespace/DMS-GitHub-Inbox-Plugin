@@ -13,6 +13,7 @@ Item {
 
     property var cacheCoordinator: null
     property var _pendingAvatarUpdates: ({})
+    property int _pendingAvatarUpdateCount: 0
 
     signal avatarResourcesReady(var updates)
 
@@ -48,9 +49,9 @@ Item {
         if (!login || !localUrl)
             return
 
-        var next = _cloneMap(_pendingAvatarUpdates)
-        next[login] = localUrl
-        _pendingAvatarUpdates = next
+        if (!_pendingAvatarUpdates.hasOwnProperty(login))
+            _pendingAvatarUpdateCount++
+        _pendingAvatarUpdates[login] = localUrl
 
         if (!avatarReadyFlushTimer.running)
             avatarReadyFlushTimer.restart()
@@ -73,19 +74,14 @@ Item {
     function _flushAvatarUpdates() {
         var profileStart = Date.now()
         var updates = _pendingAvatarUpdates || ({})
-        if (Object.keys(updates).length === 0)
+        var updateCount = _pendingAvatarUpdateCount
+        if (updateCount === 0)
             return
 
         _pendingAvatarUpdates = ({})
+        _pendingAvatarUpdateCount = 0
         avatarResourcesReady(updates)
         _profile("_flushAvatarUpdates", profileStart,
-                 "updates=" + Object.keys(updates).length)
-    }
-
-    function _cloneMap(source) {
-        var copy = {}
-        for (var key in source)
-            copy[key] = source[key]
-        return copy
+                 "updates=" + updateCount)
     }
 }

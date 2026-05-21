@@ -53,31 +53,7 @@ QtObject {
         return _sortMessagesByDateDescending(result)
     }
 
-    readonly property var groups: {
-        var result = []
-
-        for (var groupIndex = 0; groupIndex < dateGroups.length; groupIndex++) {
-            var dateGroup = dateGroups[groupIndex]
-            var group = _createGroup(dateGroup.key, dateGroup.label)
-
-            for (var messageIndex = 0; messageIndex < filteredMessages.length; messageIndex++) {
-                var message = filteredMessages[messageIndex]
-                if (_dateBucketValue(message) !== dateGroup.key)
-                    continue
-                if (group.items.length >= groupItemLimit)
-                    continue
-
-                group.items.push(message)
-                if (message.unread)
-                    group.unreadCount++
-            }
-
-            if (group.items.length > 0)
-                result.push(group)
-        }
-
-        return result
-    }
+    readonly property var groups: _groupMessagesByDate(filteredMessages)
 
     readonly property bool hasDisplayedMessages: filteredMessages.length > 0
 
@@ -130,15 +106,15 @@ QtObject {
     function _sortMessagesByDateDescending(items) {
         var copy = items.slice()
         copy.sort(function(a, b) {
-            var timeA = Date.parse(a.updatedAt || "") || 0
-            var timeB = Date.parse(b.updatedAt || "") || 0
+            var timeA = a.updatedAtMs || Date.parse(a.updatedAt || "") || 0
+            var timeB = b.updatedAtMs || Date.parse(b.updatedAt || "") || 0
             return timeB - timeA
         })
         return copy
     }
 
     function _dateBucketValue(item) {
-        var timestamp = Date.parse(item.updatedAt || "")
+        var timestamp = item.updatedAtMs || Date.parse(item.updatedAt || "")
         if (!timestamp)
             return "older"
 
@@ -184,12 +160,42 @@ QtObject {
         return "older"
     }
 
+    function _groupMessagesByDate(items) {
+        var groupsByKey = {}
+        for (var groupIndex = 0; groupIndex < dateGroups.length; groupIndex++) {
+            var dateGroup = dateGroups[groupIndex]
+            groupsByKey[dateGroup.key] = _createGroup(dateGroup.key, dateGroup.label)
+        }
+
+        for (var messageIndex = 0; messageIndex < items.length; messageIndex++) {
+            var message = items[messageIndex]
+            var key = _dateBucketValue(message)
+            var group = groupsByKey[key] || groupsByKey.older
+
+            group.allItems.push(message)
+            if (message.unread)
+                group.unreadCount++
+
+            if (group.items.length < groupItemLimit)
+                group.items.push(message)
+        }
+
+        var result = []
+        for (var resultIndex = 0; resultIndex < dateGroups.length; resultIndex++) {
+            var resultGroup = groupsByKey[dateGroups[resultIndex].key]
+            if (resultGroup.allItems.length > 0)
+                result.push(resultGroup)
+        }
+        return result
+    }
+
     function _createGroup(key, label) {
         return {
             key: key,
             label: label,
             unreadCount: 0,
-            items: []
+            items: [],
+            allItems: []
         }
     }
 }

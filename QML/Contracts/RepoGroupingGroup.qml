@@ -10,6 +10,7 @@ QtObject {
     property string repoOwnerLogin: ""
     property string repoAvatarUrl: ""
     property var items: []
+    property var allItems: []
 
     function readFromObject(value) {
         var source = value || ({})
@@ -20,6 +21,7 @@ QtObject {
         repoOwnerLogin = String(source.repoOwnerLogin || "")
         repoAvatarUrl = String(source.repoAvatarUrl || "")
         items = source.items || []
+        allItems = source.allItems || items
     }
 
     function toObject() {
@@ -28,7 +30,8 @@ QtObject {
             unreadCount: unreadCount,
             repoOwnerLogin: repoOwnerLogin,
             repoAvatarUrl: repoAvatarUrl,
-            items: items || []
+            items: items || [],
+            allItems: allItems || []
         }
     }
 }

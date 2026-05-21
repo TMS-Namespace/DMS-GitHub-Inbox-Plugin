@@ -758,7 +758,7 @@ PluginSettings {
     // -------------------------------------------------------------------------
 
     Rectangle {
-        visible: GitHubConstants.isDevMode
+        visible: GitHubConstants.apiCallStatsEnabled
         width: parent.width
         height: visible ? 1 : 0
         color: Theme.outlineVariant
@@ -768,7 +768,7 @@ PluginSettings {
         id: statsSection
         property bool statsExpanded: false
 
-        visible: GitHubConstants.isDevMode
+        visible: GitHubConstants.apiCallStatsEnabled
         width: parent.width
         height: visible ? Theme.spacingS + statsHeader.height + statsCollapser.height : 0
 

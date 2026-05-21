@@ -31,7 +31,7 @@ Item {
         avatarLocalPaths: diskCache.avatarLocalPaths
 
         onAvatarDownloaded: function(login, localUrl, nextAvatarLocalPaths) {
-            diskCache.updateAvatarLocalPaths(nextAvatarLocalPaths)
+            diskCache.updateAvatarLocalPath(login, localUrl)
             coordinator.avatarCachedLocally(login, localUrl)
         }
     }

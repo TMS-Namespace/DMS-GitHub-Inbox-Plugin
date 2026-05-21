@@ -9,6 +9,7 @@ QtObject {
     property string label: ""
     property int unreadCount: 0
     property var items: []
+    property var allItems: []
 
     function readFromObject(value) {
         var source = value || ({})
@@ -18,6 +19,7 @@ QtObject {
         if (isNaN(unreadCount))
             unreadCount = 0
         items = source.items || []
+        allItems = source.allItems || items
     }
 
     function toObject() {
@@ -25,7 +27,8 @@ QtObject {
             key: key,
             label: label,
             unreadCount: unreadCount,
-            items: items || []
+            items: items || [],
+            allItems: allItems || []
         }
     }
 }
