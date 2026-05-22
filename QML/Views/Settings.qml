@@ -15,7 +15,6 @@ PluginSettings {
     property int groupLimitValue: GitHubConstants.defaultGroupItemLimit
     property int fetchPagesValue: GitHubConstants.defaultFetchPageCount
     property int popupHeightValue: GitHubConstants.defaultPopupHeightUnits
-    property int cacheTtlValue: GitHubConstants.defaultCacheTtlMinutes
     property string tokenStatusMessage: ""
     property bool tokenSaveFailed: false
 
@@ -78,23 +77,12 @@ PluginSettings {
         popupHeightValue = clampPopupHeight(loadValue("popupHeight", GitHubConstants.defaultPopupHeightUnits))
     }
 
-    function clampCacheTtl(value) {
-        var ttl = parseInt(value || GitHubConstants.defaultCacheTtlMinutes)
-        if (isNaN(ttl))
-            return GitHubConstants.defaultCacheTtlMinutes
-        return Math.max(GitHubConstants.minCacheTtlMinutes, Math.min(GitHubConstants.maxCacheTtlMinutes, ttl))
-    }
-
-    function loadCacheTtl() {
-        cacheTtlValue = clampCacheTtl(loadValue("cacheTtlMinutes", GitHubConstants.defaultCacheTtlMinutes))
-    }
     onPluginServiceChanged: {
         if (pluginService) {
             loadToken()
             loadGroupLimit()
             loadFetchPages()
             loadPopupHeight()
-            loadCacheTtl()
         }
     }
 
@@ -103,7 +91,6 @@ PluginSettings {
         loadGroupLimit()
         loadFetchPages()
         loadPopupHeight()
-        loadCacheTtl()
     }
 
     SecretStore {
@@ -634,95 +621,6 @@ PluginSettings {
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
-    }
-
-    Item {
-        width: parent.width
-        height: GitHubConstants.settingsSliderItemHeightPx
-
-        Column {
-            anchors.fill: parent
-            spacing: GitHubConstants.settingsSliderColumnSpacingPx
-
-            Row {
-                width: parent.width
-
-                StyledText {
-                    text: "Cache Freshness (minutes)"
-                    font.pixelSize: Theme.fontSizeMedium
-                    color: Theme.surfaceText
-                }
-
-                Item { width: Theme.spacingS; height: 1 }
-
-                StyledText {
-                    text: cacheTtlSlider.value.toFixed(0)
-                    font.pixelSize: Theme.fontSizeMedium
-                    font.weight: Font.Bold
-                    color: Theme.primary
-                }
-            }
-
-            Item {
-                width: parent.width
-                height: GitHubConstants.settingsSliderKnobAreaHeightPx
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: GitHubConstants.settingsSliderTrackHeightPx
-                    radius: GitHubConstants.settingsSliderTrackRadiusPx
-                    color: Theme.surfaceContainerHighest
-
-                    Rectangle {
-                        width: (cacheTtlSlider.value - GitHubConstants.minCacheTtlMinutes) / (GitHubConstants.maxCacheTtlMinutes - GitHubConstants.minCacheTtlMinutes) * parent.width
-                        height: parent.height
-                        radius: GitHubConstants.settingsSliderTrackRadiusPx
-                        color: Theme.primary
-                    }
-                }
-
-                Rectangle {
-                    id: cacheTtlHandle
-                    width: GitHubConstants.settingsSliderHandleSizePx
-                    height: GitHubConstants.settingsSliderHandleSizePx
-                    radius: GitHubConstants.settingsSliderHandleRadiusPx
-                    color: cacheTtlMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
-                    border.color: Theme.primary
-                    border.width: GitHubConstants.settingsSliderHandleBorderWidthPx
-                    x: (cacheTtlSlider.value - GitHubConstants.minCacheTtlMinutes) / (GitHubConstants.maxCacheTtlMinutes - GitHubConstants.minCacheTtlMinutes) * (parent.width - width)
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                QtObject {
-                    id: cacheTtlSlider
-                    property real value: root.cacheTtlValue
-                }
-
-                MouseArea {
-                    id: cacheTtlMouse
-                    anchors.fill: parent
-                    anchors.topMargin: -GitHubConstants.settingsSliderTouchExpansionPx
-                    anchors.bottomMargin: -GitHubConstants.settingsSliderTouchExpansionPx
-                    cursorShape: Qt.PointingHandCursor
-
-                    function updateValue(mouseX) {
-                        var ratio = Math.max(0, Math.min(1, mouseX / width))
-                        cacheTtlSlider.value = Math.round(GitHubConstants.minCacheTtlMinutes + ratio * (GitHubConstants.maxCacheTtlMinutes - GitHubConstants.minCacheTtlMinutes))
-                    }
-
-                    onPressed: function(mouse) { updateValue(mouse.x) }
-                    onPositionChanged: function(mouse) { if (pressed) updateValue(mouse.x) }
-                    onReleased: {
-                        var limited = root.clampCacheTtl(cacheTtlSlider.value)
-                        cacheTtlSlider.value = limited
-                        root.cacheTtlValue = limited
-                        root.saveValue("cacheTtlMinutes", String(limited))
-                    }
-                }
-            }
-        }
     }
 
     Rectangle {

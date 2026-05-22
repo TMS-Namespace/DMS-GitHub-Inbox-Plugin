@@ -61,12 +61,6 @@ PluginComponent {
     property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, GitHubConstants.defaultEnableNotifications)
     property string groupingMode: _normalizeGroupingMode(pluginData.groupingMode || "repo")
     property string clearCacheRequestFlag: pluginData.clearCacheRequested || ""
-    property int cacheTtlMinutes: {
-        var value = parseInt(pluginData.cacheTtlMinutes || GitHubConstants.defaultCacheTtlMinutes)
-        if (isNaN(value))
-            return GitHubConstants.defaultCacheTtlMinutes
-        return Math.max(GitHubConstants.minCacheTtlMinutes, Math.min(GitHubConstants.maxCacheTtlMinutes, value))
-    }
 
     // =========================================================================
     //  RUNTIME STATE
@@ -89,6 +83,8 @@ PluginComponent {
     property var _previousThreadIds: ({})
     property var _pendingLocalAvatarUpdates: ({})
     property int _pendingLocalAvatarUpdateCount: 0
+    property var _pendingNotificationMessages: []
+    property bool _apiStatsCompletionPending: false
     property var _pendingStartupAuthorMessages: []
     property var _pendingStartupAuthorAvatarLists: []
     property int _pendingStartupAuthorAvatarIndex: 0
@@ -141,7 +137,6 @@ PluginComponent {
 
     CacheCoordinator {
         id: cacheCoord
-        cacheTtlMinutes: root.cacheTtlMinutes
         onCacheReady: root._onCacheReady()
     }
 
@@ -215,9 +210,11 @@ PluginComponent {
             root._perfLog("onFetchError — " + errorMessage)
             root._pendingFetchedMessages = []
             root._pendingFetchedUnreadCount = 0
+            root._pendingNotificationMessages = []
             authorFetch.resetState()
             root.errorMessage = errorMessage
             root.lastUpdated = Date.now()
+            root._scheduleApiStatsRefreshComplete()
             Qt.callLater(operations.processPendingDoneQueue)
         }
 
@@ -277,11 +274,12 @@ PluginComponent {
         onOperationApplied: function(actionType, threadId, repositoryFullName, threadIds) {
             var result = operations.applyResult(actionType, threadId, repositoryFullName,
                                                 root.inboxMessages, threadIds || [])
-            if (result.items !== root.inboxMessages) {
+            var itemsChanged = result.items !== root.inboxMessages
+            if (itemsChanged) {
                 root.inboxMessages = result.items
                 root._replaceViewMessages(root.inboxMessages)
             }
-            if (result.unreadChanged)
+            if (itemsChanged || result.unreadChanged)
                 root.unreadCount = _recalculateUnread(root.inboxMessages)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
@@ -350,6 +348,13 @@ PluginComponent {
         running: GitHubConstants.profileLoggingEnabled
         repeat: true
         onTriggered: root._probeUiStall()
+    }
+
+    Timer {
+        id: apiStatsCompletionTimer
+        interval: 250
+        repeat: false
+        onTriggered: root._tryRecordApiStatsRefreshComplete()
     }
 
     // =========================================================================
@@ -581,13 +586,13 @@ PluginComponent {
 
     function _detectAndNotifyNewMessages(items) {
         if (!enableNotifications)
-            return
+            return []
 
         var prevIds = _previousThreadIds
         var hasPrev = false
         for (var k in prevIds) { hasPrev = true; break }
         if (!hasPrev)
-            return
+            return []
 
         var newMessages = []
         for (var i = 0; i < items.length; i++) {
@@ -597,9 +602,27 @@ PluginComponent {
         }
 
         if (newMessages.length === 0)
+            return []
+
+        return newMessages
+    }
+
+    function _queueDesktopNotifications(newMessages) {
+        if (!newMessages || newMessages.length === 0)
             return
 
-        _sendDesktopNotification(newMessages)
+        _pendingNotificationMessages = newMessages
+    }
+
+    function _flushPendingDesktopNotificationsIfReady() {
+        if (_pendingNotificationMessages.length === 0)
+            return
+        if (popoutVisible && (viewApplyTimer.running || pendingViewMessages.length > 0))
+            return
+
+        var messagesToNotify = _pendingNotificationMessages
+        _pendingNotificationMessages = []
+        _sendDesktopNotification(messagesToNotify)
     }
 
     function _sendDesktopNotification(newMessages) {
@@ -911,8 +934,8 @@ PluginComponent {
             return
 
         _pruneAuthorCaches()
-        ApiCallStats.recordRefreshComplete()
         authorFetch.prefetchPending = false
+        _scheduleApiStatsRefreshComplete()
 
         Qt.callLater(operations.processPendingDoneQueue)
         fetcher.retryIfQueued()
@@ -921,13 +944,13 @@ PluginComponent {
     function _finalizeFetchCycle(messagesChanged) {
         if (messagesChanged)
             _pruneAuthorCaches()
-        ApiCallStats.recordRefreshComplete()
+        _scheduleApiStatsRefreshComplete()
         fetcher.retryIfQueued()
     }
 
     function _applyFetchedMessages(items, unread) {
         var nextItems = _mergeCachedMessageFields(items || [])
-        var nextUnread = Math.max(0, unread || 0)
+        var nextUnread = _recalculateUnread(nextItems)
         var unchanged = nextUnread === unreadCount
                         && _messagesEquivalent(inboxMessages, nextItems)
         if (unchanged) {
@@ -943,8 +966,32 @@ PluginComponent {
         errorMessage = ""
         lastUpdated = Date.now()
         cacheCoord.updateMessages(nextItems)
-        _detectAndNotifyNewMessages(nextItems)
+        _queueDesktopNotifications(_detectAndNotifyNewMessages(nextItems))
         return true
+    }
+
+    function _scheduleApiStatsRefreshComplete() {
+        _apiStatsCompletionPending = true
+        apiStatsCompletionTimer.restart()
+    }
+
+    function _tryRecordApiStatsRefreshComplete() {
+        if (!_apiStatsCompletionPending)
+            return
+
+        if (fetcher.isLoading
+                || authorFetch.isBusy
+                || cacheCoord.isDownloadingAvatars
+                || backgroundEnrichmentTimer.running
+                || viewApplyTimer.running) {
+            apiStatsCompletionTimer.restart()
+            return
+        }
+
+        _apiStatsCompletionPending = false
+        if (GitHubConstants.apiCallStatsEnabled)
+            ApiCallStats.recordRefreshComplete()
+        _flushPendingDesktopNotificationsIfReady()
     }
 
     function _mergeCachedMessageFields(items) {
@@ -1073,6 +1120,9 @@ PluginComponent {
         _pendingEnrichmentMessages = []
         _pendingLocalAvatarUpdates = ({})
         _pendingLocalAvatarUpdateCount = 0
+        _pendingNotificationMessages = []
+        _apiStatsCompletionPending = false
+        apiStatsCompletionTimer.stop()
         unreadCount = 0
         errorMessage = ""
         lastUpdated = 0
@@ -1208,6 +1258,8 @@ PluginComponent {
 
         if (pendingViewMessages.length === 0)
             viewApplyTimer.stop()
+        if (!viewApplyTimer.running)
+            _flushPendingDesktopNotificationsIfReady()
         _profile("_applyViewChunk", profileStart,
                  "count=" + count + " visible=" + messagesForView.length
                  + " remaining=" + pendingViewMessages.length)

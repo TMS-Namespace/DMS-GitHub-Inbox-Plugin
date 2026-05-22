@@ -16,7 +16,6 @@ Item {
 
     // -- Configuration --------------------------------------------------------
     property string cacheDir: ""
-    property int cacheTtlMinutes: GitHubConstants.defaultCacheTtlMinutes
     readonly property string cacheObjectsDir: cacheDir ? (cacheDir + "/" + GitHubConstants.cacheObjectsSubdirectory) : ""
     readonly property string cacheAvatarsDir: cacheDir ? (cacheDir + "/" + GitHubConstants.cacheAvatarsSubdirectory) : ""
     readonly property string cacheFilePath: cacheObjectsDir ? (cacheObjectsDir + "/" + GitHubConstants.cacheFileName) : ""
@@ -223,9 +222,7 @@ Item {
     }
 
     function isFresh() {
-        if (cachedTimestamp === 0)
-            return false
-        return (Date.now() - cachedTimestamp) < cacheTtlMinutes * 60 * 1000
+        return cachedTimestamp !== 0
     }
 
     // -- Inbox Messages -------------------------------------------------------

@@ -11,13 +11,9 @@ Item {
     id: coordinator
     visible: false
 
-    // -- Configuration --------------------------------------------------------
-    property int cacheTtlMinutes: GitHubConstants.defaultCacheTtlMinutes
-
     // -- Sub-components -------------------------------------------------------
     PluginCache {
         id: diskCache
-        cacheTtlMinutes: coordinator.cacheTtlMinutes
 
         onCacheReady: coordinator.cacheReady()
         onAvatarDownloadsRequested: function(items) {

@@ -143,7 +143,6 @@ Item {
                 }
 
                 if (exitCode !== 0) {
-                    ApiCallStats.recordRefreshComplete()
                     fetcher.isLoading = false
                     fetcher.fetchError("Request failed. Check token or network.")
                     fetcher.retryIfQueued()
@@ -191,7 +190,6 @@ Item {
                 return
 
             if (message.error) {
-                ApiCallStats.recordRefreshComplete()
                 fetcher.isLoading = false
                 fetcher.fetchError(message.error)
                 fetcher.retryIfQueued()
@@ -204,7 +202,6 @@ Item {
                 fetcher.fetchBegin(totalCount, unreadCount)
 
                 if (totalCount === 0) {
-                    ApiCallStats.recordRefreshComplete()
                     fetcher.isLoading = false
                     fetcher.retryIfQueued()
                 }
