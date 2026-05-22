@@ -224,16 +224,6 @@ QtObject {
     /// this plugin.
     readonly property string cacheRootDirectoryName: "dms-github-inbox-plugin"
 
-    /// Default freshness TTL for the disk cache in minutes.  Data older than
-    /// this is considered stale and a background re-fetch is started immediately.
-    readonly property int defaultCacheTtlMinutes: 60
-
-    /// Minimum allowed cache TTL in minutes (settings slider floor).
-    readonly property int minCacheTtlMinutes: 5
-
-    /// Maximum allowed cache TTL in minutes (settings slider ceiling).
-    readonly property int maxCacheTtlMinutes: 1440
-
     /// Delay (ms) between the last cache-dirtying operation and the actual
     /// disk write, so that rapid updates get batched into one write.
     readonly property int cacheSaveDebounceMs: 2000
