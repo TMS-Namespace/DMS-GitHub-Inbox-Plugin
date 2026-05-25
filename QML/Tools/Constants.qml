@@ -314,6 +314,16 @@ QtObject {
     /// the machine suspending mid-refresh and are excluded from averages (2 min).
     readonly property int statsMaxReasonableRefreshDurationMs: 120000
 
+    /// Background work that remains busy longer than this is assumed stale. This
+    /// is intentionally higher than curl timeouts because author/avatar queues
+    /// can legitimately keep working for several batches.
+    readonly property int refreshBusyStaleMs: 300000
+
+    /// A UI timer gap above this value usually means the machine slept. If any
+    /// network worker is still marked busy after such a gap, reset its runtime
+    /// state so future refreshes are not blocked forever.
+    readonly property int wakeRefreshRecoveryGapMs: 60000
+
     /// How often (ms) the stats singleton prunes entries that have fallen outside
     /// the one-hour rolling window.
     readonly property int statsHourlyPruneIntervalMs: 60000

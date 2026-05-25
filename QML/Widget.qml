@@ -91,6 +91,8 @@ PluginComponent {
     property bool _startupAuthorPrefetchQueued: false
     property var _pendingEnrichmentMessages: []
     property real _lastUiStallProbeAt: 0
+    property real _refreshBusySinceMs: 0
+    property real _operationBusySinceMs: 0
     property bool isRefreshBusy: fetcher.isLoading || authorFetch.isBusy || cacheCoord.isDownloadingAvatars
     property bool popoutVisible: false
     property bool _refreshAfterPopoutClose: false
@@ -271,6 +273,10 @@ PluginComponent {
         token: root.token
         isLoading: fetcher.isLoading
 
+        onIsBusyChanged: {
+            root._operationBusySinceMs = isBusy ? Date.now() : 0
+        }
+
         onOperationApplied: function(actionType, threadId, repositoryFullName, threadIds) {
             var result = operations.applyResult(actionType, threadId, repositoryFullName,
                                                 root.inboxMessages, threadIds || [])
@@ -344,8 +350,8 @@ PluginComponent {
 
     Timer {
         id: uiStallProbeTimer
-        interval: GitHubConstants.uiStallProbeIntervalMs
-        running: GitHubConstants.profileLoggingEnabled
+        interval: GitHubConstants.profileLoggingEnabled ? GitHubConstants.uiStallProbeIntervalMs : 5000
+        running: root.token !== ""
         repeat: true
         onTriggered: root._probeUiStall()
     }
@@ -379,32 +385,94 @@ PluginComponent {
                      + " took " + duration + "ms" + suffix)
     }
 
-    function _probeUiStall() {
-        if (!GitHubConstants.profileLoggingEnabled)
-            return
+    function _busyDurationMs(isBusy, sinceMs) {
+        if (!isBusy)
+            return 0
+        if (sinceMs > 0)
+            return Math.max(0, Date.now() - sinceMs)
+        return GitHubConstants.refreshBusyStaleMs + 1
+    }
 
+    function _refreshBusyDetails() {
+        return "fetchLoading=" + fetcher.isLoading
+               + " authorBusy=" + authorFetch.isBusy
+               + " avatarBusy=" + cacheCoord.isDownloadingAvatars
+               + " operationsBusy=" + operations.isBusy
+               + " authorQueue=" + authorFetch.requestQueue.length
+               + " authorInFlight=" + authorFetch.requestsInFlight
+    }
+
+    function _recoverStaleBackgroundWork(reason, force) {
+        if (!root.isRefreshBusy && !operations.isBusy)
+            return false
+
+        var refreshBusyMs = _busyDurationMs(root.isRefreshBusy, _refreshBusySinceMs)
+        var operationBusyMs = _busyDurationMs(operations.isBusy, _operationBusySinceMs)
+        var stale = !!force
+                    || refreshBusyMs >= GitHubConstants.refreshBusyStaleMs
+                    || operationBusyMs >= GitHubConstants.refreshBusyStaleMs
+        if (!stale)
+            return false
+
+        console.warn("[GitHubInbox] Recovering stale background work after "
+                     + reason + " refreshBusyMs=" + refreshBusyMs
+                     + " operationBusyMs=" + operationBusyMs
+                     + " " + _refreshBusyDetails())
+
+        fetcher.cancel()
+        authorFetch.resetState()
+        cacheCoord.resetAvatarDownloads()
+        operations.resetState(false)
+        backgroundEnrichmentTimer.stop()
+        startupMissingInfoTimer.stop()
+        _pendingEnrichmentMessages = []
+        _pendingStartupAuthorMessages = []
+        _pendingStartupAuthorAvatarLists = []
+        _pendingStartupAuthorAvatarIndex = 0
+        _startupAuthorPrefetchQueued = false
+        _apiStatsCompletionPending = false
+        apiStatsCompletionTimer.stop()
+        _refreshBusySinceMs = 0
+        _operationBusySinceMs = 0
+        return true
+    }
+
+    function _probeUiStall() {
         var now = Date.now()
         if (_lastUiStallProbeAt > 0) {
             var gap = now - _lastUiStallProbeAt
             if (gap >= GitHubConstants.uiStallLogThresholdMs) {
-                console.warn("[GitHubInbox PROFILE] Widget.uiStallProbe gap="
-                             + gap + "ms fetchLoading=" + fetcher.isLoading
-                             + " authorBusy=" + authorFetch.isBusy
-                             + " avatarBusy=" + cacheCoord.isDownloadingAvatars
-                             + " viewApply=" + viewApplyTimer.running
-                             + " authorQueue=" + authorFetch.requestQueue.length
-                             + " authorInFlight=" + authorFetch.requestsInFlight)
+                if (GitHubConstants.profileLoggingEnabled) {
+                    console.warn("[GitHubInbox PROFILE] Widget.uiStallProbe gap="
+                                 + gap + "ms fetchLoading=" + fetcher.isLoading
+                                 + " authorBusy=" + authorFetch.isBusy
+                                 + " avatarBusy=" + cacheCoord.isDownloadingAvatars
+                                 + " viewApply=" + viewApplyTimer.running
+                                 + " authorQueue=" + authorFetch.requestQueue.length
+                                 + " authorInFlight=" + authorFetch.requestsInFlight)
+                }
+                if (gap >= GitHubConstants.wakeRefreshRecoveryGapMs)
+                    _recoverStaleBackgroundWork("wake/stall gap " + gap + "ms", true)
             }
         }
         _lastUiStallProbeAt = now
     }
 
-    function _fetchInbox() {
+    function _fetchInbox(allowWhilePopout) {
         _perfLog("_fetchInbox — called")
-        if (!token || operations.isBusy || root.isRefreshBusy)
+        _recoverStaleBackgroundWork("refresh guard", false)
+        if (!token)
             return
-        if (root.popoutVisible) {
+        if (operations.isBusy || root.isRefreshBusy) {
+            if (GitHubConstants.profileLoggingEnabled)
+                console.warn("[GitHubInbox] Refresh skipped because work is still busy: "
+                             + _refreshBusyDetails())
+            return
+        }
+        if (root.popoutVisible && !allowWhilePopout) {
             root._refreshAfterPopoutClose = true
+            if (GitHubConstants.profileLoggingEnabled)
+                console.warn("[GitHubInbox] Refresh deferred until popup closes")
             return
         }
         fetcher.fetch()
@@ -416,7 +484,8 @@ PluginComponent {
             errorMessage = "Set your GitHub token in Settings."
             return
         }
-        _fetchInbox()
+        _recoverStaleBackgroundWork("manual refresh", false)
+        _fetchInbox(true)
     }
 
     function _scheduleBackgroundEnrichment(items) {
@@ -1349,6 +1418,10 @@ PluginComponent {
     onFetchPageCountChanged: {
         if (token && cacheCoord.initialized)
             _fetchInbox()
+    }
+
+    onIsRefreshBusyChanged: {
+        _refreshBusySinceMs = isRefreshBusy ? Date.now() : 0
     }
 
     onPopoutVisibleChanged: {
