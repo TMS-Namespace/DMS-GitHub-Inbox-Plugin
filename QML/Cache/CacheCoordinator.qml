@@ -210,6 +210,11 @@ Item {
         diskCache.clearCache()
     }
 
+    function resetAvatarDownloads() {
+        avatarWorker.reset()
+        avatarWorker.setAvatarLocalPaths(diskCache.avatarLocalPaths)
+    }
+
     // -- Settings clear-cache flag handling -----------------------------------
 
     function handleClearCacheRequest(pluginData, pluginService) {

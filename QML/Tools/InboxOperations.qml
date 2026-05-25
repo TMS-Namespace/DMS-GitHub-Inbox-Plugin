@@ -23,6 +23,7 @@ Item {
     property var pendingThreadReadQueue: []
     property int pendingThreadDoneIndex: 0
     property int pendingThreadReadIndex: 0
+    property int operationGeneration: 0
     readonly property bool isBusy: isOperating
                                    || pendingThreadDoneIndex < pendingThreadDoneQueue.length
                                    || pendingThreadReadIndex < pendingThreadReadQueue.length
@@ -262,13 +263,15 @@ Item {
         )
     }
 
-    function resetState() {
+    function resetState(clearDoneState) {
+        operationGeneration = operationGeneration + 1
         isOperating = false
         pendingThreadDoneQueue = []
         pendingThreadReadQueue = []
         pendingThreadDoneIndex = 0
         pendingThreadReadIndex = 0
-        doneThreadState = ({})
+        if (clearDoneState === undefined || clearDoneState)
+            doneThreadState = ({})
     }
 
     // =========================================================================
@@ -284,7 +287,8 @@ Item {
         var process = operationComponentDef.createObject(operations, {
             actionType: actionType || "thread_read",
             threadId: threadId || "",
-            repositoryFullName: repositoryFullName || ""
+            repositoryFullName: repositoryFullName || "",
+            generation: operationGeneration
         })
 
         var cmd = [
@@ -460,6 +464,7 @@ Item {
             property string actionType: "thread_read"
             property string threadId: ""
             property string repositoryFullName: ""
+            property int generation: 0
 
             stdout: SplitParser {
                 onRead: line => _buffer += line
@@ -473,6 +478,11 @@ Item {
             }
 
             onExited: exitCode => {
+                if (generation !== operations.operationGeneration) {
+                    destroy()
+                    return
+                }
+
                 operations.isOperating = false
 
                 if (exitCode !== 0) {
