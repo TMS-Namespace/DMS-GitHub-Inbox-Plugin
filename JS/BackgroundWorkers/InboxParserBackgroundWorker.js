@@ -129,6 +129,13 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
     if (isNaN(count) || count < 1)
         count = 1
 
+    var expectedSegmentCount = count * 2
+    if (segments.length < expectedSegmentCount) {
+        return {
+            error: "GitHub returned an incomplete notification response."
+        }
+    }
+
     var allSegments = segments.slice(0, Math.min(count, segments.length))
     var participatingSegments = segments.slice(Math.min(count, segments.length))
 

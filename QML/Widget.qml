@@ -93,6 +93,9 @@ PluginComponent {
     property real _lastUiStallProbeAt: 0
     property real _refreshBusySinceMs: 0
     property real _operationBusySinceMs: 0
+    property bool _activeFetchWasManual: false
+    property string _lastErrorNotificationText: ""
+    property real _lastErrorNotificationAt: 0
     property bool isRefreshBusy: fetcher.isLoading || authorFetch.isBusy || cacheCoord.isDownloadingAvatars
     property bool popoutVisible: false
     property bool _refreshAfterPopoutClose: false
@@ -216,6 +219,8 @@ PluginComponent {
             authorFetch.resetState()
             root.errorMessage = errorMessage
             root.lastUpdated = Date.now()
+            root._notifyBackgroundFetchError(errorMessage)
+            root._activeFetchWasManual = false
             root._scheduleApiStatsRefreshComplete()
             Qt.callLater(operations.processPendingDoneQueue)
         }
@@ -475,6 +480,7 @@ PluginComponent {
                 console.warn("[GitHubInbox] Refresh deferred until popup closes")
             return
         }
+        _activeFetchWasManual = !!allowWhilePopout
         fetcher.fetch()
         _perfLog("_fetchInbox — fetch() dispatched")
     }
@@ -733,6 +739,34 @@ PluginComponent {
             cmd.push("-i", iconPath)
         cmd.push(summary, body)
         proc.command = cmd
+        proc.running = true
+    }
+
+    function _notifyBackgroundFetchError(message) {
+        if (_activeFetchWasManual)
+            return
+
+        var text = String(message || "GitHub refresh failed.").trim()
+        if (!text)
+            return
+
+        var now = Date.now()
+        if (text === _lastErrorNotificationText
+                && now - _lastErrorNotificationAt < GitHubConstants.errorNotificationRepeatMs)
+            return
+
+        _lastErrorNotificationText = text
+        _lastErrorNotificationAt = now
+
+        var proc = notifyProcessDef.createObject(root)
+        proc.command = [
+            "notify-send",
+            "-a", GitHubConstants.notificationAppName,
+            "-u", "normal",
+            "-t", String(GitHubConstants.notificationExpireMs),
+            "GitHub Inbox refresh failed",
+            text
+        ]
         proc.running = true
     }
 
@@ -1013,6 +1047,7 @@ PluginComponent {
     function _finalizeFetchCycle(messagesChanged) {
         if (messagesChanged)
             _pruneAuthorCaches()
+        _activeFetchWasManual = false
         _scheduleApiStatsRefreshComplete()
         fetcher.retryIfQueued()
     }

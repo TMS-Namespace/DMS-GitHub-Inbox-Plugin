@@ -58,11 +58,11 @@ Item {
         var baseQuery = "per_page=" + GitHubConstants.messagesApiPageSize
         var allBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
         var participatingBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
-        var command = ["curl"]
+        var command = ["curl", "--fail-early"]
 
         // Fetch "all" pages first
         for (var page = 1; page <= pages; page++) {
-            if (command.length > 1)
+            if (page > 1)
                 command.push("--next")
             command.push(
                 "-sS",
@@ -124,6 +124,7 @@ Item {
         Process {
             property int generation: 0
             property var _chunks: []
+            property var _stderrLines: []
 
             stdout: SplitParser {
                 onRead: line => _chunks.push(line)
@@ -131,8 +132,11 @@ Item {
 
             stderr: SplitParser {
                 onRead: line => {
-                    if (line.trim())
+                    var trimmed = line.trim()
+                    if (trimmed) {
+                        _stderrLines.push(trimmed)
                         console.warn("[GitHubInbox] fetch:", line)
+                    }
                 }
             }
 
@@ -144,7 +148,7 @@ Item {
 
                 if (exitCode !== 0) {
                     fetcher.isLoading = false
-                    fetcher.fetchError("Request failed. Check token or network.")
+                    fetcher.fetchError(fetcher._describeFetchFailure(_stderrLines.join("\n")))
                     fetcher.retryIfQueued()
                     destroy()
                     return
@@ -229,5 +233,26 @@ Item {
     // Expose sendMessage for AuthorBackgroundWorker to offload parsing
     function sendWorkerMessage(msg) {
         parseWorker.sendMessage(msg)
+    }
+
+    function _describeFetchFailure(stderrText) {
+        var text = String(stderrText || "")
+        var lower = text.toLowerCase()
+
+        if (lower.indexOf("could not resolve host") >= 0)
+            return "Connection error: could not resolve api.github.com."
+        if (lower.indexOf("failed to connect") >= 0 || lower.indexOf("connection refused") >= 0)
+            return "Connection error: failed to connect to GitHub."
+        if (lower.indexOf("timed out") >= 0 || lower.indexOf("operation timed out") >= 0)
+            return "Connection error: GitHub request timed out."
+        if (lower.indexOf("ssl") >= 0 || lower.indexOf("certificate") >= 0)
+            return "Connection error: TLS/SSL failure while contacting GitHub."
+        if (lower.indexOf("401") >= 0 || lower.indexOf("bad credentials") >= 0)
+            return "Authentication error: GitHub token was rejected."
+        if (lower.indexOf("403") >= 0 || lower.indexOf("rate limit") >= 0)
+            return "GitHub API error: request was forbidden or rate limited."
+        if (text)
+            return "GitHub request failed: " + text.split("\n")[0]
+        return "GitHub request failed. Check token or network."
     }
 }
