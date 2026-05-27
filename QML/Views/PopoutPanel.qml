@@ -52,6 +52,13 @@ Item {
     property bool hasBlockingError: hasError && messages.length === 0 && !isLoading
     property bool isRefreshBusy: isLoading || isAuthorFetching || isDownloadingAvatars || isOperating
     property bool anyBusy: isRefreshBusy
+    property string refreshTooltipText: {
+        if (panel.anyBusy)
+            return "Refresh in progress"
+        if (panel.hasError)
+            return panel.errorMessage || "Last refresh failed"
+        return "Refresh GitHub inbox"
+    }
     property bool _headerHovered: headerHoverArea.containsMouse
                                   || expandAllArea.containsMouse
                                   || collapseAllArea.containsMouse
@@ -230,6 +237,32 @@ Item {
                     font.pixelSize: 9
                     font.weight: Font.Bold
                     color: Theme.surfaceText
+                }
+            }
+
+            Rectangle {
+                visible: refreshAllArea.containsMouse && panel.refreshTooltipText !== ""
+                anchors.right: parent.right
+                anchors.top: parent.bottom
+                anchors.topMargin: Theme.spacingXS
+                width: Math.min(360, refreshTooltipTextItem.implicitWidth + Theme.spacingS * 2)
+                height: refreshTooltipTextItem.implicitHeight + Theme.spacingXS * 2
+                radius: Theme.cornerRadius
+                color: Theme.surfaceContainerHighest
+                border.width: 1
+                border.color: Theme.outlineMedium
+                z: 120
+
+                StyledText {
+                    id: refreshTooltipTextItem
+                    anchors.centerIn: parent
+                    width: parent.width - Theme.spacingS * 2
+                    text: panel.refreshTooltipText
+                    font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                    color: panel.hasError ? Theme.error : Theme.surfaceVariantText
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 3
+                    elide: Text.ElideRight
                 }
             }
         }

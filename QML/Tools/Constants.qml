@@ -763,6 +763,9 @@ QtObject {
     /// Notification expiry timeout in milliseconds passed to notify-send -t.
     readonly property int notificationExpireMs: 10000
 
+    /// Minimum interval between repeated background-refresh error notifications.
+    readonly property int errorNotificationRepeatMs: 600000
+
     // =========================================================================
     // Performance Debugging
     // =========================================================================
