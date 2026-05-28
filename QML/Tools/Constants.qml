@@ -773,7 +773,7 @@ QtObject {
     /// Developer mode enables opt-in performance instrumentation. Keep this
     /// false for normal shell use so metrics/logging do not add UI-thread work.
     /// Public flag used by the plugin to enable profiling and development UI.
-    readonly property bool isDevMode: false
+    readonly property bool isDevMode: true
 
     /// Enables duration profiles for slow/anomalous QML-side operations.
     readonly property bool profileLoggingEnabled: isDevMode
@@ -796,7 +796,7 @@ QtObject {
     readonly property int uiStallLogThresholdMs: 750
 
     /// When true, log every profiled operation, not only slow ones.
-    readonly property bool profileLogAllOperations: false
+    readonly property bool profileLogAllOperations: isDevMode
 
     /// Enables lightweight API/refresh metric collection shown in settings.
     readonly property bool apiCallStatsEnabled: isDevMode

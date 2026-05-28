@@ -80,7 +80,7 @@ PluginComponent {
     property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var expandedDateGroupsState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
-    property var _previousThreadIds: ({})
+    property real _latestLocalMessageUpdatedAtMs: 0
     property var _pendingLocalAvatarUpdates: ({})
     property int _pendingLocalAvatarUpdateCount: 0
     property var _pendingNotificationMessages: []
@@ -175,7 +175,7 @@ PluginComponent {
 
         onFetchBegin: function(totalCount, unreadCount) {
             root._perfLog("onFetchBegin — total=" + totalCount + " unread=" + unreadCount)
-            root._saveCurrentThreadIds()
+            root._saveLatestLocalMessageUpdatedAt()
             root._pendingFetchedMessages = []
             root._pendingFetchedUnreadCount = unreadCount
             root._pendingEnrichmentMessages = []
@@ -656,31 +656,27 @@ PluginComponent {
             localAvatarApplyTimer.restart()
     }
 
-    function _saveCurrentThreadIds() {
-        var ids = {}
-        for (var i = 0; i < inboxMessages.length; i++) {
-            var tid = inboxMessages[i].threadId
-            if (tid)
-                ids[tid] = true
-        }
-        _previousThreadIds = ids
+    function _saveLatestLocalMessageUpdatedAt() {
+        _latestLocalMessageUpdatedAtMs = _latestMessageUpdatedAtMs(inboxMessages)
     }
 
     function _detectAndNotifyNewMessages(items) {
         if (!enableNotifications)
             return []
 
-        var prevIds = _previousThreadIds
-        var hasPrev = false
-        for (var k in prevIds) { hasPrev = true; break }
-        if (!hasPrev)
+        var latestLocalMessageUpdatedAtMs = _latestLocalMessageUpdatedAtMs || 0
+        if (latestLocalMessageUpdatedAtMs <= 0)
             return []
 
         var newMessages = []
-        for (var i = 0; i < items.length; i++) {
-            var tid = items[i].threadId
-            if (tid && !prevIds[tid])
-                newMessages.push(items[i])
+        var candidateItems = _filterDoneMessages(items || [])
+        for (var i = 0; i < candidateItems.length; i++) {
+            var item = candidateItems[i]
+            if (!item || !item.threadId || !item.unread)
+                continue
+            var updatedAtMs = item.updatedAtMs || Date.parse(item.updatedAt || "") || 0
+            if (updatedAtMs > latestLocalMessageUpdatedAtMs)
+                newMessages.push(item)
         }
 
         if (newMessages.length === 0)
@@ -1084,8 +1080,10 @@ PluginComponent {
         _queueViewMessages(nextItems)
         errorMessage = ""
         lastUpdated = Date.now()
+        var newMessages = _detectAndNotifyNewMessages(nextItems)
         cacheCoord.updateMessages(nextItems)
-        _queueDesktopNotifications(_detectAndNotifyNewMessages(nextItems))
+        _latestLocalMessageUpdatedAtMs = _latestMessageUpdatedAtMs(nextItems)
+        _queueDesktopNotifications(newMessages)
         return true
     }
 
@@ -1168,6 +1166,20 @@ PluginComponent {
             filtered.push(item)
         }
         return filtered
+    }
+
+    function _latestMessageUpdatedAtMs(items) {
+        var latest = 0
+        var source = items || []
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (!item)
+                continue
+            var updatedAtMs = item.updatedAtMs || Date.parse(item.updatedAt || "") || 0
+            if (updatedAtMs > latest)
+                latest = updatedAtMs
+        }
+        return latest
     }
 
     function _operationShouldUpdateMessageCache(actionType) {
@@ -1269,7 +1281,7 @@ PluginComponent {
         operations.resetState()
         avatarPreloader.reset()
         authorsByThread = ({})
-        _previousThreadIds = ({})
+        _latestLocalMessageUpdatedAtMs = 0
     }
 
     function _handleClearCacheRequest() {
@@ -1455,7 +1467,7 @@ PluginComponent {
             authorsByThread = ({})
             expandedReposState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
             expandedDateGroupsState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
-            _previousThreadIds = ({})
+            _latestLocalMessageUpdatedAtMs = 0
             return
         }
         if (cacheCoord.initialized)
