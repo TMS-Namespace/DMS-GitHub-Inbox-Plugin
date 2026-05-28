@@ -266,8 +266,8 @@ PluginComponent {
             authorFetch.enqueueAuthorUrls(threadId, urls)
         }
 
-        onSubjectWebUrlResolved: function(threadId, webUrl) {
-            root._updateMessageWebUrl(threadId, webUrl)
+        onSubjectWebUrlResolved: function(threadId, webUrl, subjectReference) {
+            root._updateMessageSubjectDetails(threadId, webUrl, subjectReference)
         }
 
         onPrefetchMaybeComplete: root._tryFinalizeAuthorPrefetch()
@@ -523,6 +523,7 @@ PluginComponent {
                               && (needsMissingAuthors
                                   || (authorFetch.fetchedAtUpdatedAt[item.threadId] || "") !== (item.updatedAt || "")
                                   || authorFetch.requiresSubjectWebUrlResolution(item)
+                                  || authorFetch.requiresSubjectReferenceResolution(item)
                                   || !authorFetch.hasFetchedAuthorDetailsForMessage(item))
             if (needsAvatar || needsAuthor)
                 result.push(item)
@@ -1241,6 +1242,12 @@ PluginComponent {
                 copy.webUrlResolved = true
             }
 
+            var cachedSubjectReference = String(cached.subjectReference || "")
+            if (cachedSubjectReference && cachedSubjectReference !== (item.subjectReference || "")) {
+                copy = _cloneMessageForMerge(copy)
+                copy.subjectReference = cachedSubjectReference
+            }
+
             var cachedRepoAvatar = String(cached.repositoryOwnerAvatarUrl || "")
             if (cachedRepoAvatar.indexOf("file://") === 0
                     && cachedRepoAvatar !== item.repositoryOwnerAvatarUrl) {
@@ -1365,25 +1372,39 @@ PluginComponent {
                && (left.subjectType || "") === (right.subjectType || "")
                && (left.title || "") === (right.title || "")
                && (left.subjectApiUrl || "") === (right.subjectApiUrl || "")
+               && (left.subjectReference || "") === (right.subjectReference || "")
                && (left.webUrl || "") === (right.webUrl || "")
                && (!!left.webUrlResolved === !!right.webUrlResolved)
     }
 
     function _updateMessageWebUrl(threadId, webUrl) {
-        if (!threadId || !webUrl)
+        _updateMessageSubjectDetails(threadId, webUrl, "")
+    }
+
+    function _updateMessageSubjectDetails(threadId, webUrl, subjectReference) {
+        if (!threadId)
             return
 
         var changed = false
         var nextItems = []
+        var normalizedSubjectReference = String(subjectReference || "").trim().replace(/^#/, "")
         for (var index = 0; index < inboxMessages.length; index++) {
             var item = inboxMessages[index]
-            if (item && item.threadId === threadId
-                    && (item.webUrl !== webUrl || !item.webUrlResolved)) {
+            var shouldUpdateWebUrl = item && item.threadId === threadId && webUrl
+                    && (item.webUrl !== webUrl || !item.webUrlResolved)
+            var shouldUpdateReference = item && item.threadId === threadId
+                    && normalizedSubjectReference
+                    && item.subjectReference !== normalizedSubjectReference
+            if (shouldUpdateWebUrl || shouldUpdateReference) {
                 var copy = {}
                 for (var key in item)
                     copy[key] = item[key]
-                copy.webUrl = webUrl
-                copy.webUrlResolved = true
+                if (shouldUpdateWebUrl) {
+                    copy.webUrl = webUrl
+                    copy.webUrlResolved = true
+                }
+                if (shouldUpdateReference)
+                    copy.subjectReference = normalizedSubjectReference
                 nextItems.push(copy)
                 changed = true
             } else {

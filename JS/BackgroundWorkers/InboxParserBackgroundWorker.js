@@ -13,9 +13,16 @@ WorkerScript.onMessage = function (message) {
         var authors = []
         var expansionUrls = []
         var subjectWebUrl = ""
+        var subjectReference = ""
         if (message.buffer) {
             authors = parseSubjectAuthorsMulti(message.buffer, message.splitToken || "")
             subjectWebUrl = parseSubjectWebUrlMulti(
+                message.buffer,
+                message.splitToken || "",
+                message.subjectTitle || "",
+                message.updatedAt || ""
+            )
+            subjectReference = parseSubjectReferenceMulti(
                 message.buffer,
                 message.splitToken || "",
                 message.subjectTitle || "",
@@ -37,6 +44,7 @@ WorkerScript.onMessage = function (message) {
             fallbackAuthor: message.fallbackAuthor || null,
             authors: authors,
             subjectWebUrl: subjectWebUrl,
+            subjectReference: subjectReference,
             expansionUrls: expansionUrls
         })
         return
@@ -228,6 +236,7 @@ function parseMessagesPayload(payloadText) {
             subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
+            subjectReference: "",
             webUrl: resolveWebUrl(item),
             webUrlResolved: false
         })
@@ -559,6 +568,30 @@ function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedA
     return best.url || ""
 }
 
+function parseSubjectReferenceMulti(payloadText, splitToken, subjectTitle, updatedAt) {
+    var marker = "\n" + (splitToken || "") + "\n"
+    var normalized = String(payloadText || "")
+    if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+        normalized += "\n"
+    var parts = normalized.split(marker)
+    var best = { score: -1, url: "", reference: "" }
+
+    for (var i = 0; i < parts.length; i++) {
+        var part = String(parts[i] || "").trim()
+        if (!part) continue
+        var parsed
+        try { parsed = JSON.parse(part) } catch (e) { continue }
+
+        var directReference = directSubjectReferenceFromObject(parsed)
+        if (directReference)
+            return directReference
+
+        best = chooseBestActionRunUrl(parsed, subjectTitle, updatedAt, best)
+    }
+
+    return best.reference || ""
+}
+
 function directSubjectWebUrlFromObject(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
         return ""
@@ -580,6 +613,21 @@ function directSubjectWebUrlFromObject(value) {
     return ""
 }
 
+function directSubjectReferenceFromObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return ""
+
+    var subjectReference = String(value.subjectReference || value.subject_reference || "").trim()
+    if (subjectReference)
+        return subjectReference.replace(/^#/, "")
+
+    var runNumber = String(value.runNumber || value.run_number || "").trim()
+    if (runNumber)
+        return runNumber.replace(/^#/, "")
+
+    return ""
+}
+
 function isLikelySubjectObject(value) {
     if (!value || typeof value !== "object")
         return false
@@ -596,7 +644,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
 
     if (value && typeof value === "object") {
         if (value.actionRunUrl)
-            return { score: 1000000, url: String(value.actionRunUrl) }
+            return { score: 1000000, url: String(value.actionRunUrl), reference: String(value.actionRunNumber || "") }
         if (Array.isArray(value.actionRuns))
             runs = runs.concat(value.actionRuns)
         if (Array.isArray(value.workflow_runs))
@@ -619,6 +667,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
         var displayTitle = String(run.displayTitle || run.display_title || "").trim()
         var headBranch = String(run.headBranch || run.head_branch || "").trim()
         var conclusion = String(run.conclusion || "").trim().toLowerCase()
+        var runNumber = String(run.runNumber || run.run_number || "").trim()
 
         if (expectedName) {
             if (runName.toLowerCase() === expectedName.toLowerCase())
@@ -657,7 +706,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
         }
 
         if (score > best.score)
-            best = { score: score, url: url }
+            best = { score: score, url: url, reference: runNumber.replace(/^#/, "") }
     }
 
     return best

@@ -71,6 +71,7 @@ function parseMessagesPayload(payloadText) {
             subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
+            subjectReference: "",
             webUrl: resolveWebUrl(item)
         })
     }
@@ -386,4 +387,77 @@ function subjectIconName(subjectType) {
         return "fact_check"
 
     return "notifications"
+}
+
+function subjectDisplayLabel(subjectType) {
+    var type = String(subjectType || "").toLowerCase()
+
+    if (type === "pullrequest")
+        return "PR"
+    if (type === "checksuite" || type === "checkrun" || type === "workflowrun")
+        return "Workflow"
+    if (type === "release")
+        return "Release"
+    if (type === "issue")
+        return "Issue"
+    if (type === "discussion")
+        return "Discussion"
+    if (type === "commit")
+        return "Commit"
+    if (type === "repositoryvulnerabilityalert"
+        || type === "repositoryadvisory"
+        || type === "repositorydependabotalert"
+        || type === "vulnerabilityalert"
+        || type === "dependabotalert"
+        || type === "codescanningalert")
+        return "Security"
+
+    return splitCamelCase(subjectType || "Message")
+}
+
+function subjectReferenceLabel(subjectType, subjectApiUrl, webUrl, explicitReference) {
+    var number = String(explicitReference || "").trim().replace(/^#/, "")
+    if (!number)
+        number = subjectReferenceNumber(subjectType, subjectApiUrl, webUrl)
+    return number ? ("#" + number) : ""
+}
+
+function subjectReferenceNumber(subjectType, subjectApiUrl, webUrl) {
+    var type = String(subjectType || "").toLowerCase()
+    var apiUrl = String(subjectApiUrl || "")
+    var pageUrl = String(webUrl || "")
+    var match
+
+    if (type === "pullrequest") {
+        match = apiUrl.match(/\/pulls\/([0-9]+)(?:$|[?#])/)
+             || pageUrl.match(/\/pull\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    if (type === "issue") {
+        match = apiUrl.match(/\/issues\/([0-9]+)(?:$|[?#])/)
+             || pageUrl.match(/\/issues\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    if (type === "discussion") {
+        match = apiUrl.match(/\/discussions\/([0-9]+)(?:$|[?#])/)
+             || pageUrl.match(/\/discussions\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    if (type === "checksuite" || type === "checkrun" || type === "workflowrun") {
+        match = apiUrl.match(/\/actions\/runs\/([0-9]+)(?:$|[?#])/)
+             || apiUrl.match(/\/check-(?:suites|runs)\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    return ""
+}
+
+function splitCamelCase(value) {
+    var text = String(value || "").trim()
+    if (!text)
+        return "Message"
+    return text.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
 }

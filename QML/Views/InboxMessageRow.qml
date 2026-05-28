@@ -30,6 +30,12 @@ Item {
     property string subjectType: messageData.subjectType || "Message"
     property string subjectApiUrl: messageData.subjectApiUrl || ""
     property string reason: GitHub.reasonLabel(messageData.reason)
+    property string subjectLabel: GitHub.subjectDisplayLabel(subjectType)
+    property string subjectReference: GitHub.subjectReferenceLabel(subjectType,
+                                                                   subjectApiUrl,
+                                                                   webUrl,
+                                                                   messageData.subjectReference || "")
+    property string subjectDisplay: subjectReference ? (subjectLabel + " " + subjectReference) : subjectLabel
     property string updatedAt: messageData.updatedAt || ""
     property string webUrl: effectiveWebUrl()
     property string updatedText: GitHub.relativeTimeFromIso(updatedAt)
@@ -300,7 +306,7 @@ Item {
                         spacing: Theme.spacingXS
 
                         StyledText {
-                            text: row.subjectType
+                            text: row.subjectDisplay
                             font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }

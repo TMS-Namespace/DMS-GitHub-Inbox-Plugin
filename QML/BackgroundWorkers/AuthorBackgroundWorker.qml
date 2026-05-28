@@ -56,7 +56,7 @@ Item {
     signal expansionUrlsDiscovered(string threadId, var urls)
 
     /// Emitted when a fetched subject is matched to its concrete web URL.
-    signal subjectWebUrlResolved(string threadId, string webUrl)
+    signal subjectWebUrlResolved(string threadId, string webUrl, string subjectReference)
 
     /// Emitted when the prefetch cycle may have completed.
     signal prefetchMaybeComplete()
@@ -203,11 +203,13 @@ Item {
                 continue
 
             var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
+            var needsSubjectReference = requiresSubjectReferenceResolution(item)
             var needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item)
                                       && !hasFetchedAuthorDetailsForMessage(item)
             var existingAuthors = (authorsByThreadRef || ({}))[item.threadId] || []
             var needsMissingAuthors = existingAuthors.length === 0
             if (!needsSubjectWebUrl
+                    && !needsSubjectReference
                     && !needsAuthorDetails
                     && !needsMissingAuthors
                     && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
@@ -230,7 +232,7 @@ Item {
                 updatedAt: item.updatedAt || "",
                 subjectTitle: item.title || "",
                 includeDetails: shouldFetchAuthorDetailsForMessage(item),
-                force: needsSubjectWebUrl,
+                force: needsSubjectWebUrl || needsSubjectReference,
                 fallbackAuthor: fallbackAuthorForMessage(item),
                 reason: item.reason || ""
             })
@@ -270,17 +272,19 @@ Item {
                 continue
 
             var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
+            var needsSubjectReference = requiresSubjectReferenceResolution(item)
             var needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item)
                                       && !hasFetchedAuthorDetailsForMessage(item)
             var existingAuthors = knownAuthors[item.threadId] || []
             var needsMissingAuthors = existingAuthors.length === 0
             if (!needsSubjectWebUrl
+                    && !needsSubjectReference
                     && !needsAuthorDetails
                     && !needsMissingAuthors
                     && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
-            if (!needsSubjectWebUrl && !needsAuthorDetails && existingAuthors.length > 0)
+            if (!needsSubjectWebUrl && !needsSubjectReference && !needsAuthorDetails && existingAuthors.length > 0)
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -300,7 +304,7 @@ Item {
                 updatedAt: item.updatedAt || "",
                 subjectTitle: item.title || "",
                 includeDetails: shouldFetchAuthorDetailsForMessage(item),
-                force: needsSubjectWebUrl,
+                force: needsSubjectWebUrl || needsSubjectReference,
                 fallbackAuthor: fallbackAuthorForMessage(item),
                 reason: item.reason || ""
             })
@@ -422,6 +426,19 @@ Item {
         return false
     }
 
+    function requiresSubjectReferenceResolution(item) {
+        if (!item)
+            return false
+
+        var subjectType = String(item.subjectType || "").toLowerCase()
+        if (subjectType !== "checksuite"
+                && subjectType !== "checkrun"
+                && subjectType !== "workflowrun")
+            return false
+
+        return String(item.subjectReference || "").trim() === ""
+    }
+
     function shouldFetchAuthorDetailsForMessage(item) {
         if (!item)
             return false
@@ -517,8 +534,8 @@ Item {
             }
         }
 
-        if (message.subjectWebUrl && threadId)
-            subjectWebUrlResolved(threadId, message.subjectWebUrl)
+        if ((message.subjectWebUrl || message.subjectReference) && threadId)
+            subjectWebUrlResolved(threadId, message.subjectWebUrl || "", message.subjectReference || "")
 
         if (!_mergeFlushQueued) {
             _mergeFlushQueued = true
@@ -882,7 +899,7 @@ Item {
             + "api_version=$6\n"
             + "shift 6\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
-            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then .[] else . end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($o): ($o.triggering_actor? // $o.actor?), $o.user?, $o.author?, $o.sender?, $o.creator?, $o.merged_by?, $o.closed_by?, $o.dismissed_by?, ($o.workflow_runs?[]? | (.triggering_actor? // .actor?)); rootobj as $root | {authors:([nodes as $n | author_sources($n) | validauthor] | reduce .[] as $a ([]; if any(.[]; .login == $a.login and .htmlUrl == $a.htmlUrl and .avatarUrl == $a.avatarUrl) then . else . + [$a] end)), subjectWebUrl:($root.html_url // \"\"), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
+            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then .[] else . end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($o): ($o.triggering_actor? // $o.actor?), $o.user?, $o.author?, $o.sender?, $o.creator?, $o.merged_by?, $o.closed_by?, $o.dismissed_by?, ($o.workflow_runs?[]? | (.triggering_actor? // .actor?)); rootobj as $root | {authors:([nodes as $n | author_sources($n) | validauthor] | reduce .[] as $a ([]; if any(.[]; .login == $a.login and .htmlUrl == $a.htmlUrl and .avatarUrl == $a.avatarUrl) then . else . + [$a] end)), subjectWebUrl:($root.html_url // \"\"), subjectReference:(($root.subjectReference // $root.subject_reference // $root.run_number // \"\") | tostring), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), runNumber:((.run_number // \"\") | tostring), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
             + "for url in \"$@\"; do\n"
             + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"
