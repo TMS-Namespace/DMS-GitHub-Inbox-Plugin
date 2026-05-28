@@ -106,14 +106,16 @@ Item {
             return
 
         enqueueAuthorUrls(threadId,
-            AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, subjectType || "", !automaticPrefetch),
+            AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, subjectType || "", !automaticPrefetch, ""),
             updatedAt || "",
             !!automaticPrefetch,
             fallbackAuthor || null,
-            subjectTitle || "")
+            subjectTitle || "",
+            subjectType || "",
+            "")
     }
 
-    function enqueueAuthorUrls(threadId, urls, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle) {
+    function enqueueAuthorUrls(threadId, urls, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle, subjectType, reason) {
         var profileStart = Date.now()
         if (!token || !threadId || !urls || urls.length === 0)
             return
@@ -159,7 +161,9 @@ Item {
             updatedAt: updatedAt || "",
             automaticPrefetch: !!automaticPrefetch,
             fallbackAuthor: fallbackAuthor || null,
-            subjectTitle: subjectTitle || ""
+            subjectTitle: subjectTitle || "",
+            subjectType: subjectType || "",
+            reason: reason || ""
         }
 
         if (automaticPrefetch && nextQueue.length >= GitHubConstants.maxAuthorRequestQueueLength)
@@ -201,8 +205,11 @@ Item {
             var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
             var needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item)
                                       && !hasFetchedAuthorDetailsForMessage(item)
+            var existingAuthors = (authorsByThreadRef || ({}))[item.threadId] || []
+            var needsMissingAuthors = existingAuthors.length === 0
             if (!needsSubjectWebUrl
                     && !needsAuthorDetails
+                    && !needsMissingAuthors
                     && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
@@ -224,7 +231,8 @@ Item {
                 subjectTitle: item.title || "",
                 includeDetails: shouldFetchAuthorDetailsForMessage(item),
                 force: needsSubjectWebUrl,
-                fallbackAuthor: fallbackAuthorForMessage(item)
+                fallbackAuthor: fallbackAuthorForMessage(item),
+                reason: item.reason || ""
             })
             accepted++
             enqueued++
@@ -264,12 +272,14 @@ Item {
             var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
             var needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item)
                                       && !hasFetchedAuthorDetailsForMessage(item)
+            var existingAuthors = knownAuthors[item.threadId] || []
+            var needsMissingAuthors = existingAuthors.length === 0
             if (!needsSubjectWebUrl
                     && !needsAuthorDetails
+                    && !needsMissingAuthors
                     && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
-            var existingAuthors = knownAuthors[item.threadId] || []
             if (!needsSubjectWebUrl && !needsAuthorDetails && existingAuthors.length > 0)
                 continue
 
@@ -291,7 +301,8 @@ Item {
                 subjectTitle: item.title || "",
                 includeDetails: shouldFetchAuthorDetailsForMessage(item),
                 force: needsSubjectWebUrl,
-                fallbackAuthor: fallbackAuthorForMessage(item)
+                fallbackAuthor: fallbackAuthorForMessage(item),
+                reason: item.reason || ""
             })
             enqueued++
         }
@@ -427,7 +438,10 @@ Item {
             return true
 
         var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
-        var urls = AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, item.subjectType || "", true)
+        var urls = AuthorUtils.buildAuthorFetchUrls(subjectApiUrl,
+                                                    item.subjectType || "",
+                                                    true,
+                                                    item.reason || "")
         if (urls.length <= 1)
             return true
 
@@ -466,10 +480,14 @@ Item {
         var fallbackAuthor = message.fallbackAuthor || null
         if (fetchedAuthors.length === 0 && fallbackAuthor)
             fetchedAuthors = [fallbackAuthor]
+        fetchedAuthors = normalizeAuthorsForSubject(message.subjectType || "",
+                                                    message.reason || "",
+                                                    fetchedAuthors)
         var currentAuthors = authorsByThreadRef ? authorsByThreadRef : ({})
 
-        var existingAuthors = (_pendingMerges[threadId]
-                               || currentAuthors[threadId] || [])
+        var existingAuthors = message.automaticPrefetch
+            ? []
+            : (_pendingMerges[threadId] || currentAuthors[threadId] || [])
         var mergedAuthors = AuthorUtils.mergeAuthorLists(existingAuthors, fetchedAuthors)
 
         var nextPending = _pendingMerges
@@ -547,7 +565,9 @@ Item {
                 updatedAt: request.updatedAt || "",
                 automaticPrefetch: !!request.automaticPrefetch,
                 fallbackAuthor: request.fallbackAuthor || null,
-                subjectTitle: request.subjectTitle || ""
+                subjectTitle: request.subjectTitle || "",
+                subjectType: request.subjectType || "",
+                reason: request.reason || ""
             })
 
             var command = request.automaticPrefetch
@@ -610,11 +630,14 @@ Item {
             enqueueAuthorUrls(item.threadId,
                               AuthorUtils.buildAuthorFetchUrls(item.subjectApiUrl,
                                                                item.subjectType || "",
-                                                               includeDetails),
+                                                               includeDetails,
+                                                               item.reason || ""),
                               item.updatedAt || "",
                               true,
                               item.fallbackAuthor || null,
-                              item.subjectTitle || "")
+                              item.subjectTitle || "",
+                              item.subjectType || "",
+                              item.reason || "")
         }
 
         _prefetchQueue = queue.slice(processed)
@@ -777,20 +800,54 @@ Item {
     }
 
     function fallbackAuthorForMessage(item) {
-        if (!item)
-            return null
+        return null
+    }
 
-        var login = String(item.repositoryOwnerLogin || "").trim()
-        if (!login)
-            return null
+    function isCiSubjectType(subjectType) {
+        var normalizedType = String(subjectType || "").toLowerCase()
+        return normalizedType === "checksuite"
+               || normalizedType === "checkrun"
+               || normalizedType === "workflowrun"
+    }
 
-        return {
-            login: login,
-            avatarUrl: String(item.repositoryOwnerAvatarUrl || "").trim()
-                       || (GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
-                           + "?size=" + GitHubConstants.avatarDefaultSizePx),
-            htmlUrl: GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
+    function normalizeAuthorsForSubject(subjectType, reason, authors) {
+        var source = authors || []
+        var normalizedType = String(subjectType || "").toLowerCase()
+        var normalizedReason = String(reason || "").toLowerCase()
+        var filtered = filterAuthorsForSubject(normalizedType, source)
+
+        if (isCiSubjectType(subjectType) && filtered.length > 1)
+            return filtered.slice(0, 1)
+
+        if ((normalizedType === "pullrequest" || normalizedType === "issue")
+                && normalizedReason === "comment"
+                && filtered.length > 1)
+            return filtered.slice(0, 1)
+
+        if (normalizedType === "pullrequest"
+                && normalizedReason === "author"
+                && filtered.length > GitHubConstants.maxAuthorsDisplayedPerMessage)
+            return filtered.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
+
+        return filtered
+    }
+
+    function filterAuthorsForSubject(normalizedType, authors) {
+        var source = authors || []
+        if (normalizedType !== "pullrequest" && normalizedType !== "issue")
+            return source
+
+        var filtered = []
+        for (var index = 0; index < source.length; index++) {
+            var author = source[index] || ({})
+            var login = String(author.login || "").trim().toLowerCase()
+            var htmlUrl = String(author.htmlUrl || author.html_url || "").trim().toLowerCase()
+            if (login === "github-actions" || login === "github-actions[bot]"
+                    || htmlUrl === GitHubConstants.githubWebBaseUrl + "/apps/github-actions")
+                continue
+            filtered.push(author)
         }
+        return filtered
     }
 
     function buildRawAuthorFetchCommand(urls) {
@@ -825,7 +882,7 @@ Item {
             + "api_version=$6\n"
             + "shift 6\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
-            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def obj: if type == \"object\" then . else {} end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); obj as $root | {authors:([.. | objects | authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\")))] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)), subjectWebUrl:($root.html_url // \"\"), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
+            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then .[] else . end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($o): ($o.triggering_actor? // $o.actor?), $o.user?, $o.author?, $o.sender?, $o.creator?, $o.merged_by?, $o.closed_by?, $o.dismissed_by?, ($o.workflow_runs?[]? | (.triggering_actor? // .actor?)); rootobj as $root | {authors:([nodes as $n | author_sources($n) | validauthor] | reduce .[] as $a ([]; if any(.[]; .login == $a.login and .htmlUrl == $a.htmlUrl and .avatarUrl == $a.avatarUrl) then . else . + [$a] end)), subjectWebUrl:($root.html_url // \"\"), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
             + "for url in \"$@\"; do\n"
             + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"
@@ -864,6 +921,8 @@ Item {
             property bool automaticPrefetch: false
             property var fallbackAuthor: null
             property string subjectTitle: ""
+            property string subjectType: ""
+            property string reason: ""
             property string _buffer: ""
             property int _bufferBytes: 0
             property real _startedAt: Date.now()
@@ -922,6 +981,9 @@ Item {
                     threadId: threadId,
                     updatedAt: updatedAt || "",
                     requestedUrls: requestedUrls || [],
+                    automaticPrefetch: automaticPrefetch,
+                    subjectType: subjectType || "",
+                    reason: reason || "",
                     shouldExpand: !automaticPrefetch && authorFetcher.shouldExpandFromRequestedUrls(requestedUrls || []),
                     fallbackAuthor: fallbackAuthor || null,
                     subjectTitle: subjectTitle || "",

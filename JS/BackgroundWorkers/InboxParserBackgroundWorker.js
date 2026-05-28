@@ -30,6 +30,9 @@ WorkerScript.onMessage = function (message) {
             threadId: message.threadId || "",
             updatedAt: message.updatedAt || "",
             requestedUrls: message.requestedUrls || [],
+            automaticPrefetch: !!message.automaticPrefetch,
+            subjectType: message.subjectType || "",
+            reason: message.reason || "",
             shouldExpand: !!message.shouldExpand,
             fallbackAuthor: message.fallbackAuthor || null,
             authors: authors,
@@ -349,8 +352,10 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     var normalizedType = String(userLike.type || "").trim().toLowerCase()
     if (normalizedType === "user" || normalizedType === "bot" ||
         normalizedType === "app" ||
-        normalizedType === "organization" || normalizedType === "mannequin")
+        normalizedType === "mannequin")
         return true
+    if (normalizedType === "organization")
+        return false
     var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
     if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0) return true
     if (normalizedAvatar.indexOf("https://github.com/") === 0 && normalizedAvatar.indexOf(".png") > 0) return true
@@ -392,26 +397,51 @@ function parseSubjectAuthors(payloadText) {
     var parsed
     try { parsed = JSON.parse(payloadText || "{}") } catch (e) { return [] }
 
+    if (isPreExtractedAuthorPayload(parsed)) {
+        for (var extractedIndex = 0; extractedIndex < parsed.authors.length; extractedIndex++)
+            pushAuthorCandidate(authors, byKey, parsed.authors[extractedIndex])
+        return authors
+    }
+
+    function pushAuthorValue(value) {
+        if (!value) return
+        if (Array.isArray(value)) {
+            for (var i = 0; i < value.length; i++) pushAuthorValue(value[i])
+            return
+        }
+        pushAuthorCandidate(authors, byKey, value)
+    }
+
+    function collectFromNode(value) {
+        if (!value || typeof value !== "object") return
+        if (value.triggering_actor)
+            pushAuthorValue(value.triggering_actor)
+        else
+            pushAuthorValue(value.actor)
+
+        pushAuthorValue(value.user)
+        pushAuthorValue(value.author)
+        pushAuthorValue(value.sender)
+        pushAuthorValue(value.creator)
+        pushAuthorValue(value.merged_by)
+        pushAuthorValue(value.closed_by)
+        pushAuthorValue(value.dismissed_by)
+    }
+
     function walk(value, depth) {
-        if (!value || depth > 8) return
+        if (!value || depth > 4) return
         if (Array.isArray(value)) {
             for (var i = 0; i < value.length; i++) walk(value[i], depth + 1)
             return
         }
         if (typeof value !== "object") return
-        if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
-            pushAuthorCandidate(authors, byKey, value)
-        pushAuthorCandidate(authors, byKey, value.user)
-        pushAuthorCandidate(authors, byKey, value.author)
-        pushAuthorCandidate(authors, byKey, value.assignee)
-        pushAuthorCandidate(authors, byKey, value.sender)
-        pushAuthorCandidate(authors, byKey, value.creator)
-        pushAuthorCandidate(authors, byKey, value.merged_by)
-        pushAuthorCandidate(authors, byKey, value.closed_by)
-        pushAuthorCandidate(authors, byKey, value.dismissed_by)
-        pushAuthorCandidate(authors, byKey, value.actor)
+        collectFromNode(value)
         for (var k in value) {
             if (!value.hasOwnProperty(k)) continue
+            if (k === "owner" || k === "repository" || k === "repo"
+                    || k === "head_repository" || k === "base_repository"
+                    || k === "head_repo" || k === "base_repo")
+                continue
             var child = value[k]
             if (!child || typeof child !== "object") continue
             walk(child, depth + 1)
@@ -419,6 +449,16 @@ function parseSubjectAuthors(payloadText) {
     }
     walk(parsed, 0)
     return authors
+}
+
+function isPreExtractedAuthorPayload(value) {
+    return value
+        && typeof value === "object"
+        && !Array.isArray(value)
+        && Array.isArray(value.authors)
+        && (value.hasOwnProperty("subjectWebUrl")
+            || value.hasOwnProperty("actionRuns")
+            || value.hasOwnProperty("release"))
 }
 
 function parseSubjectAuthorsMulti(payloadText, splitToken) {

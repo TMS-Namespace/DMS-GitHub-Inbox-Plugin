@@ -67,6 +67,15 @@ QtObject {
                    + encodeURIComponent(owner) + "/"
                    + encodeURIComponent(repo) + "/commits/" + subjectId
 
+        if (section === "actions" && subjectId === "runs" && parts.length >= 5) {
+            var runId = parts[4]
+            if (!/^[0-9]+$/.test(runId))
+                return ""
+            return GitHubConstants.githubApiReposPrefix
+                   + encodeURIComponent(owner) + "/"
+                   + encodeURIComponent(repo) + "/actions/runs/" + runId
+        }
+
         return ""
     }
 
@@ -122,9 +131,10 @@ QtObject {
     //  Author Fetch URL Building
     // =========================================================================
 
-    function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails) {
+    function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails, reason) {
         var urls = []
         var perPageQuery = GitHubConstants.authorFetchPerPageQuery
+        var normalizedReason = String(reason || "").toLowerCase()
 
         function push(url) {
             if (!url || urls.indexOf(url) >= 0)
@@ -132,19 +142,19 @@ QtObject {
             urls.push(url)
         }
 
-        push(subjectApiUrl)
+        var threadParentUrl = isThreadParentApiUrl(subjectApiUrl)
+        var skipRootForComment = threadParentUrl && normalizedReason === "comment"
+        if (!skipRootForComment)
+            push(subjectApiUrl)
 
         if (includeDetails === false)
             return urls
 
-        if (isThreadParentApiUrl(subjectApiUrl)) {
+        if (threadParentUrl) {
             var isPR = subjectApiUrl.indexOf("/pulls/") >= 0
             var issueApiUrl = isPR
                 ? subjectApiUrl.replace("/pulls/", "/issues/")
                 : subjectApiUrl
-
-            if (isPR)
-                push(appendAuthorQuery(subjectApiUrl + "/reviews", perPageQuery))
 
             push(appendAuthorQuery(issueApiUrl + "/timeline", perPageQuery))
         }
@@ -321,9 +331,10 @@ QtObject {
         if (normalizedType === "user"
                 || normalizedType === "bot"
                 || normalizedType === "app"
-                || normalizedType === "organization"
                 || normalizedType === "mannequin")
             return true
+        if (normalizedType === "organization")
+            return false
 
         var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
         if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0)
@@ -419,8 +430,45 @@ QtObject {
             return []
         }
 
+        if (isPreExtractedAuthorPayload(parsed)) {
+            for (var extractedIndex = 0; extractedIndex < parsed.authors.length; extractedIndex++)
+                pushAuthorCandidate(authors, byKey, parsed.authors[extractedIndex])
+            return authors
+        }
+
+        function pushAuthorValue(value) {
+            if (!value)
+                return
+
+            if (Array.isArray(value)) {
+                for (var arrayIndex = 0; arrayIndex < value.length; arrayIndex++)
+                    pushAuthorValue(value[arrayIndex])
+                return
+            }
+
+            pushAuthorCandidate(authors, byKey, value)
+        }
+
+        function collectFromNode(value) {
+            if (typeof value !== "object")
+                return
+
+            if (value.triggering_actor)
+                pushAuthorValue(value.triggering_actor)
+            else
+                pushAuthorValue(value.actor)
+
+            pushAuthorValue(value.user)
+            pushAuthorValue(value.author)
+            pushAuthorValue(value.sender)
+            pushAuthorValue(value.creator)
+            pushAuthorValue(value.merged_by)
+            pushAuthorValue(value.closed_by)
+            pushAuthorValue(value.dismissed_by)
+        }
+
         function walk(value, depth) {
-            if (!value || depth > GitHubConstants.authorWalkMaxDepth)
+            if (!value || depth > 4)
                 return
 
             if (Array.isArray(value)) {
@@ -432,21 +480,14 @@ QtObject {
             if (typeof value !== "object")
                 return
 
-            if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
-                pushAuthorCandidate(authors, byKey, value)
-
-            pushAuthorCandidate(authors, byKey, value.user)
-            pushAuthorCandidate(authors, byKey, value.author)
-            pushAuthorCandidate(authors, byKey, value.assignee)
-            pushAuthorCandidate(authors, byKey, value.sender)
-            pushAuthorCandidate(authors, byKey, value.creator)
-            pushAuthorCandidate(authors, byKey, value.merged_by)
-            pushAuthorCandidate(authors, byKey, value.closed_by)
-            pushAuthorCandidate(authors, byKey, value.dismissed_by)
-            pushAuthorCandidate(authors, byKey, value.actor)
+            collectFromNode(value)
 
             for (var key in value) {
                 if (!value.hasOwnProperty(key))
+                    continue
+                if (key === "owner" || key === "repository" || key === "repo"
+                        || key === "head_repository" || key === "base_repository"
+                        || key === "head_repo" || key === "base_repo")
                     continue
                 var child = value[key]
                 if (!child || typeof child !== "object")
@@ -457,6 +498,16 @@ QtObject {
 
         walk(parsed, 0)
         return authors
+    }
+
+    function isPreExtractedAuthorPayload(value) {
+        return value
+               && typeof value === "object"
+               && !Array.isArray(value)
+               && Array.isArray(value.authors)
+               && (value.hasOwnProperty("subjectWebUrl")
+                   || value.hasOwnProperty("actionRuns")
+                   || value.hasOwnProperty("release"))
     }
 
     function parseSubjectAuthorsMulti(payloadText, splitToken) {

@@ -517,8 +517,11 @@ PluginComponent {
 
             var needsAvatar = !!item.repositoryOwnerLogin
                               && String(item.repositoryOwnerAvatarUrl || "").indexOf("file://") !== 0
+            var knownAuthors = authorsByThread[item.threadId] || []
+            var needsMissingAuthors = loadAuthorInfo && knownAuthors.length === 0
             var needsAuthor = loadAuthorInfo
-                              && ((authorFetch.fetchedAtUpdatedAt[item.threadId] || "") !== (item.updatedAt || "")
+                              && (needsMissingAuthors
+                                  || (authorFetch.fetchedAtUpdatedAt[item.threadId] || "") !== (item.updatedAt || "")
                                   || authorFetch.requiresSubjectWebUrlResolution(item)
                                   || !authorFetch.hasFetchedAuthorDetailsForMessage(item))
             if (needsAvatar || needsAuthor)
@@ -864,6 +867,7 @@ PluginComponent {
             for (var fid in cachedFetchedAt)
                 nextFetchedAt[fid] = cachedFetchedAt[fid]
         }
+        _sanitizeCachedAuthors(cached.messages || [], resolvedAuthors, nextFetchedAt)
         authorFetch.fetchedAtUpdatedAt = nextFetchedAt
 
         var fallbackAuthorUpdates = {}
@@ -985,20 +989,100 @@ PluginComponent {
     }
 
     function _fallbackAuthorForMessage(message) {
-        if (!message)
-            return null
+        return null
+    }
 
-        var login = String(message.repositoryOwnerLogin || "").trim()
-        if (!login)
-            return null
-
-        return {
-            login: login,
-            avatarUrl: String(message.repositoryOwnerAvatarUrl || "").trim()
-                       || (GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
-                           + "?size=" + GitHubConstants.avatarDefaultSizePx),
-            htmlUrl: GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
+    function _sanitizeCachedAuthors(messages, resolvedAuthors, fetchedAt) {
+        var messagesByThread = {}
+        for (var index = 0; index < messages.length; index++) {
+            var message = messages[index]
+            if (message && message.threadId)
+                messagesByThread[message.threadId] = message
         }
+
+        var changedAuthorsForCache = {}
+        for (var threadId in resolvedAuthors) {
+            var sourceMessage = messagesByThread[threadId]
+            if (!sourceMessage)
+                continue
+
+            var repositoryOwner = String(sourceMessage.repositoryOwnerLogin || "").trim().toLowerCase()
+            if (!repositoryOwner)
+                continue
+
+            var authors = resolvedAuthors[threadId] || []
+            var normalizedAuthors = _normalizeCachedAuthorsForMessage(sourceMessage, authors)
+            var changed = normalizedAuthors.length !== authors.length
+            if (authors.length === 0
+                    && (fetchedAt[threadId] || "") === (sourceMessage.updatedAt || ""))
+                changed = true
+            for (var authorIndex = 0; authorIndex < authors.length; authorIndex++) {
+                var authorLogin = String((authors[authorIndex] && authors[authorIndex].login) || "").trim().toLowerCase()
+                if (authorLogin === repositoryOwner) {
+                    changed = true
+                    break
+                }
+            }
+
+            if (!changed)
+                continue
+
+            resolvedAuthors[threadId] = normalizedAuthors
+            fetchedAt[threadId] = ""
+            changedAuthorsForCache[threadId] = resolvedAuthors[threadId]
+            cacheCoord.updateAuthorFetchedAt(threadId, "")
+        }
+
+        if (Object.keys(changedAuthorsForCache).length > 0)
+            cacheCoord.updateChangedAuthors(changedAuthorsForCache)
+    }
+
+    function _isCiSubjectType(subjectType) {
+        var normalizedType = String(subjectType || "").toLowerCase()
+        return normalizedType === "checksuite"
+               || normalizedType === "checkrun"
+               || normalizedType === "workflowrun"
+    }
+
+    function _normalizeCachedAuthorsForMessage(message, authors) {
+        var repositoryOwner = String(message.repositoryOwnerLogin || "").trim().toLowerCase()
+        var normalizedType = String(message.subjectType || "").toLowerCase()
+        var normalizedReason = String(message.reason || "").toLowerCase()
+        var filtered = []
+
+        for (var index = 0; index < authors.length; index++) {
+            var author = authors[index]
+            var authorLogin = String((author && author.login) || "").trim().toLowerCase()
+            if (authorLogin && authorLogin === repositoryOwner)
+                continue
+            if ((normalizedType === "pullrequest" || normalizedType === "issue")
+                    && _isGitHubActionsAuthor(author))
+                continue
+            filtered.push(author)
+        }
+
+        if (_isCiSubjectType(message.subjectType) && filtered.length > 1)
+            return filtered.slice(0, 1)
+
+        if ((normalizedType === "pullrequest" || normalizedType === "issue")
+                && normalizedReason === "comment"
+                && filtered.length > 1)
+            return filtered.slice(0, 1)
+
+        if (normalizedType === "pullrequest"
+                && normalizedReason === "author"
+                && filtered.length > GitHubConstants.maxAuthorsDisplayedPerMessage)
+            return filtered.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
+
+        return filtered
+    }
+
+    function _isGitHubActionsAuthor(author) {
+        var login = String((author && author.login) || "").trim().toLowerCase()
+        var htmlUrl = String((author && (author.htmlUrl || author.html_url)) || "").trim().toLowerCase()
+        return login === "github-actions"
+               || login === "github-actions[bot]"
+               || htmlUrl === GitHubConstants.githubWebBaseUrl + "/apps/github-actions"
     }
 
     function _processStartupMissingInfoBatch() {
