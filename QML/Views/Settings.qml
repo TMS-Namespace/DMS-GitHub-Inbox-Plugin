@@ -137,7 +137,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Show GitHub inbox messages directly in DankBar and a popup list.\nUse a GitHub classic personal access token with the 'notifications' scope."
+        text: "Use a GitHub classic personal access token with at least the 'notifications' scope."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
@@ -617,7 +617,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Inbox messages, author details, and avatars are cached locally for faster loading.\nAvatars are stored as image files so they load instantly when the popup reopens."
+        text: "Inbox messages, author details, and avatars are cached locally for faster loading."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap

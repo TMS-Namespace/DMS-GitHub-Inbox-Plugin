@@ -307,9 +307,23 @@ function authorAvatarUrl(authorLike) {
     if (!authorLike) return ""
     var avatarUrl = String(authorLike.avatarUrl || authorLike.avatar_url || "").trim()
     if (avatarUrl) return avatarUrl
+    var htmlUrl = String(authorLike.htmlUrl || authorLike.html_url || "").trim()
+    if (isGitHubAppUrl(htmlUrl)) return htmlUrl + ".png?size=" + _AVATAR_DEFAULT_SIZE_PX
     var login = String(authorLike.login || "").trim()
     if (login) return defaultAvatarUrlForLogin(login)
     return ""
+}
+
+function appSlugFromHtmlUrl(htmlUrl) {
+    var normalized = String(htmlUrl || "").trim()
+    var prefix = "https://github.com/apps/"
+    if (normalized.indexOf(prefix) !== 0) return ""
+    var slug = normalized.substring(prefix.length).split(/[/?#]/)[0]
+    return String(slug || "").trim()
+}
+
+function isGitHubAppUrl(htmlUrl) {
+    return appSlugFromHtmlUrl(htmlUrl) !== ""
 }
 
 function authorKey(login, htmlUrl, avatarUrl) {
@@ -334,6 +348,7 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     if (!isLikelyGitHubLogin(normalizedLogin)) return false
     var normalizedType = String(userLike.type || "").trim().toLowerCase()
     if (normalizedType === "user" || normalizedType === "bot" ||
+        normalizedType === "app" ||
         normalizedType === "organization" || normalizedType === "mannequin")
         return true
     var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
@@ -341,6 +356,7 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     if (normalizedAvatar.indexOf("https://github.com/") === 0 && normalizedAvatar.indexOf(".png") > 0) return true
     var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
     var lowerLogin = normalizedLogin.toLowerCase()
+    if (appSlugFromHtmlUrl(normalizedHtml) === lowerLogin) return true
     if (normalizedHtml === "https://github.com/" + lowerLogin) return true
     if (normalizedHtml.indexOf("https://github.com/" + lowerLogin + "/") === 0) return true
     return false
@@ -348,13 +364,15 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
 
 function pushAuthorCandidate(target, byKey, userLike) {
     if (!userLike || typeof userLike !== "object") return
-    var login = String(userLike.login || "").trim()
-    var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
     var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+    var login = String(userLike.login || userLike.slug || appSlugFromHtmlUrl(htmlUrl) || "").trim()
+    var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
     if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl)) return
     htmlUrl = String(htmlUrl || "").trim()
+    if (!htmlUrl && String(userLike.slug || "").trim())
+        htmlUrl = "https://github.com/apps/" + encodeURIComponent(String(userLike.slug).trim())
     if (!htmlUrl) htmlUrl = "https://github.com/" + encodeURIComponent(login)
-    avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl })
+    avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl, htmlUrl: htmlUrl })
     var key = authorKey(login, htmlUrl, avatarUrl)
     if (!key) return
     if (byKey.hasOwnProperty(key)) {

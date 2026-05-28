@@ -1,5 +1,5 @@
 {
-    "id": "githubInbox",
+    "id": "github-inbox",
     "name": "GitHub Inbox",
     "capabilities": ["dankbar-widget"],
     "category": "productivity",

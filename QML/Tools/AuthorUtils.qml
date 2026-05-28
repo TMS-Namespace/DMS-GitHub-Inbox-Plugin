@@ -260,11 +260,29 @@ QtObject {
         if (avatarUrl)
             return avatarUrl
 
+        var htmlUrl = String(authorLike.htmlUrl || authorLike.html_url || "").trim()
+        if (isGitHubAppUrl(htmlUrl))
+            return htmlUrl + ".png?size=" + GitHubConstants.avatarDefaultSizePx
+
         var login = String(authorLike.login || "").trim()
         if (login)
             return defaultAvatarUrlForLogin(login)
 
         return ""
+    }
+
+    function appSlugFromHtmlUrl(htmlUrl) {
+        var normalized = String(htmlUrl || "").trim()
+        var prefix = GitHubConstants.githubWebBaseUrl + "/apps/"
+        if (normalized.indexOf(prefix) !== 0)
+            return ""
+
+        var slug = normalized.substring(prefix.length).split(/[/?#]/)[0]
+        return String(slug || "").trim()
+    }
+
+    function isGitHubAppUrl(htmlUrl) {
+        return appSlugFromHtmlUrl(htmlUrl) !== ""
     }
 
     function authorKey(login, htmlUrl, avatarUrl) {
@@ -302,6 +320,7 @@ QtObject {
         var normalizedType = String(userLike.type || "").trim().toLowerCase()
         if (normalizedType === "user"
                 || normalizedType === "bot"
+                || normalizedType === "app"
                 || normalizedType === "organization"
                 || normalizedType === "mannequin")
             return true
@@ -315,6 +334,8 @@ QtObject {
 
         var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
         var lowerLogin = normalizedLogin.toLowerCase()
+        if (appSlugFromHtmlUrl(normalizedHtml) === lowerLogin)
+            return true
         if (normalizedHtml === GitHubConstants.githubWebBaseUrl + "/" + lowerLogin)
             return true
         if (normalizedHtml.indexOf(GitHubConstants.githubWebBaseUrl + "/" + lowerLogin + "/") === 0)
@@ -331,17 +352,19 @@ QtObject {
         if (!userLike || typeof userLike !== "object")
             return
 
-        var login = String(userLike.login || "").trim()
-        var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
         var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+        var login = String(userLike.login || userLike.slug || appSlugFromHtmlUrl(htmlUrl) || "").trim()
+        var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
         if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl))
             return
 
         htmlUrl = String(htmlUrl || "").trim()
+        if (!htmlUrl && String(userLike.slug || "").trim())
+            htmlUrl = GitHubConstants.githubWebBaseUrl + "/apps/" + encodeURIComponent(String(userLike.slug).trim())
         if (!htmlUrl)
             htmlUrl = GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
 
-        avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl })
+        avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl, htmlUrl: htmlUrl })
 
         var key = authorKey(login, htmlUrl, avatarUrl)
         if (!key)

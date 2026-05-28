@@ -199,7 +199,11 @@ Item {
                 continue
 
             var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
-            if (!needsSubjectWebUrl && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
+            var needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item)
+                                      && !hasFetchedAuthorDetailsForMessage(item)
+            if (!needsSubjectWebUrl
+                    && !needsAuthorDetails
+                    && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -218,6 +222,7 @@ Item {
                 subjectType: item.subjectType || "",
                 updatedAt: item.updatedAt || "",
                 subjectTitle: item.title || "",
+                includeDetails: shouldFetchAuthorDetailsForMessage(item),
                 force: needsSubjectWebUrl,
                 fallbackAuthor: fallbackAuthorForMessage(item)
             })
@@ -257,11 +262,15 @@ Item {
                 continue
 
             var needsSubjectWebUrl = requiresSubjectWebUrlResolution(item)
-            if (!needsSubjectWebUrl && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
+            var needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item)
+                                      && !hasFetchedAuthorDetailsForMessage(item)
+            if (!needsSubjectWebUrl
+                    && !needsAuthorDetails
+                    && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
                 continue
 
             var existingAuthors = knownAuthors[item.threadId] || []
-            if (!needsSubjectWebUrl && existingAuthors.length > 0)
+            if (!needsSubjectWebUrl && !needsAuthorDetails && existingAuthors.length > 0)
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -280,6 +289,7 @@ Item {
                 subjectType: item.subjectType || "",
                 updatedAt: item.updatedAt || "",
                 subjectTitle: item.title || "",
+                includeDetails: shouldFetchAuthorDetailsForMessage(item),
                 force: needsSubjectWebUrl,
                 fallbackAuthor: fallbackAuthorForMessage(item)
             })
@@ -399,6 +409,37 @@ Item {
         }
 
         return false
+    }
+
+    function shouldFetchAuthorDetailsForMessage(item) {
+        if (!item)
+            return false
+
+        var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
+        if (!subjectApiUrl)
+            return false
+
+        return AuthorUtils.isThreadParentApiUrl(subjectApiUrl)
+    }
+
+    function hasFetchedAuthorDetailsForMessage(item) {
+        if (!item || !item.threadId || !shouldFetchAuthorDetailsForMessage(item))
+            return true
+
+        var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
+        var urls = AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, item.subjectType || "", true)
+        if (urls.length <= 1)
+            return true
+
+        var fetchedMap = fetchedUrlsByThread[item.threadId] || {}
+        var activeMap = activeUrlsByThread[item.threadId] || {}
+        for (var index = 1; index < urls.length; index++) {
+            var normalized = AuthorUtils.normalizeApiUrl(urls[index])
+            if (normalized && !fetchedMap[normalized] && !activeMap[normalized])
+                return false
+        }
+
+        return true
     }
 
     /// Returns the current merged authorsByThread including not-yet-flushed pending merges.
@@ -555,7 +596,8 @@ Item {
 
             var lastFetchedUpdatedAt = fetchedAtUpdatedAt[item.threadId] || ""
             var forceFetch = !!item.force
-            if (!forceFetch && lastFetchedUpdatedAt === item.updatedAt)
+            var includeDetails = !!item.includeDetails
+            if (!forceFetch && !includeDetails && lastFetchedUpdatedAt === item.updatedAt)
                 continue
 
             // Message updated since last fetch: clear URL-level state once,
@@ -565,13 +607,14 @@ Item {
                 delete fetchedUrlsByThread[item.threadId]
             }
 
-            enqueueAuthorFetch(item.threadId,
-                               item.subjectApiUrl,
-                               item.subjectType || "",
-                               item.updatedAt || "",
-                               true,
-                               item.fallbackAuthor || null,
-                               item.subjectTitle || "")
+            enqueueAuthorUrls(item.threadId,
+                              AuthorUtils.buildAuthorFetchUrls(item.subjectApiUrl,
+                                                               item.subjectType || "",
+                                                               includeDetails),
+                              item.updatedAt || "",
+                              true,
+                              item.fallbackAuthor || null,
+                              item.subjectTitle || "")
         }
 
         _prefetchQueue = queue.slice(processed)
@@ -782,7 +825,7 @@ Item {
             + "api_version=$6\n"
             + "shift 6\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
-            + "filter='{authors:([.. | objects | select(((.login? // \"\") != \"\") and ((((.avatar_url? // .avatarUrl? // \"\") != \"\")) or (((.html_url? // .htmlUrl? // \"\") != \"\")))) | {login:(.login // \"\"), avatarUrl:(.avatar_url // .avatarUrl // \"\"), htmlUrl:(.html_url // .htmlUrl // \"\"), type:(.type // \"\")} ] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)), subjectWebUrl:(.html_url // \"\"), actionRuns:((.workflow_runs? // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if ((.tag_name? // \"\") != \"\" and (.html_url? // \"\") != \"\") then {tagName:(.tag_name // \"\"), htmlUrl:(.html_url // \"\")} else null end)}'\n"
+            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def obj: if type == \"object\" then . else {} end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); obj as $root | {authors:([.. | objects | authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\")))] | unique_by(.login + \"|\" + .htmlUrl + \"|\" + .avatarUrl)), subjectWebUrl:($root.html_url // \"\"), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
             + "for url in \"$@\"; do\n"
             + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"

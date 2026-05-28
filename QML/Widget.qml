@@ -519,7 +519,8 @@ PluginComponent {
                               && String(item.repositoryOwnerAvatarUrl || "").indexOf("file://") !== 0
             var needsAuthor = loadAuthorInfo
                               && ((authorFetch.fetchedAtUpdatedAt[item.threadId] || "") !== (item.updatedAt || "")
-                                  || authorFetch.requiresSubjectWebUrlResolution(item))
+                                  || authorFetch.requiresSubjectWebUrlResolution(item)
+                                  || !authorFetch.hasFetchedAuthorDetailsForMessage(item))
             if (needsAvatar || needsAuthor)
                 result.push(item)
         }
@@ -1769,7 +1770,7 @@ PluginComponent {
                             break
                         }
                     }
-                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, true, null, resolvedSubjectTitle)
+                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, false, null, resolvedSubjectTitle)
                 }
                 onClosePopout: root.closePopout()
                 onPersistExpandedRepos: function(state) {
