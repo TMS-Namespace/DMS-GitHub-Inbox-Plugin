@@ -499,7 +499,10 @@ Item {
             return
         }
 
+        var normalized = _normalizeCachedResourceUrls(paths)
         avatarLocalPaths = paths
+        if (normalized)
+            _queueSave()
         _perfLog("_applyParsedCache — end, msgs=" + cachedMessages.length + " avatars=" + Object.keys(paths).length)
         _profile("_applyParsedCache", profileStart,
                  "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
@@ -682,7 +685,9 @@ Item {
             }
         }
 
-        if (changed || initializing) {
+        var normalized = initializing ? _normalizeCachedResourceUrls(nextPaths) : false
+
+        if (changed || initializing || normalized) {
             avatarLocalPaths = nextPaths
             _queueSave()
             if (redownloads.length > 0)
@@ -694,5 +699,41 @@ Item {
             initialized = true
             cacheReady()
         }
+    }
+
+    function _normalizeCachedResourceUrls(localPaths) {
+        var paths = localPaths || ({})
+        var changed = false
+
+        for (var messageIndex = 0; messageIndex < cachedMessages.length; messageIndex++) {
+            var message = cachedMessages[messageIndex]
+            if (!message)
+                continue
+
+            var ownerLogin = String(message.repositoryOwnerLogin || "").trim()
+            var ownerLocalUrl = ownerLogin ? (paths[ownerLogin] || "") : ""
+            if (ownerLocalUrl && message.repositoryOwnerAvatarUrl !== ownerLocalUrl) {
+                message.repositoryOwnerAvatarUrl = ownerLocalUrl
+                changed = true
+            }
+        }
+
+        for (var threadId in cachedAuthorsByThread) {
+            var authors = cachedAuthorsByThread[threadId] || []
+            for (var authorIndex = 0; authorIndex < authors.length; authorIndex++) {
+                var author = authors[authorIndex]
+                if (!author)
+                    continue
+
+                var login = String(author.login || "").trim()
+                var localUrl = login ? (paths[login] || "") : ""
+                if (localUrl && author.avatarUrl !== localUrl) {
+                    author.avatarUrl = localUrl
+                    changed = true
+                }
+            }
+        }
+
+        return changed
     }
 }

@@ -577,6 +577,10 @@ PluginComponent {
             if (messageLocalUrl && msg.repositoryOwnerAvatarUrl !== messageLocalUrl) {
                 msg.repositoryOwnerAvatarUrl = messageLocalUrl
                 messagesChanged = true
+            } else if (messageLocalUrl
+                       && msg.repositoryOwnerAvatarUrl === messageLocalUrl
+                       && String(messageLocalUrl).indexOf("file://") === 0) {
+                messagesChanged = true
             }
         }
         if (messagesChanged) {
@@ -594,6 +598,10 @@ PluginComponent {
                 var authorLocalUrl = updates[authorLogin]
                 if (authorLocalUrl && authors[ai].avatarUrl !== authorLocalUrl) {
                     authors[ai].avatarUrl = authorLocalUrl
+                    authorsChanged = true
+                } else if (authorLocalUrl
+                           && authors[ai].avatarUrl === authorLocalUrl
+                           && String(authorLocalUrl).indexOf("file://") === 0) {
                     authorsChanged = true
                 }
             }
@@ -1114,10 +1122,15 @@ PluginComponent {
 
     function _mergeCachedMessageFields(items) {
         var existingByThread = {}
+        var localAvatarsByLogin = _collectKnownLocalAvatarsByLogin()
         for (var existingIndex = 0; existingIndex < inboxMessages.length; existingIndex++) {
             var existing = inboxMessages[existingIndex]
-            if (existing && existing.threadId)
+            if (existing && existing.threadId) {
                 existingByThread[existing.threadId] = existing
+                _rememberKnownLocalAvatar(localAvatarsByLogin,
+                                          existing.repositoryOwnerLogin,
+                                          existing.repositoryOwnerAvatarUrl)
+            }
         }
 
         var merged = []
@@ -1130,7 +1143,7 @@ PluginComponent {
 
             var cached = existingByThread[item.threadId]
             if (!cached || (cached.updatedAt || "") !== (item.updatedAt || "")) {
-                merged.push(item)
+                merged.push(_applyKnownLocalRepoAvatar(item, localAvatarsByLogin))
                 continue
             }
 
@@ -1151,9 +1164,53 @@ PluginComponent {
                 copy.repositoryOwnerAvatarUrl = cachedRepoAvatar
             }
 
+            copy = _applyKnownLocalRepoAvatar(copy, localAvatarsByLogin)
             merged.push(copy)
         }
         return merged
+    }
+
+    function _collectKnownLocalAvatarsByLogin() {
+        var localAvatarsByLogin = {}
+
+        for (var tid in authorsByThread) {
+            var authors = authorsByThread[tid] || []
+            for (var ai = 0; ai < authors.length; ai++) {
+                _rememberKnownLocalAvatar(localAvatarsByLogin,
+                                          authors[ai].login,
+                                          authors[ai].avatarUrl)
+            }
+        }
+
+        return localAvatarsByLogin
+    }
+
+    function _rememberKnownLocalAvatar(localAvatarsByLogin, login, avatarUrl) {
+        var normalizedLogin = String(login || "").trim()
+        var normalizedAvatarUrl = String(avatarUrl || "").trim()
+        if (!normalizedLogin || normalizedAvatarUrl.indexOf("file://") !== 0)
+            return
+        if (!localAvatarsByLogin.hasOwnProperty(normalizedLogin))
+            localAvatarsByLogin[normalizedLogin] = normalizedAvatarUrl
+    }
+
+    function _applyKnownLocalRepoAvatar(item, localAvatarsByLogin) {
+        if (!item)
+            return item
+
+        var login = String(item.repositoryOwnerLogin || "").trim()
+        var localAvatarUrl = login ? (localAvatarsByLogin[login] || "") : ""
+        if (!localAvatarUrl && login && cacheCoord.initialized) {
+            localAvatarUrl = cacheCoord.cachedLocalAvatarUrl(login)
+            if (localAvatarUrl)
+                localAvatarsByLogin[login] = localAvatarUrl
+        }
+        if (!localAvatarUrl || localAvatarUrl === item.repositoryOwnerAvatarUrl)
+            return item
+
+        var copy = _cloneMessageForMerge(item)
+        copy.repositoryOwnerAvatarUrl = localAvatarUrl
+        return copy
     }
 
     function _filterDoneMessages(items) {
