@@ -295,7 +295,10 @@ function relativeTimeFromIso(isoDate) {
     if (hours < 24)
         return hours + " hr ago"
 
-    var days = Math.floor(hours / 24)
+    var now = new Date()
+    var updated = new Date(timestamp)
+    var calendarDays = localDayNumber(now) - localDayNumber(updated)
+    var days = Math.max(1, calendarDays || Math.floor(hours / 24))
     if (days < 30)
         return days + " day" + (days !== 1 ? "s" : "") + " ago"
 
@@ -305,6 +308,11 @@ function relativeTimeFromIso(isoDate) {
 
     var years = Math.floor(days / 365)
     return years + " year" + (years !== 1 ? "s" : "") + " ago"
+}
+
+function localDayNumber(value) {
+    return Math.floor(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())
+                      / (24 * 60 * 60 * 1000))
 }
 
 function reasonLabel(reason) {
