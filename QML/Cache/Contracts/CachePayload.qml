@@ -11,6 +11,7 @@ QtObject {
     property var authorsByThread: ({})
     property var authorFetchedAt: ({})
     property var avatarMap: ({})
+    property var doneThreadState: ({})
 
     function readFromObject(value, expectedVersion) {
         var source = value || ({})
@@ -23,6 +24,7 @@ QtObject {
         authorsByThread = source.authorsByThread || ({})
         authorFetchedAt = source.authorFetchedAt || ({})
         avatarMap = source.avatarMap || ({})
+        doneThreadState = source.doneThreadState || ({})
     }
 
     function toObject() {
@@ -32,7 +34,8 @@ QtObject {
             notifications: notifications || [],
             authorsByThread: authorsByThread || ({}),
             authorFetchedAt: authorFetchedAt || ({}),
-            avatarMap: avatarMap || ({})
+            avatarMap: avatarMap || ({}),
+            doneThreadState: doneThreadState || ({})
         }
     }
 }

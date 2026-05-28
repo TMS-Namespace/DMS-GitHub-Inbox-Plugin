@@ -13,7 +13,7 @@
     "settings": "./QML/Views/Settings.qml",
     "permissions": ["settings_read", "settings_write", "process", "network"],
     "requires_dms": ">=1.2.0",
-    "distro": ["fedora"],
-    "compositors": ["niri"],
+    "distro": [],
+    "compositors": [],
     "dependencies": ["curl", "secret-tool", "jq"]
 }

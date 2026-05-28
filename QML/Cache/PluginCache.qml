@@ -24,6 +24,7 @@ Item {
     property var cachedMessages: []
     property var cachedAuthorsByThread: ({})
     property var cachedAuthorFetchedAt: ({})
+    property var cachedDoneThreadState: ({})
     property var avatarLocalPaths: ({})     // login -> "file:///abs/path.png"
     property real cachedTimestamp: 0
     property bool initialized: false
@@ -61,6 +62,10 @@ Item {
 
     AvatarCacheEntry {
         id: avatarCacheEntryModel
+    }
+
+    DoneThreadState {
+        id: doneThreadStateModel
     }
 
     // -- Initialization / worker state ---------------------------------------
@@ -233,6 +238,12 @@ Item {
         _queueSave()
     }
 
+    function updateDoneThreadState(state) {
+        doneThreadStateModel.readFromObject(state)
+        cachedDoneThreadState = doneThreadStateModel.toObject()
+        _queueSave()
+    }
+
     // -- Authors --------------------------------------------------------------
 
     function updateAuthors(threadId, authors) {
@@ -357,6 +368,7 @@ Item {
         cachedMessages = []
         cachedAuthorsByThread = ({})
         cachedAuthorFetchedAt = ({})
+        cachedDoneThreadState = ({})
         avatarLocalPaths = ({})
         cachedTimestamp = 0
 
@@ -456,6 +468,8 @@ Item {
         cachedMessages = cachePayloadModel.notifications || []
         cachedAuthorsByThread = cachePayloadModel.authorsByThread || ({})
         cachedAuthorFetchedAt = cachePayloadModel.authorFetchedAt || ({})
+        doneThreadStateModel.readFromObject(cachePayloadModel.doneThreadState)
+        cachedDoneThreadState = doneThreadStateModel.toObject()
         cachedTimestamp = cachePayloadModel.lastFetched || 0
 
         // Rebuild avatar local path map, validating files still exist on disk
@@ -525,6 +539,7 @@ Item {
         cachePayloadModel.authorsByThread = cachedAuthorsByThread
         cachePayloadModel.authorFetchedAt = cachedAuthorFetchedAt
         cachePayloadModel.avatarMap = avatarMap
+        cachePayloadModel.doneThreadState = cachedDoneThreadState
 
         _cacheWriteSeq = _cacheWriteSeq + 1
         cacheWorker.sendMessage({
@@ -534,7 +549,8 @@ Item {
         })
         _profile("_writeToDisk.preparePayload", profileStart,
                  "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
-                 + " avatars=" + Object.keys(avatarMap).length)
+                 + " avatars=" + Object.keys(avatarMap).length
+                 + " done=" + Object.keys(cachedDoneThreadState).length)
     }
 
     function _flushPendingMetadata(queueSaveAfterFlush) {

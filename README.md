@@ -38,7 +38,7 @@ This plugin uses a **GitHub classic personal access token**, it can be created o
 *Recommended token scope*:
 
 - `notifications`
-- If you need also full details for threads originated from private repositories, you need also to enable full `repo` permission for this token.
+- If you want to see full details for the threads that originated from private repositories, you need also to enable full `repo` permission for this token.
 
 ## Requirements
 
@@ -47,6 +47,12 @@ This plugin uses a **GitHub classic personal access token**, it can be created o
 - `secret-tool` in `$PATH` (usually pre-installed with `libsecret` on most distros)
 - To present authors, `jq` command line tool is needed to parse `json`  (usually needs a manual install).
 - Internet access to `api.github.com`
+
+## Limitations
+
+Unfortunately, currently `Github` API does not provide full information about the state of each message in the inbox, more precisely, it provides no data regarding if this particular message is `Done` or not.
+
+Due to that, as a workaround, this plugin will maintain and cache `Done` state locally only.
 
 ## Install
 

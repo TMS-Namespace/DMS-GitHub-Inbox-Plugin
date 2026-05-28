@@ -171,7 +171,7 @@ PluginComponent {
         id: fetcher
         token: root.token
         fetchPageCount: root.fetchPageCount
-        doneThreadState: operations.doneThreadState
+        doneThreadState: operations.effectiveDoneThreadState
 
         onFetchBegin: function(totalCount, unreadCount) {
             root._perfLog("onFetchBegin — total=" + totalCount + " unread=" + unreadCount)
@@ -289,11 +289,18 @@ PluginComponent {
             if (itemsChanged) {
                 root.inboxMessages = result.items
                 root._replaceViewMessages(root.inboxMessages)
+                if (_operationShouldUpdateMessageCache(actionType))
+                    cacheCoord.updateMessages(root.inboxMessages)
             }
             if (itemsChanged || result.unreadChanged)
                 root.unreadCount = _recalculateUnread(root.inboxMessages)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
+        }
+
+        onDoneThreadStateChanged: {
+            if (cacheCoord.initialized)
+                cacheCoord.updateDoneThreadState(doneThreadState)
         }
 
         onOperationError: function(errorMessage) {
@@ -806,17 +813,24 @@ PluginComponent {
 
         var cached = cacheCoord.loadCachedState()
         _perfLog("_onCacheReady — loadCachedState done, msgs=" + cached.messages.length)
+        operations.setDoneThreadState(cached.doneThreadState || ({}))
+        var cachedMessages = _filterDoneMessages(cached.messages || [])
 
         // Phase 1: Load messages for immediate bar-pill display
-        if (cached.messages.length > 0) {
-            inboxMessages = cached.messages
-            unreadCount = _recalculateUnread(cached.messages)
-            _queueViewMessages(cached.messages)
+        if (cachedMessages.length > 0) {
+            inboxMessages = cachedMessages
+            unreadCount = _recalculateUnread(cachedMessages)
+            _queueViewMessages(cachedMessages)
             lastUpdated = cached.timestamp
         }
 
         // Defer heavier work (author resolution, preloader) to separate frames
-        _pendingCacheState = cached
+        _pendingCacheState = {
+            messages: cachedMessages,
+            authorsByThread: cached.authorsByThread || ({}),
+            authorFetchedAt: cached.authorFetchedAt || ({}),
+            timestamp: cached.timestamp || 0
+        }
         _perfLog("_onCacheReady (Phase 1) — end")
         Qt.callLater(_onCacheReadyPhase2)
     }
@@ -1054,6 +1068,7 @@ PluginComponent {
 
     function _applyFetchedMessages(items, unread) {
         var nextItems = _mergeCachedMessageFields(items || [])
+        nextItems = _filterDoneMessages(nextItems)
         var nextUnread = _recalculateUnread(nextItems)
         var unchanged = nextUnread === unreadCount
                         && _messagesEquivalent(inboxMessages, nextItems)
@@ -1140,6 +1155,25 @@ PluginComponent {
             merged.push(copy)
         }
         return merged
+    }
+
+    function _filterDoneMessages(items) {
+        var state = operations.effectiveDoneThreadState || ({})
+        var source = items || []
+        var filtered = []
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (item && item.threadId && state[item.threadId])
+                continue
+            filtered.push(item)
+        }
+        return filtered
+    }
+
+    function _operationShouldUpdateMessageCache(actionType) {
+        return actionType !== "thread_done"
+               && actionType !== "threads_done"
+               && actionType !== "repo_done"
     }
 
     function _cloneMessageForMerge(item) {
@@ -1416,7 +1450,7 @@ PluginComponent {
             lastUpdated = 0
             fetcher.cancel()
             authorFetch.clearAllState()
-            operations.resetState()
+            operations.resetState(false)
             avatarPreloader.reset()
             authorsByThread = ({})
             expandedReposState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
@@ -1597,7 +1631,7 @@ PluginComponent {
 
                     StyledText {
                         id: groupingLabel
-                        text: "Group By:"
+                        text: "Group By"
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.surfaceVariantText
                         anchors.verticalCenter: parent.verticalCenter

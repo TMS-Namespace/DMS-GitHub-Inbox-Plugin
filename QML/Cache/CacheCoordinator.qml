@@ -92,6 +92,7 @@ Item {
             messages: diskCache.cachedMessages || [],
             authorsByThread: diskCache.cachedAuthorsByThread || ({}),
             authorFetchedAt: diskCache.cachedAuthorFetchedAt || ({}),
+            doneThreadState: diskCache.cachedDoneThreadState || ({}),
             timestamp: diskCache.cachedTimestamp || 0
         })
         var result = cachedStateModel.toObject()
@@ -183,6 +184,10 @@ Item {
 
     function updateMessages(items) {
         diskCache.updateMessages(items)
+    }
+
+    function updateDoneThreadState(state) {
+        diskCache.updateDoneThreadState(state)
     }
 
     function bulkUpdateAuthors(authorsMap) {

@@ -10,6 +10,7 @@ Author 1.0 Contracts/Author.qml
 AvatarCacheEntry 1.0 Cache/Contracts/AvatarCacheEntry.qml
 CachedState 1.0 Cache/Contracts/CachedState.qml
 CachePayload 1.0 Cache/Contracts/CachePayload.qml
+DoneThreadState 1.0 Cache/Contracts/DoneThreadState.qml
 DateGroupingGroup 1.0 Contracts/DateGroupingGroup.qml
 InboxMessage 1.0 Contracts/InboxMessage.qml
 RepoGroupingGroup 1.0 Contracts/RepoGroupingGroup.qml
