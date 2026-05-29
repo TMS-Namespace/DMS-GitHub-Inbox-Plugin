@@ -24,6 +24,7 @@ Rectangle {
     signal markRepoRead(var items)
     signal markRepoDone(var items)
     signal markThreadRead(string threadId)
+    signal markThreadReadAfterOpen(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
@@ -262,6 +263,7 @@ Rectangle {
                     isBusy: groupCard.isBusy
                     titleLines: groupCard.titleLines
                     onMarkRead: function(threadId) { groupCard.markThreadRead(threadId) }
+                    onMarkReadAfterOpen: function(threadId) { groupCard.markThreadReadAfterOpen(threadId) }
                     onMarkUnread: function(threadId) { groupCard.markThreadUnread(threadId) }
                     onMarkDone: function(threadId) { groupCard.markThreadDone(threadId) }
                     onRequestAuthors: function(threadId, subjectApiUrl, subjectType) {

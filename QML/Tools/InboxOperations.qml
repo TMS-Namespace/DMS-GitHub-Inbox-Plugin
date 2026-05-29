@@ -21,6 +21,7 @@ Item {
     property var doneThreadState: ({})
     property var pendingDoneThreadState: ({})
     property var pendingDoneMessagesByThread: ({})
+    property var pendingReadMessagesByThread: ({})
     readonly property var effectiveDoneThreadState: _mergeDoneStates(doneThreadState, pendingDoneThreadState)
     property var pendingThreadDoneQueue: []
     property var pendingThreadReadQueue: []
@@ -48,6 +49,15 @@ Item {
             GitHubConstants.githubThreadApiPrefix + threadId,
             "thread_read", threadId, "", ""
         )
+    }
+
+    function markThreadReadAfterOpen(threadId) {
+        if (!threadId)
+            return
+        if (!token)
+            return
+        operationApplied("thread_read_pending", threadId, "", [])
+        _queueThreadReadSync([threadId])
     }
 
     function markThreadAsUnread(threadId) {
@@ -143,6 +153,30 @@ Item {
         doneThreadState = _normalizeDoneThreadState(state)
     }
 
+    function applyPendingReadState(messages) {
+        var hasPending = false
+        for (var pendingId in pendingReadMessagesByThread) {
+            hasPending = true
+            break
+        }
+        if (!hasPending)
+            return messages
+
+        var source = messages || []
+        var updated = []
+        var changed = false
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (item && item.threadId && pendingReadMessagesByThread[item.threadId] && item.unread) {
+                updated.push(_markAsReadItem(item))
+                changed = true
+            } else {
+                updated.push(item)
+            }
+        }
+        return changed ? updated : messages
+    }
+
     /// Apply operation result to a messages list and return updated state.
     function applyResult(actionType, threadId, repositoryFullName, messages, threadIds) {
         var updated = []
@@ -167,8 +201,13 @@ Item {
             return _restorePendingDoneMessage(threadId, messages)
         }
 
-        if (actionType === "thread_read_sync")
+        if (actionType === "thread_read_sync") {
+            _removePendingReadMessage(threadId)
             return { items: messages, unreadChanged: false }
+        }
+
+        if (actionType === "thread_read_revert")
+            return _restorePendingReadMessage(threadId, messages)
 
         if (actionType === "all_read") {
             for (var allIndex = 0; allIndex < messages.length; allIndex++)
@@ -245,7 +284,10 @@ Item {
             return { items: updated, unreadChanged: true }
         }
 
-        // thread_read
+        if (actionType === "thread_read_pending")
+            _stashPendingReadMessages([threadId], messages)
+
+        // thread_read, thread_read_pending
         for (var index = 0; index < messages.length; index++) {
             var item = messages[index]
             if (item.threadId === threadId)
@@ -280,6 +322,7 @@ Item {
         pendingThreadReadQueue = []
         pendingDoneThreadState = ({})
         pendingDoneMessagesByThread = ({})
+        pendingReadMessagesByThread = ({})
         pendingThreadDoneIndex = 0
         pendingThreadReadIndex = 0
         if (clearDoneState === undefined || clearDoneState)
@@ -512,6 +555,32 @@ Item {
         pendingDoneMessagesByThread = next
     }
 
+    function _stashPendingReadMessages(threadIds, messages) {
+        var idSet = _threadIdSet(threadIds || [])
+        var next = _cloneMap(pendingReadMessagesByThread)
+        var changed = false
+        var items = messages || []
+        for (var index = 0; index < items.length; index++) {
+            var item = items[index]
+            if (!item || !item.threadId || !idSet[item.threadId] || next[item.threadId])
+                continue
+            if (!item.unread)
+                continue
+            next[item.threadId] = _cloneItem(item)
+            changed = true
+        }
+        if (changed)
+            pendingReadMessagesByThread = next
+    }
+
+    function _removePendingReadMessage(threadId) {
+        if (!threadId || !pendingReadMessagesByThread[threadId])
+            return
+        var next = _cloneMap(pendingReadMessagesByThread)
+        delete next[threadId]
+        pendingReadMessagesByThread = next
+    }
+
     function _restorePendingDoneMessage(threadId, messages) {
         var stored = pendingDoneMessagesByThread[threadId]
         _removePendingDoneMessage(threadId)
@@ -532,6 +601,31 @@ Item {
             return rightTime - leftTime
         })
         return { items: restored, unreadChanged: true }
+    }
+
+    function _restorePendingReadMessage(threadId, messages) {
+        var stored = pendingReadMessagesByThread[threadId]
+        _removePendingReadMessage(threadId)
+        if (!stored)
+            return { items: messages, unreadChanged: false }
+
+        var source = messages || []
+        var updated = []
+        var changed = false
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (item && item.threadId === threadId) {
+                var copy = _cloneItem(item)
+                copy.unread = true
+                updated.push(copy)
+                changed = true
+            } else {
+                updated.push(item)
+            }
+        }
+
+        return changed ? { items: updated, unreadChanged: true }
+                       : { items: messages, unreadChanged: false }
     }
 
     function _normalizeDoneThreadState(source) {
@@ -619,5 +713,7 @@ Item {
     function _handleMutationFailure(actionType, threadId) {
         if (actionType === "thread_done_sync" && threadId)
             operationApplied("thread_done_revert", threadId, "", [])
+        if (actionType === "thread_read_sync" && threadId)
+            operationApplied("thread_read_revert", threadId, "", [])
     }
 }

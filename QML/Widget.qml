@@ -1159,6 +1159,7 @@ PluginComponent {
 
     function _applyFetchedMessages(items, unread) {
         var nextItems = _mergeCachedMessageFields(items || [])
+        nextItems = operations.applyPendingReadState(nextItems)
         nextItems = _filterDoneMessages(nextItems)
         var nextUnread = _recalculateUnread(nextItems)
         var unchanged = nextUnread === unreadCount
@@ -1914,6 +1915,7 @@ PluginComponent {
                     operations.markThreadsDone(items)
                 }
                 onMarkThreadRead: function(threadId) { operations.markThreadAsRead(threadId) }
+                onMarkThreadReadAfterOpen: function(threadId) { operations.markThreadReadAfterOpen(threadId) }
                 onMarkThreadUnread: function(threadId) { operations.markThreadAsUnread(threadId) }
                 onMarkThreadDone: function(threadId) { operations.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {

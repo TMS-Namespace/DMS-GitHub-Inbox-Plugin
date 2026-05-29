@@ -19,6 +19,7 @@ Item {
     property int extraHeight: 0
 
     signal markRead(string threadId)
+    signal markReadAfterOpen(string threadId)
     signal markUnread(string threadId)
     signal markDone(string threadId)
     signal requestAuthors(string threadId, string subjectApiUrl, string subjectType)
@@ -145,6 +146,16 @@ Item {
         Qt.openUrlExternally(repoUrl)
     }
 
+    function openMessageUrl() {
+        if (!webUrl)
+            return
+        var shouldMarkRead = row.unread && row.threadId
+        Qt.openUrlExternally(webUrl)
+        if (shouldMarkRead)
+            row.markReadAfterOpen(row.threadId)
+        row.closePopout()
+    }
+
     function authorRequestDelayMs() {
         var numericId = parseInt(threadId || "0")
         if (isNaN(numericId))
@@ -249,12 +260,7 @@ Item {
                             height: titleHost.height
                             hoverEnabled: true
                             cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                if (webUrl) {
-                                    row.closePopout()
-                                    Qt.openUrlExternally(webUrl)
-                                }
-                            }
+                            onClicked: row.openMessageUrl()
                         }
                     }
 

@@ -39,6 +39,7 @@ Item {
     signal markRepoRead(var items)
     signal markRepoDone(var items)
     signal markThreadRead(string threadId)
+    signal markThreadReadAfterOpen(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
@@ -358,6 +359,7 @@ Item {
                 onMarkRepoRead: function(items) { panel.markRepoRead(items) }
                 onMarkRepoDone: function(items) { panel.markRepoDone(items) }
                 onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                onMarkThreadReadAfterOpen: function(threadId) { panel.markThreadReadAfterOpen(threadId) }
                 onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
                 onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
@@ -379,6 +381,7 @@ Item {
                 onMarkGroupRead: function(items) { panel.markDateGroupRead(items) }
                 onMarkGroupDone: function(items) { panel.markDateGroupDone(items) }
                 onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                onMarkThreadReadAfterOpen: function(threadId) { panel.markThreadReadAfterOpen(threadId) }
                 onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
                 onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
