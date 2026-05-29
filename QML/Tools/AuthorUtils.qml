@@ -134,8 +134,6 @@ QtObject {
     function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails, reason) {
         var urls = []
         var perPageQuery = GitHubConstants.authorFetchPerPageQuery
-        var normalizedReason = String(reason || "").toLowerCase()
-
         function push(url) {
             if (!url || urls.indexOf(url) >= 0)
                 return
@@ -143,9 +141,7 @@ QtObject {
         }
 
         var threadParentUrl = isThreadParentApiUrl(subjectApiUrl)
-        var skipRootForComment = threadParentUrl && normalizedReason === "comment"
-        if (!skipRootForComment)
-            push(subjectApiUrl)
+        push(subjectApiUrl)
 
         if (includeDetails === false)
             return urls

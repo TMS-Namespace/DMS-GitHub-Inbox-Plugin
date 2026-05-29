@@ -1068,8 +1068,8 @@ PluginComponent {
 
         if ((normalizedType === "pullrequest" || normalizedType === "issue")
                 && normalizedReason === "comment"
-                && filtered.length > 1)
-            return filtered.slice(0, 1)
+                && filtered.length > GitHubConstants.maxAuthorsDisplayedPerMessage)
+            return filtered.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
 
         if (normalizedType === "pullrequest"
                 && normalizedReason === "author"
