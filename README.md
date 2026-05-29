@@ -71,7 +71,7 @@ In DMS:
 
 ### Method 2
 
-Or clone repo, and run (will add `Symlink` to plugin folder):
+Or clone repo, and run (this will add `Symlink` to plugin folder):
 
 ```bash
 chmod +x Support/setup-symlink.sh

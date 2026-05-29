@@ -16,7 +16,7 @@ var GHC = (function () {
         // -- Plugin Identity --------------------------------------------------
 
         /// The DMS plugin namespace ID. Must match Constants.qml and plugin.json.
-        pluginNamespaceId: "github-inbox",
+        pluginNamespaceId: "githubInbox",
 
         // -- GitHub URLs & Headers -------------------------------------------
 

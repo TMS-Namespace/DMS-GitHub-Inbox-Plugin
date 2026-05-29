@@ -744,27 +744,17 @@ PluginComponent {
 
     function _sendDesktopNotification(newMessages) {
         var body = ""
-        var maxLines = GitHubConstants.notificationMaxLines
+        var detailedLimit = GitHubConstants.notificationDetailedMessageLimit
 
-        if (newMessages.length === 1) {
-            var lines = (newMessages[0].title || "").split("\n")
-            var trimmed = []
-            for (var i = 0; i < Math.min(maxLines, lines.length); i++) {
-                var line = lines[i].trim()
-                if (line)
-                    trimmed.push(line)
-            }
-            body = trimmed.join("\n") || "New inbox message"
-        } else {
-            var count = Math.min(maxLines, newMessages.length)
+        if (newMessages.length <= detailedLimit) {
             var parts = []
-            for (var j = 0; j < count; j++) {
-                var title = (newMessages[j].title || "").split("\n")[0].trim()
+            for (var i = 0; i < newMessages.length; i++) {
+                var title = (newMessages[i].title || "").split("\n")[0].trim()
                 parts.push(title || "New message")
             }
             body = parts.join("\n")
-            if (newMessages.length > maxLines)
-                body += "\n\u2026 and " + (newMessages.length - maxLines) + " more"
+        } else {
+            body = "New GitHub inbox messages"
         }
 
         var summary = newMessages.length === 1
