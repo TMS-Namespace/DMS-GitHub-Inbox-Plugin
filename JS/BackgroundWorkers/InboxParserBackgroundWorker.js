@@ -30,6 +30,16 @@ WorkerScript.onMessage = function (message) {
             )
             if (message.shouldExpand)
                 expansionUrls = parseSubjectExpansionUrls(message.buffer, message.splitToken || "")
+            if (isCiAuthorSubject(message.subjectType || "", message.reason || "")) {
+                var runAuthors = parseBestActionRunAuthorsMulti(
+                    message.buffer,
+                    message.splitToken || "",
+                    message.subjectTitle || "",
+                    message.updatedAt || ""
+                )
+                if (runAuthors.length > 0)
+                    authors = runAuthors
+            }
         }
         WorkerScript.sendMessage({
             action: "authorsResult",
@@ -481,6 +491,45 @@ function parseSubjectAuthorsMulti(payloadText, splitToken) {
     return merged
 }
 
+function isCiAuthorSubject(subjectType, reason) {
+    var normalizedType = String(subjectType || "").toLowerCase()
+    var normalizedReason = String(reason || "").toLowerCase()
+    return normalizedReason === "ci_activity"
+        || normalizedType === "checksuite"
+        || normalizedType === "checkrun"
+        || normalizedType === "workflowrun"
+}
+
+function parseBestActionRunAuthorsMulti(payloadText, splitToken, subjectTitle, updatedAt) {
+    var marker = "\n" + (splitToken || "") + "\n"
+    var normalized = String(payloadText || "")
+    if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+        normalized += "\n"
+
+    var parts = normalized.split(marker)
+    var best = { score: -1, url: "", reference: "", run: null }
+    for (var i = 0; i < parts.length; i++) {
+        var part = String(parts[i] || "").trim()
+        if (!part) continue
+        var parsed
+        try { parsed = JSON.parse(part) } catch (e) { continue }
+        best = chooseBestActionRunUrl(parsed, subjectTitle, updatedAt, best)
+    }
+
+    var authors = []
+    var byKey = {}
+    var run = best.run || null
+    if (!run)
+        return authors
+
+    pushAuthorCandidate(authors, byKey, run.triggeringActor || run.triggering_actor)
+    if (authors.length === 0)
+        pushAuthorCandidate(authors, byKey, run.actor)
+    if (authors.length === 0)
+        pushAuthorCandidate(authors, byKey, run.user)
+    return authors
+}
+
 function normalizeApiUrlWorker(url) {
     var normalized = String(url || "").trim()
     if (!normalized) return ""
@@ -638,6 +687,8 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
     if (value && typeof value === "object") {
         if (value.actionRunUrl)
             return { score: 1000000, url: String(value.actionRunUrl), reference: String(value.actionRunNumber || "") }
+        if (isWorkflowRunObject(value))
+            runs.push(value)
         if (Array.isArray(value.actionRuns))
             runs = runs.concat(value.actionRuns)
         if (Array.isArray(value.workflow_runs))
@@ -699,10 +750,23 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
         }
 
         if (score > best.score)
-            best = { score: score, url: url, reference: runNumber.replace(/^#/, "") }
+            best = { score: score, url: url, reference: runNumber.replace(/^#/, ""), run: run }
     }
 
     return best
+}
+
+function isWorkflowRunObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return false
+    var url = String(value.htmlUrl || value.html_url || "").trim()
+    if (url.indexOf("/actions/runs/") < 0)
+        return false
+    return value.runNumber !== undefined
+        || value.run_number !== undefined
+        || value.actor !== undefined
+        || value.triggeringActor !== undefined
+        || value.triggering_actor !== undefined
 }
 
 function workflowNameFromNotificationTitle(title) {

@@ -19,7 +19,7 @@ QtObject {
 
     /// The DMS layer-namespace / plugin-ID registered with PluginComponent and
     /// PluginSettings.  Must match the value in plugin.json.
-    readonly property string pluginNamespaceId: "github-inbox"
+    readonly property string pluginNamespaceId: "githubInbox"
 
 
     // =========================================================================
@@ -265,13 +265,13 @@ QtObject {
     readonly property int minPollIntervalSeconds: 60
 
     /// Default maximum number of inbox messages shown per repository group.
-    readonly property int defaultGroupItemLimit: 25
+    readonly property int defaultGroupItemLimit: 10
 
     /// Default number of API pages fetched per refresh cycle.
     readonly property int defaultFetchPageCount: 3
 
     /// Default popup height expressed in message-row "height units".
-    readonly property int defaultPopupHeightUnits: 10
+    readonly property int defaultPopupHeightUnits: 15
 
     /// Default maximum number of lines rendered for an inbox message title.
     readonly property int defaultTitleLines: 2
@@ -757,8 +757,9 @@ QtObject {
     /// Application name passed to notify-send via the -a flag.
     readonly property string notificationAppName: "GitHub Inbox"
 
-    /// Maximum number of message lines shown in a single notification body.
-    readonly property int notificationMaxLines: 3
+    /// Maximum number of new inbox messages whose title is shown in the
+    /// desktop-notification body. Larger batches use a generic message.
+    readonly property int notificationDetailedMessageLimit: 2
 
     /// Notification expiry timeout in milliseconds passed to notify-send -t.
     readonly property int notificationExpireMs: 10000

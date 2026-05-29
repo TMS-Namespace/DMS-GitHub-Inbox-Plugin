@@ -56,7 +56,7 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 
   If you mark a notification as `Done` in the GitHub web UI, the API can still return it as a `Read` thread. In that case the plugin cannot reliably detect that it was marked `Done`, so it may remain visible as `Read`.
 
-- Notifications from `Dependabots` are supported, since `Github` does not provide a well generalizable  way to fetch them.
+- Notifications from `Dependabots` are not supported, since `Github` does not provide a well generalizable  way to fetch them.
 
 ## Install
 
@@ -71,7 +71,7 @@ In DMS:
 
 ### Method 2
 
-Or clone repo, and run (will add `Symlink` to plugin folder):
+Or clone repo, and run (this will add `Symlink` to plugin folder):
 
 ```bash
 chmod +x Support/setup-symlink.sh

@@ -58,7 +58,9 @@ Item {
     }
 
     property int authorRowHeight: GitHubConstants.messageAuthorRowHeightPx
-    property int authorColumnHeight: showAuthors ? Math.max(0, limitedAuthors.length * authorRowHeight) : 0
+    property int authorColumnHeight: showAuthors
+                                     ? GitHubConstants.maxAuthorsDisplayedPerMessage * authorRowHeight
+                                     : 0
     property int repositoryRowHeight: showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
     property int repositoryRowSpacing: showRepositoryInfo ? GitHubConstants.messageMainInfoColumnSpacingPx : 0
     property int contentMinHeight: GitHubConstants.messageRowContentMinHeightPx
