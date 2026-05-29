@@ -57,7 +57,7 @@ Item {
         var pages = Math.max(1, fetchPageCount)
         var baseQuery = "per_page=" + GitHubConstants.messagesApiPageSize
         var allBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
-        var participatingBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&participating=true"
+        var participatingBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true&participating=true"
         var command = ["curl", "--fail-early"]
 
         // Fetch "all" pages first

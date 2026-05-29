@@ -180,7 +180,7 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
     var mergedItems = []
     for (var threadId in allItemsByThread) {
         var mergedItem = allItemsByThread[threadId]
-        mergedItem.participated = mergedItem.participated || !!participationMap[threadId]
+        mergedItem.participated = !!participationMap[threadId]
         mergedItems.push(mergedItem)
     }
 
@@ -215,18 +215,13 @@ function parseMessagesPayload(payloadText) {
         var subject = item.subject || {}
         var repository = item.repository || {}
 
-        var reason = item.reason || ""
         var updatedAt = item.updated_at || ""
-        var participatingReasons = {
-            comment: true, author: true, assign: true,
-            review_requested: true, mention: true, team_mention: true
-        }
 
         items.push({
             threadId: item.id || "",
             unread: !!item.unread,
-            reason: reason,
-            participated: !!participatingReasons[reason],
+            reason: item.reason || "",
+            participated: false,
             updatedAt: updatedAt,
             updatedAtMs: Date.parse(updatedAt) || 0,
             repository: repository.full_name || "",

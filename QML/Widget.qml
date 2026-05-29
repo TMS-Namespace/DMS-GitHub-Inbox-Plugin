@@ -60,6 +60,8 @@ PluginComponent {
     property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
     property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, GitHubConstants.defaultEnableNotifications)
     property string groupingMode: _normalizeGroupingMode(pluginData.groupingMode || "repo")
+    property string readFilter: _normalizeTriStateFilter(pluginData.readFilter || "both")
+    property string participationFilter: _normalizeTriStateFilter(pluginData.participationFilter || "both")
     property string clearCacheRequestFlag: pluginData.clearCacheRequested || ""
 
     // =========================================================================
@@ -124,6 +126,29 @@ PluginComponent {
 
     function _normalizeGroupingMode(value) {
         return String(value || "") === "date" ? "date" : "repo"
+    }
+
+    function _normalizeTriStateFilter(value) {
+        var normalized = String(value || "").toLowerCase()
+        return normalized === "yes" || normalized === "no" ? normalized : "both"
+    }
+
+    function setReadFilter(value) {
+        var nextFilter = _normalizeTriStateFilter(value)
+        if (readFilter === nextFilter)
+            return
+        readFilter = nextFilter
+        if (pluginService)
+            pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "readFilter", nextFilter)
+    }
+
+    function setParticipationFilter(value) {
+        var nextFilter = _normalizeTriStateFilter(value)
+        if (participationFilter === nextFilter)
+            return
+        participationFilter = nextFilter
+        if (pluginService)
+            pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "participationFilter", nextFilter)
     }
 
     function setGroupingMode(value) {
@@ -1945,6 +1970,8 @@ PluginComponent {
                 authorsByThread: root.authorsByThread
                 showAuthorInfo: root.loadAuthorInfo
                 groupingMode: root.groupingMode
+                readFilter: root.readFilter
+                participationFilter: root.participationFilter
 
                 onRefreshNow: root._refreshNow()
                 onMarkAllRead: operations.markAllAsRead()
@@ -1984,6 +2011,12 @@ PluginComponent {
                     authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, false, null, resolvedSubjectTitle)
                 }
                 onClosePopout: root.closePopout()
+                onReadFilterChangedByUser: function(value) {
+                    root.setReadFilter(value)
+                }
+                onParticipationFilterChangedByUser: function(value) {
+                    root.setParticipationFilter(value)
+                }
                 onPersistExpandedRepos: function(state) {
                     root.expandedReposState = root._cloneExpandedState(state)
                 }

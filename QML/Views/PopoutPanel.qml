@@ -44,6 +44,8 @@ Item {
     signal markThreadDone(string threadId)
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
     signal closePopout()
+    signal readFilterChangedByUser(string value)
+    signal participationFilterChangedByUser(string value)
     signal persistExpandedRepos(var state)
     signal persistExpandedDateGroups(var state)
     signal markDateGroupRead(var items)
@@ -463,7 +465,7 @@ Item {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: panel.readFilter = modelData.value
+                                    onClicked: panel.readFilterChangedByUser(modelData.value)
                                 }
 
                                 StyledText {
@@ -526,7 +528,7 @@ Item {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: panel.participationFilter = modelData.value
+                                    onClicked: panel.participationFilterChangedByUser(modelData.value)
                                 }
 
                                 StyledText {

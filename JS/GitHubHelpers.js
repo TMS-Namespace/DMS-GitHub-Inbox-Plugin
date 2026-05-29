@@ -52,17 +52,11 @@ function parseMessagesPayload(payloadText) {
         if (unread)
             unreadCount++
 
-        var reason = item.reason || ""
-        var participatingReasons = {
-            comment: true, author: true, assign: true,
-            review_requested: true, mention: true, team_mention: true
-        }
-
         items.push({
             threadId: item.id || "",
             unread: unread,
-            reason: reason,
-            participated: !!participatingReasons[reason],
+            reason: item.reason || "",
+            participated: false,
             updatedAt: item.updated_at || "",
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",
