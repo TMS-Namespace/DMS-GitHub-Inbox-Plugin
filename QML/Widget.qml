@@ -521,7 +521,8 @@ PluginComponent {
             var needsMissingAuthors = loadAuthorInfo && knownAuthors.length === 0
             var needsAuthor = loadAuthorInfo
                               && (needsMissingAuthors
-                                  || (authorFetch.fetchedAtUpdatedAt[item.threadId] || "") !== (item.updatedAt || "")
+                                  || !authorFetch.fetchedAtMatches(authorFetch.fetchedAtUpdatedAt[item.threadId],
+                                                                   item.updatedAt)
                                   || authorFetch.requiresSubjectWebUrlResolution(item)
                                   || authorFetch.requiresSubjectReferenceResolution(item)
                                   || !authorFetch.hasFetchedAuthorDetailsForMessage(item))
@@ -882,7 +883,7 @@ PluginComponent {
             var knownAuthors = resolvedAuthors[threadId] || []
             if (knownAuthors.length > 0)
                 continue
-            if ((nextFetchedAt[threadId] || "") !== (message.updatedAt || ""))
+            if (!authorFetch.fetchedAtMatches(nextFetchedAt[threadId], message.updatedAt))
                 continue
 
             var fallbackAuthor = _fallbackAuthorForMessage(message)
@@ -963,7 +964,7 @@ PluginComponent {
                 continue
 
             var fetchedAt = nextFetchedAt[threadId] || ""
-            if (fetchedAt !== (message.updatedAt || ""))
+            if (!authorFetch.fetchedAtMatches(fetchedAt, message.updatedAt))
                 missingAuthorFetchThreadIds[threadId] = true
         }
 
@@ -1015,7 +1016,7 @@ PluginComponent {
             var normalizedAuthors = _normalizeCachedAuthorsForMessage(sourceMessage, authors)
             var changed = normalizedAuthors.length !== authors.length
             if (authors.length === 0
-                    && (fetchedAt[threadId] || "") === (sourceMessage.updatedAt || ""))
+                    && authorFetch.fetchedAtMatches(fetchedAt[threadId], sourceMessage.updatedAt))
                 changed = true
             for (var authorIndex = 0; authorIndex < authors.length; authorIndex++) {
                 var authorLogin = String((authors[authorIndex] && authors[authorIndex].login) || "").trim().toLowerCase()

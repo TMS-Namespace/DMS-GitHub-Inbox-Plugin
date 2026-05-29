@@ -423,10 +423,8 @@ function parseSubjectAuthors(payloadText) {
 
     function collectFromNode(value) {
         if (!value || typeof value !== "object") return
-        if (value.triggering_actor)
-            pushAuthorValue(value.triggering_actor)
-        else
-            pushAuthorValue(value.actor)
+        pushAuthorValue(value.actor)
+        pushAuthorValue(value.triggering_actor)
 
         pushAuthorValue(value.user)
         pushAuthorValue(value.author)
@@ -440,7 +438,7 @@ function parseSubjectAuthors(payloadText) {
     function walk(value, depth) {
         if (!value || depth > 4) return
         if (Array.isArray(value)) {
-            for (var i = 0; i < value.length; i++) walk(value[i], depth + 1)
+            for (var i = value.length - 1; i >= 0; i--) walk(value[i], depth + 1)
             return
         }
         if (typeof value !== "object") return

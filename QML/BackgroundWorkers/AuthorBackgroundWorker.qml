@@ -87,6 +87,15 @@ Item {
         profileOperation(label, startMs, details)
     }
 
+    function fetchedAtValue(updatedAt) {
+        var value = String(updatedAt || "")
+        return value ? ("authors-v2:" + value) : ""
+    }
+
+    function fetchedAtMatches(cachedValue, updatedAt) {
+        return String(cachedValue || "") === fetchedAtValue(updatedAt)
+    }
+
     Timer {
         id: prefetchTimer
         interval: GitHubConstants.authorPrefetchBatchIntervalMs
@@ -212,7 +221,7 @@ Item {
                     && !needsSubjectReference
                     && !needsAuthorDetails
                     && !needsMissingAuthors
-                    && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
+                    && fetchedAtMatches(fetchedAtUpdatedAt[item.threadId], item.updatedAt))
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -281,10 +290,14 @@ Item {
                     && !needsSubjectReference
                     && !needsAuthorDetails
                     && !needsMissingAuthors
-                    && fetchedAtUpdatedAt[item.threadId] === item.updatedAt)
+                    && fetchedAtMatches(fetchedAtUpdatedAt[item.threadId], item.updatedAt))
                 continue
 
-            if (!needsSubjectWebUrl && !needsSubjectReference && !needsAuthorDetails && existingAuthors.length > 0)
+            if (!needsSubjectWebUrl
+                    && !needsSubjectReference
+                    && !needsAuthorDetails
+                    && existingAuthors.length > 0
+                    && fetchedAtMatches(fetchedAtUpdatedAt[item.threadId], item.updatedAt))
                 continue
 
             var subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item)
@@ -517,8 +530,9 @@ Item {
         _pendingAvatarPreloadAuthors = pendingAvatars
 
         if (threadId) {
-            fetchedAtUpdatedAt[threadId] = updatedAt
-            authorFetchedAtChanged(threadId, updatedAt)
+            var fetchedMarker = fetchedAtValue(updatedAt)
+            fetchedAtUpdatedAt[threadId] = fetchedMarker
+            authorFetchedAtChanged(threadId, fetchedMarker)
         }
 
         if (message.shouldExpand) {
@@ -634,7 +648,7 @@ Item {
             var lastFetchedUpdatedAt = fetchedAtUpdatedAt[item.threadId] || ""
             var forceFetch = !!item.force
             var includeDetails = !!item.includeDetails
-            if (!forceFetch && !includeDetails && lastFetchedUpdatedAt === item.updatedAt)
+            if (!forceFetch && !includeDetails && fetchedAtMatches(lastFetchedUpdatedAt, item.updatedAt))
                 continue
 
             // Message updated since last fetch: clear URL-level state once,
@@ -899,7 +913,7 @@ Item {
             + "api_version=$6\n"
             + "shift 6\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
-            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then .[] else . end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($o): ($o.triggering_actor? // $o.actor?), $o.user?, $o.author?, $o.sender?, $o.creator?, $o.merged_by?, $o.closed_by?, $o.dismissed_by?, ($o.workflow_runs?[]? | (.triggering_actor? // .actor?)); rootobj as $root | {authors:([nodes as $n | author_sources($n) | validauthor] | reduce .[] as $a ([]; if any(.[]; .login == $a.login and .htmlUrl == $a.htmlUrl and .avatarUrl == $a.avatarUrl) then . else . + [$a] end)), subjectWebUrl:($root.html_url // \"\"), subjectReference:(($root.subjectReference // $root.subject_reference // $root.run_number // \"\") | tostring), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), runNumber:((.run_number // \"\") | tostring), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
+            + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then reverse[] else . end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($o): $o.actor?, $o.triggering_actor?, $o.user?, $o.author?, $o.sender?, $o.creator?, $o.merged_by?, $o.closed_by?, $o.dismissed_by?, ($o.workflow_runs?[]? | .actor?), ($o.workflow_runs?[]? | .triggering_actor?); rootobj as $root | {authors:([nodes as $n | author_sources($n) | validauthor] | reduce .[] as $a ([]; if any(.[]; .login == $a.login and .htmlUrl == $a.htmlUrl and .avatarUrl == $a.avatarUrl) then . else . + [$a] end)), subjectWebUrl:($root.html_url // \"\"), subjectReference:(($root.subjectReference // $root.subject_reference // $root.run_number // \"\") | tostring), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), runNumber:((.run_number // \"\") | tostring), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\")})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
             + "for url in \"$@\"; do\n"
             + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"
