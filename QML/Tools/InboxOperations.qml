@@ -153,6 +153,26 @@ Item {
         doneThreadState = _normalizeDoneThreadState(state)
     }
 
+    function markThreadIdsLocallyDone(threadIds) {
+        var doneCopy = _cloneMap(doneThreadState)
+        var pendingCopy = _cloneMap(pendingDoneThreadState)
+        var changed = false
+        var ids = threadIds || []
+        for (var index = 0; index < ids.length; index++) {
+            var threadId = String(ids[index] || "").trim()
+            if (!threadId || doneCopy[threadId])
+                continue
+            doneCopy[threadId] = true
+            delete pendingCopy[threadId]
+            _removePendingDoneMessage(threadId)
+            changed = true
+        }
+        if (!changed)
+            return
+        doneThreadState = doneCopy
+        pendingDoneThreadState = pendingCopy
+    }
+
     function applyPendingReadState(messages) {
         var hasPending = false
         for (var pendingId in pendingReadMessagesByThread) {

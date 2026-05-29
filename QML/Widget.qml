@@ -1160,6 +1160,9 @@ PluginComponent {
     function _applyFetchedMessages(items, unread) {
         var nextItems = _mergeCachedMessageFields(items || [])
         nextItems = operations.applyPendingReadState(nextItems)
+        var inferredDoneThreadIds = _inferDoneThreadIdsFromRefresh(nextItems)
+        if (inferredDoneThreadIds.length > 0)
+            operations.markThreadIdsLocallyDone(inferredDoneThreadIds)
         nextItems = _filterDoneMessages(nextItems)
         var nextUnread = _recalculateUnread(nextItems)
         var unchanged = nextUnread === unreadCount
@@ -1181,6 +1184,49 @@ PluginComponent {
         _latestLocalMessageUpdatedAtMs = _latestMessageUpdatedAtMs(nextItems)
         _queueDesktopNotifications(newMessages)
         return true
+    }
+
+    function _inferDoneThreadIdsFromRefresh(fetchedItems) {
+        var previousItems = inboxMessages || []
+        var incomingItems = fetchedItems || []
+        if (previousItems.length === 0)
+            return []
+
+        var incomingByThread = {}
+        var oldestIncomingMs = 0
+        for (var index = 0; index < incomingItems.length; index++) {
+            var incoming = incomingItems[index]
+            if (!incoming || !incoming.threadId)
+                continue
+            incomingByThread[incoming.threadId] = true
+            var incomingMs = incoming.updatedAtMs || Date.parse(incoming.updatedAt || "") || 0
+            if (incomingMs && (oldestIncomingMs === 0 || incomingMs < oldestIncomingMs))
+                oldestIncomingMs = incomingMs
+        }
+
+        var doneState = operations.effectiveDoneThreadState || ({})
+        var inferred = []
+        var seen = {}
+
+        for (var prevIndex = 0; prevIndex < previousItems.length; prevIndex++) {
+            var previous = previousItems[prevIndex]
+            if (!previous || !previous.threadId || incomingByThread[previous.threadId]
+                    || doneState[previous.threadId] || seen[previous.threadId])
+                continue
+
+            var previousMs = previous.updatedAtMs || Date.parse(previous.updatedAt || "") || 0
+            if (incomingItems.length > 0
+                    && (!oldestIncomingMs || !previousMs || previousMs < oldestIncomingMs))
+                continue
+
+            seen[previous.threadId] = true
+            inferred.push(previous.threadId)
+        }
+
+        if (inferred.length > 0 && GitHubConstants.profileLoggingEnabled)
+            console.warn("[GitHubInbox] inferred " + inferred.length
+                         + " missing threads as done after refresh")
+        return inferred
     }
 
     function _scheduleApiStatsRefreshComplete() {
