@@ -152,10 +152,10 @@ Item {
         if (!webUrl)
             return
         var shouldMarkRead = row.unread && row.threadId
+        row.closePopout()
         Qt.openUrlExternally(webUrl)
         if (shouldMarkRead)
             row.markReadAfterOpen(row.threadId)
-        row.closePopout()
     }
 
     function authorRequestDelayMs() {
