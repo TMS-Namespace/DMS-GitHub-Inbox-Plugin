@@ -13,9 +13,16 @@ WorkerScript.onMessage = function (message) {
         var authors = []
         var expansionUrls = []
         var subjectWebUrl = ""
+        var subjectReference = ""
         if (message.buffer) {
             authors = parseSubjectAuthorsMulti(message.buffer, message.splitToken || "")
             subjectWebUrl = parseSubjectWebUrlMulti(
+                message.buffer,
+                message.splitToken || "",
+                message.subjectTitle || "",
+                message.updatedAt || ""
+            )
+            subjectReference = parseSubjectReferenceMulti(
                 message.buffer,
                 message.splitToken || "",
                 message.subjectTitle || "",
@@ -30,10 +37,14 @@ WorkerScript.onMessage = function (message) {
             threadId: message.threadId || "",
             updatedAt: message.updatedAt || "",
             requestedUrls: message.requestedUrls || [],
+            automaticPrefetch: !!message.automaticPrefetch,
+            subjectType: message.subjectType || "",
+            reason: message.reason || "",
             shouldExpand: !!message.shouldExpand,
             fallbackAuthor: message.fallbackAuthor || null,
             authors: authors,
             subjectWebUrl: subjectWebUrl,
+            subjectReference: subjectReference,
             expansionUrls: expansionUrls
         })
         return
@@ -169,7 +180,7 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
     var mergedItems = []
     for (var threadId in allItemsByThread) {
         var mergedItem = allItemsByThread[threadId]
-        mergedItem.participated = mergedItem.participated || !!participationMap[threadId]
+        mergedItem.participated = !!participationMap[threadId]
         mergedItems.push(mergedItem)
     }
 
@@ -204,18 +215,13 @@ function parseMessagesPayload(payloadText) {
         var subject = item.subject || {}
         var repository = item.repository || {}
 
-        var reason = item.reason || ""
         var updatedAt = item.updated_at || ""
-        var participatingReasons = {
-            comment: true, author: true, assign: true,
-            review_requested: true, mention: true, team_mention: true
-        }
 
         items.push({
             threadId: item.id || "",
             unread: !!item.unread,
-            reason: reason,
-            participated: !!participatingReasons[reason],
+            reason: item.reason || "",
+            participated: false,
             updatedAt: updatedAt,
             updatedAtMs: Date.parse(updatedAt) || 0,
             repository: repository.full_name || "",
@@ -225,6 +231,7 @@ function parseMessagesPayload(payloadText) {
             subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
+            subjectReference: "",
             webUrl: resolveWebUrl(item),
             webUrlResolved: false
         })
@@ -307,9 +314,23 @@ function authorAvatarUrl(authorLike) {
     if (!authorLike) return ""
     var avatarUrl = String(authorLike.avatarUrl || authorLike.avatar_url || "").trim()
     if (avatarUrl) return avatarUrl
+    var htmlUrl = String(authorLike.htmlUrl || authorLike.html_url || "").trim()
+    if (isGitHubAppUrl(htmlUrl)) return htmlUrl + ".png?size=" + _AVATAR_DEFAULT_SIZE_PX
     var login = String(authorLike.login || "").trim()
     if (login) return defaultAvatarUrlForLogin(login)
     return ""
+}
+
+function appSlugFromHtmlUrl(htmlUrl) {
+    var normalized = String(htmlUrl || "").trim()
+    var prefix = "https://github.com/apps/"
+    if (normalized.indexOf(prefix) !== 0) return ""
+    var slug = normalized.substring(prefix.length).split(/[/?#]/)[0]
+    return String(slug || "").trim()
+}
+
+function isGitHubAppUrl(htmlUrl) {
+    return appSlugFromHtmlUrl(htmlUrl) !== ""
 }
 
 function authorKey(login, htmlUrl, avatarUrl) {
@@ -334,13 +355,17 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     if (!isLikelyGitHubLogin(normalizedLogin)) return false
     var normalizedType = String(userLike.type || "").trim().toLowerCase()
     if (normalizedType === "user" || normalizedType === "bot" ||
-        normalizedType === "organization" || normalizedType === "mannequin")
+        normalizedType === "app" ||
+        normalizedType === "mannequin")
         return true
+    if (normalizedType === "organization")
+        return false
     var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
     if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0) return true
     if (normalizedAvatar.indexOf("https://github.com/") === 0 && normalizedAvatar.indexOf(".png") > 0) return true
     var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
     var lowerLogin = normalizedLogin.toLowerCase()
+    if (appSlugFromHtmlUrl(normalizedHtml) === lowerLogin) return true
     if (normalizedHtml === "https://github.com/" + lowerLogin) return true
     if (normalizedHtml.indexOf("https://github.com/" + lowerLogin + "/") === 0) return true
     return false
@@ -348,13 +373,15 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
 
 function pushAuthorCandidate(target, byKey, userLike) {
     if (!userLike || typeof userLike !== "object") return
-    var login = String(userLike.login || "").trim()
-    var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
     var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+    var login = String(userLike.login || userLike.slug || appSlugFromHtmlUrl(htmlUrl) || "").trim()
+    var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
     if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl)) return
     htmlUrl = String(htmlUrl || "").trim()
+    if (!htmlUrl && String(userLike.slug || "").trim())
+        htmlUrl = "https://github.com/apps/" + encodeURIComponent(String(userLike.slug).trim())
     if (!htmlUrl) htmlUrl = "https://github.com/" + encodeURIComponent(login)
-    avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl })
+    avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl, htmlUrl: htmlUrl })
     var key = authorKey(login, htmlUrl, avatarUrl)
     if (!key) return
     if (byKey.hasOwnProperty(key)) {
@@ -374,26 +401,49 @@ function parseSubjectAuthors(payloadText) {
     var parsed
     try { parsed = JSON.parse(payloadText || "{}") } catch (e) { return [] }
 
-    function walk(value, depth) {
-        if (!value || depth > 8) return
+    if (isPreExtractedAuthorPayload(parsed)) {
+        for (var extractedIndex = 0; extractedIndex < parsed.authors.length; extractedIndex++)
+            pushAuthorCandidate(authors, byKey, parsed.authors[extractedIndex])
+        return authors
+    }
+
+    function pushAuthorValue(value) {
+        if (!value) return
         if (Array.isArray(value)) {
-            for (var i = 0; i < value.length; i++) walk(value[i], depth + 1)
+            for (var i = 0; i < value.length; i++) pushAuthorValue(value[i])
+            return
+        }
+        pushAuthorCandidate(authors, byKey, value)
+    }
+
+    function collectFromNode(value) {
+        if (!value || typeof value !== "object") return
+        pushAuthorValue(value.actor)
+        pushAuthorValue(value.triggering_actor)
+
+        pushAuthorValue(value.user)
+        pushAuthorValue(value.author)
+        pushAuthorValue(value.sender)
+        pushAuthorValue(value.creator)
+        pushAuthorValue(value.merged_by)
+        pushAuthorValue(value.closed_by)
+        pushAuthorValue(value.dismissed_by)
+    }
+
+    function walk(value, depth) {
+        if (!value || depth > 4) return
+        if (Array.isArray(value)) {
+            for (var i = value.length - 1; i >= 0; i--) walk(value[i], depth + 1)
             return
         }
         if (typeof value !== "object") return
-        if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
-            pushAuthorCandidate(authors, byKey, value)
-        pushAuthorCandidate(authors, byKey, value.user)
-        pushAuthorCandidate(authors, byKey, value.author)
-        pushAuthorCandidate(authors, byKey, value.assignee)
-        pushAuthorCandidate(authors, byKey, value.sender)
-        pushAuthorCandidate(authors, byKey, value.creator)
-        pushAuthorCandidate(authors, byKey, value.merged_by)
-        pushAuthorCandidate(authors, byKey, value.closed_by)
-        pushAuthorCandidate(authors, byKey, value.dismissed_by)
-        pushAuthorCandidate(authors, byKey, value.actor)
+        collectFromNode(value)
         for (var k in value) {
             if (!value.hasOwnProperty(k)) continue
+            if (k === "owner" || k === "repository" || k === "repo"
+                    || k === "head_repository" || k === "base_repository"
+                    || k === "head_repo" || k === "base_repo")
+                continue
             var child = value[k]
             if (!child || typeof child !== "object") continue
             walk(child, depth + 1)
@@ -401,6 +451,16 @@ function parseSubjectAuthors(payloadText) {
     }
     walk(parsed, 0)
     return authors
+}
+
+function isPreExtractedAuthorPayload(value) {
+    return value
+        && typeof value === "object"
+        && !Array.isArray(value)
+        && Array.isArray(value.authors)
+        && (value.hasOwnProperty("subjectWebUrl")
+            || value.hasOwnProperty("actionRuns")
+            || value.hasOwnProperty("release"))
 }
 
 function parseSubjectAuthorsMulti(payloadText, splitToken) {
@@ -501,6 +561,30 @@ function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedA
     return best.url || ""
 }
 
+function parseSubjectReferenceMulti(payloadText, splitToken, subjectTitle, updatedAt) {
+    var marker = "\n" + (splitToken || "") + "\n"
+    var normalized = String(payloadText || "")
+    if (normalized.length > 0 && normalized.charAt(normalized.length - 1) !== "\n")
+        normalized += "\n"
+    var parts = normalized.split(marker)
+    var best = { score: -1, url: "", reference: "" }
+
+    for (var i = 0; i < parts.length; i++) {
+        var part = String(parts[i] || "").trim()
+        if (!part) continue
+        var parsed
+        try { parsed = JSON.parse(part) } catch (e) { continue }
+
+        var directReference = directSubjectReferenceFromObject(parsed)
+        if (directReference)
+            return directReference
+
+        best = chooseBestActionRunUrl(parsed, subjectTitle, updatedAt, best)
+    }
+
+    return best.reference || ""
+}
+
 function directSubjectWebUrlFromObject(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
         return ""
@@ -522,6 +606,21 @@ function directSubjectWebUrlFromObject(value) {
     return ""
 }
 
+function directSubjectReferenceFromObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return ""
+
+    var subjectReference = String(value.subjectReference || value.subject_reference || "").trim()
+    if (subjectReference)
+        return subjectReference.replace(/^#/, "")
+
+    var runNumber = String(value.runNumber || value.run_number || "").trim()
+    if (runNumber)
+        return runNumber.replace(/^#/, "")
+
+    return ""
+}
+
 function isLikelySubjectObject(value) {
     if (!value || typeof value !== "object")
         return false
@@ -538,7 +637,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
 
     if (value && typeof value === "object") {
         if (value.actionRunUrl)
-            return { score: 1000000, url: String(value.actionRunUrl) }
+            return { score: 1000000, url: String(value.actionRunUrl), reference: String(value.actionRunNumber || "") }
         if (Array.isArray(value.actionRuns))
             runs = runs.concat(value.actionRuns)
         if (Array.isArray(value.workflow_runs))
@@ -561,6 +660,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
         var displayTitle = String(run.displayTitle || run.display_title || "").trim()
         var headBranch = String(run.headBranch || run.head_branch || "").trim()
         var conclusion = String(run.conclusion || "").trim().toLowerCase()
+        var runNumber = String(run.runNumber || run.run_number || "").trim()
 
         if (expectedName) {
             if (runName.toLowerCase() === expectedName.toLowerCase())
@@ -599,7 +699,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
         }
 
         if (score > best.score)
-            best = { score: score, url: url }
+            best = { score: score, url: url, reference: runNumber.replace(/^#/, "") }
     }
 
     return best

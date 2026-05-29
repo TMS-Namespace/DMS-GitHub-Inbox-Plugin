@@ -17,6 +17,7 @@ Column {
     signal markRepoRead(var items)
     signal markRepoDone(var items)
     signal markThreadRead(string threadId)
+    signal markThreadReadAfterOpen(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
@@ -50,6 +51,7 @@ Column {
             onMarkRepoRead: function(items) { view.markRepoRead(items) }
             onMarkRepoDone: function(items) { view.markRepoDone(items) }
             onMarkThreadRead: function(threadId) { view.markThreadRead(threadId) }
+            onMarkThreadReadAfterOpen: function(threadId) { view.markThreadReadAfterOpen(threadId) }
             onMarkThreadUnread: function(threadId) { view.markThreadUnread(threadId) }
             onMarkThreadDone: function(threadId) { view.markThreadDone(threadId) }
             onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {

@@ -60,6 +60,8 @@ PluginComponent {
     property bool loadAuthorInfo: GitHub.pluginDataBool(pluginData.loadAuthorInfo, true)
     property bool enableNotifications: GitHub.pluginDataBool(pluginData.enableNotifications, GitHubConstants.defaultEnableNotifications)
     property string groupingMode: _normalizeGroupingMode(pluginData.groupingMode || "repo")
+    property string readFilter: _normalizeTriStateFilter(pluginData.readFilter || "both")
+    property string participationFilter: _normalizeTriStateFilter(pluginData.participationFilter || "both")
     property string clearCacheRequestFlag: pluginData.clearCacheRequested || ""
 
     // =========================================================================
@@ -80,7 +82,7 @@ PluginComponent {
     property var expandedReposState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var expandedDateGroupsState: ({ [GitHubConstants.expandedStateDefaultKey]: true })
     property var authorsByThread: ({})
-    property var _previousThreadIds: ({})
+    property real _latestLocalMessageUpdatedAtMs: 0
     property var _pendingLocalAvatarUpdates: ({})
     property int _pendingLocalAvatarUpdateCount: 0
     property var _pendingNotificationMessages: []
@@ -124,6 +126,29 @@ PluginComponent {
 
     function _normalizeGroupingMode(value) {
         return String(value || "") === "date" ? "date" : "repo"
+    }
+
+    function _normalizeTriStateFilter(value) {
+        var normalized = String(value || "").toLowerCase()
+        return normalized === "yes" || normalized === "no" ? normalized : "both"
+    }
+
+    function setReadFilter(value) {
+        var nextFilter = _normalizeTriStateFilter(value)
+        if (readFilter === nextFilter)
+            return
+        readFilter = nextFilter
+        if (pluginService)
+            pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "readFilter", nextFilter)
+    }
+
+    function setParticipationFilter(value) {
+        var nextFilter = _normalizeTriStateFilter(value)
+        if (participationFilter === nextFilter)
+            return
+        participationFilter = nextFilter
+        if (pluginService)
+            pluginService.savePluginData(GitHubConstants.pluginNamespaceId, "participationFilter", nextFilter)
     }
 
     function setGroupingMode(value) {
@@ -171,11 +196,11 @@ PluginComponent {
         id: fetcher
         token: root.token
         fetchPageCount: root.fetchPageCount
-        doneThreadState: operations.doneThreadState
+        doneThreadState: operations.effectiveDoneThreadState
 
         onFetchBegin: function(totalCount, unreadCount) {
             root._perfLog("onFetchBegin — total=" + totalCount + " unread=" + unreadCount)
-            root._saveCurrentThreadIds()
+            root._saveLatestLocalMessageUpdatedAt()
             root._pendingFetchedMessages = []
             root._pendingFetchedUnreadCount = unreadCount
             root._pendingEnrichmentMessages = []
@@ -266,8 +291,8 @@ PluginComponent {
             authorFetch.enqueueAuthorUrls(threadId, urls)
         }
 
-        onSubjectWebUrlResolved: function(threadId, webUrl) {
-            root._updateMessageWebUrl(threadId, webUrl)
+        onSubjectWebUrlResolved: function(threadId, webUrl, subjectReference) {
+            root._updateMessageSubjectDetails(threadId, webUrl, subjectReference)
         }
 
         onPrefetchMaybeComplete: root._tryFinalizeAuthorPrefetch()
@@ -289,11 +314,18 @@ PluginComponent {
             if (itemsChanged) {
                 root.inboxMessages = result.items
                 root._replaceViewMessages(root.inboxMessages)
+                if (_operationShouldUpdateMessageCache(actionType))
+                    cacheCoord.updateMessages(root.inboxMessages)
             }
             if (itemsChanged || result.unreadChanged)
                 root.unreadCount = _recalculateUnread(root.inboxMessages)
             root.errorMessage = ""
             root.lastUpdated = Date.now()
+        }
+
+        onDoneThreadStateChanged: {
+            if (cacheCoord.initialized)
+                cacheCoord.updateDoneThreadState(doneThreadState)
         }
 
         onOperationError: function(errorMessage) {
@@ -510,9 +542,15 @@ PluginComponent {
 
             var needsAvatar = !!item.repositoryOwnerLogin
                               && String(item.repositoryOwnerAvatarUrl || "").indexOf("file://") !== 0
+            var knownAuthors = authorsByThread[item.threadId] || []
+            var needsMissingAuthors = loadAuthorInfo && knownAuthors.length === 0
             var needsAuthor = loadAuthorInfo
-                              && ((authorFetch.fetchedAtUpdatedAt[item.threadId] || "") !== (item.updatedAt || "")
-                                  || authorFetch.requiresSubjectWebUrlResolution(item))
+                              && (needsMissingAuthors
+                                  || !authorFetch.fetchedAtMatches(authorFetch.fetchedAtUpdatedAt[item.threadId],
+                                                                   item.updatedAt)
+                                  || authorFetch.requiresSubjectWebUrlResolution(item)
+                                  || authorFetch.requiresSubjectReferenceResolution(item)
+                                  || !authorFetch.hasFetchedAuthorDetailsForMessage(item))
             if (needsAvatar || needsAuthor)
                 result.push(item)
         }
@@ -569,6 +607,10 @@ PluginComponent {
             if (messageLocalUrl && msg.repositoryOwnerAvatarUrl !== messageLocalUrl) {
                 msg.repositoryOwnerAvatarUrl = messageLocalUrl
                 messagesChanged = true
+            } else if (messageLocalUrl
+                       && msg.repositoryOwnerAvatarUrl === messageLocalUrl
+                       && String(messageLocalUrl).indexOf("file://") === 0) {
+                messagesChanged = true
             }
         }
         if (messagesChanged) {
@@ -586,6 +628,10 @@ PluginComponent {
                 var authorLocalUrl = updates[authorLogin]
                 if (authorLocalUrl && authors[ai].avatarUrl !== authorLocalUrl) {
                     authors[ai].avatarUrl = authorLocalUrl
+                    authorsChanged = true
+                } else if (authorLocalUrl
+                           && authors[ai].avatarUrl === authorLocalUrl
+                           && String(authorLocalUrl).indexOf("file://") === 0) {
                     authorsChanged = true
                 }
             }
@@ -649,31 +695,27 @@ PluginComponent {
             localAvatarApplyTimer.restart()
     }
 
-    function _saveCurrentThreadIds() {
-        var ids = {}
-        for (var i = 0; i < inboxMessages.length; i++) {
-            var tid = inboxMessages[i].threadId
-            if (tid)
-                ids[tid] = true
-        }
-        _previousThreadIds = ids
+    function _saveLatestLocalMessageUpdatedAt() {
+        _latestLocalMessageUpdatedAtMs = _latestMessageUpdatedAtMs(inboxMessages)
     }
 
     function _detectAndNotifyNewMessages(items) {
         if (!enableNotifications)
             return []
 
-        var prevIds = _previousThreadIds
-        var hasPrev = false
-        for (var k in prevIds) { hasPrev = true; break }
-        if (!hasPrev)
+        var latestLocalMessageUpdatedAtMs = _latestLocalMessageUpdatedAtMs || 0
+        if (latestLocalMessageUpdatedAtMs <= 0)
             return []
 
         var newMessages = []
-        for (var i = 0; i < items.length; i++) {
-            var tid = items[i].threadId
-            if (tid && !prevIds[tid])
-                newMessages.push(items[i])
+        var candidateItems = _filterDoneMessages(items || [])
+        for (var i = 0; i < candidateItems.length; i++) {
+            var item = candidateItems[i]
+            if (!item || !item.threadId || !item.unread)
+                continue
+            var updatedAtMs = item.updatedAtMs || Date.parse(item.updatedAt || "") || 0
+            if (updatedAtMs > latestLocalMessageUpdatedAtMs)
+                newMessages.push(item)
         }
 
         if (newMessages.length === 0)
@@ -806,17 +848,24 @@ PluginComponent {
 
         var cached = cacheCoord.loadCachedState()
         _perfLog("_onCacheReady — loadCachedState done, msgs=" + cached.messages.length)
+        operations.setDoneThreadState(cached.doneThreadState || ({}))
+        var cachedMessages = _filterDoneMessages(cached.messages || [])
 
         // Phase 1: Load messages for immediate bar-pill display
-        if (cached.messages.length > 0) {
-            inboxMessages = cached.messages
-            unreadCount = _recalculateUnread(cached.messages)
-            _queueViewMessages(cached.messages)
+        if (cachedMessages.length > 0) {
+            inboxMessages = cachedMessages
+            unreadCount = _recalculateUnread(cachedMessages)
+            _queueViewMessages(cachedMessages)
             lastUpdated = cached.timestamp
         }
 
         // Defer heavier work (author resolution, preloader) to separate frames
-        _pendingCacheState = cached
+        _pendingCacheState = {
+            messages: cachedMessages,
+            authorsByThread: cached.authorsByThread || ({}),
+            authorFetchedAt: cached.authorFetchedAt || ({}),
+            timestamp: cached.timestamp || 0
+        }
         _perfLog("_onCacheReady (Phase 1) — end")
         Qt.callLater(_onCacheReadyPhase2)
     }
@@ -845,6 +894,7 @@ PluginComponent {
             for (var fid in cachedFetchedAt)
                 nextFetchedAt[fid] = cachedFetchedAt[fid]
         }
+        _sanitizeCachedAuthors(cached.messages || [], resolvedAuthors, nextFetchedAt)
         authorFetch.fetchedAtUpdatedAt = nextFetchedAt
 
         var fallbackAuthorUpdates = {}
@@ -858,7 +908,7 @@ PluginComponent {
             var knownAuthors = resolvedAuthors[threadId] || []
             if (knownAuthors.length > 0)
                 continue
-            if ((nextFetchedAt[threadId] || "") !== (message.updatedAt || ""))
+            if (!authorFetch.fetchedAtMatches(nextFetchedAt[threadId], message.updatedAt))
                 continue
 
             var fallbackAuthor = _fallbackAuthorForMessage(message)
@@ -939,7 +989,7 @@ PluginComponent {
                 continue
 
             var fetchedAt = nextFetchedAt[threadId] || ""
-            if (fetchedAt !== (message.updatedAt || ""))
+            if (!authorFetch.fetchedAtMatches(fetchedAt, message.updatedAt))
                 missingAuthorFetchThreadIds[threadId] = true
         }
 
@@ -966,20 +1016,100 @@ PluginComponent {
     }
 
     function _fallbackAuthorForMessage(message) {
-        if (!message)
-            return null
+        return null
+    }
 
-        var login = String(message.repositoryOwnerLogin || "").trim()
-        if (!login)
-            return null
-
-        return {
-            login: login,
-            avatarUrl: String(message.repositoryOwnerAvatarUrl || "").trim()
-                       || (GitHubConstants.githubAvatarsBaseUrl + "/" + encodeURIComponent(login)
-                           + "?size=" + GitHubConstants.avatarDefaultSizePx),
-            htmlUrl: GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
+    function _sanitizeCachedAuthors(messages, resolvedAuthors, fetchedAt) {
+        var messagesByThread = {}
+        for (var index = 0; index < messages.length; index++) {
+            var message = messages[index]
+            if (message && message.threadId)
+                messagesByThread[message.threadId] = message
         }
+
+        var changedAuthorsForCache = {}
+        for (var threadId in resolvedAuthors) {
+            var sourceMessage = messagesByThread[threadId]
+            if (!sourceMessage)
+                continue
+
+            var repositoryOwner = String(sourceMessage.repositoryOwnerLogin || "").trim().toLowerCase()
+            if (!repositoryOwner)
+                continue
+
+            var authors = resolvedAuthors[threadId] || []
+            var normalizedAuthors = _normalizeCachedAuthorsForMessage(sourceMessage, authors)
+            var changed = normalizedAuthors.length !== authors.length
+            if (authors.length === 0
+                    && authorFetch.fetchedAtMatches(fetchedAt[threadId], sourceMessage.updatedAt))
+                changed = true
+            for (var authorIndex = 0; authorIndex < authors.length; authorIndex++) {
+                var authorLogin = String((authors[authorIndex] && authors[authorIndex].login) || "").trim().toLowerCase()
+                if (authorLogin === repositoryOwner) {
+                    changed = true
+                    break
+                }
+            }
+
+            if (!changed)
+                continue
+
+            resolvedAuthors[threadId] = normalizedAuthors
+            fetchedAt[threadId] = ""
+            changedAuthorsForCache[threadId] = resolvedAuthors[threadId]
+            cacheCoord.updateAuthorFetchedAt(threadId, "")
+        }
+
+        if (Object.keys(changedAuthorsForCache).length > 0)
+            cacheCoord.updateChangedAuthors(changedAuthorsForCache)
+    }
+
+    function _isCiSubjectType(subjectType) {
+        var normalizedType = String(subjectType || "").toLowerCase()
+        return normalizedType === "checksuite"
+               || normalizedType === "checkrun"
+               || normalizedType === "workflowrun"
+    }
+
+    function _normalizeCachedAuthorsForMessage(message, authors) {
+        var repositoryOwner = String(message.repositoryOwnerLogin || "").trim().toLowerCase()
+        var normalizedType = String(message.subjectType || "").toLowerCase()
+        var normalizedReason = String(message.reason || "").toLowerCase()
+        var filtered = []
+
+        for (var index = 0; index < authors.length; index++) {
+            var author = authors[index]
+            var authorLogin = String((author && author.login) || "").trim().toLowerCase()
+            if (authorLogin && authorLogin === repositoryOwner)
+                continue
+            if ((normalizedType === "pullrequest" || normalizedType === "issue")
+                    && _isGitHubActionsAuthor(author))
+                continue
+            filtered.push(author)
+        }
+
+        if (_isCiSubjectType(message.subjectType) && filtered.length > 1)
+            return filtered.slice(0, 1)
+
+        if ((normalizedType === "pullrequest" || normalizedType === "issue")
+                && normalizedReason === "comment"
+                && filtered.length > GitHubConstants.maxAuthorsDisplayedPerMessage)
+            return filtered.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
+
+        if (normalizedType === "pullrequest"
+                && normalizedReason === "author"
+                && filtered.length > GitHubConstants.maxAuthorsDisplayedPerMessage)
+            return filtered.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
+
+        return filtered
+    }
+
+    function _isGitHubActionsAuthor(author) {
+        var login = String((author && author.login) || "").trim().toLowerCase()
+        var htmlUrl = String((author && (author.htmlUrl || author.html_url)) || "").trim().toLowerCase()
+        return login === "github-actions"
+               || login === "github-actions[bot]"
+               || htmlUrl === GitHubConstants.githubWebBaseUrl + "/apps/github-actions"
     }
 
     function _processStartupMissingInfoBatch() {
@@ -1054,6 +1184,11 @@ PluginComponent {
 
     function _applyFetchedMessages(items, unread) {
         var nextItems = _mergeCachedMessageFields(items || [])
+        nextItems = operations.applyPendingReadState(nextItems)
+        var inferredDoneThreadIds = _inferDoneThreadIdsFromRefresh(nextItems)
+        if (inferredDoneThreadIds.length > 0)
+            operations.markThreadIdsLocallyDone(inferredDoneThreadIds)
+        nextItems = _filterDoneMessages(nextItems)
         var nextUnread = _recalculateUnread(nextItems)
         var unchanged = nextUnread === unreadCount
                         && _messagesEquivalent(inboxMessages, nextItems)
@@ -1069,9 +1204,54 @@ PluginComponent {
         _queueViewMessages(nextItems)
         errorMessage = ""
         lastUpdated = Date.now()
+        var newMessages = _detectAndNotifyNewMessages(nextItems)
         cacheCoord.updateMessages(nextItems)
-        _queueDesktopNotifications(_detectAndNotifyNewMessages(nextItems))
+        _latestLocalMessageUpdatedAtMs = _latestMessageUpdatedAtMs(nextItems)
+        _queueDesktopNotifications(newMessages)
         return true
+    }
+
+    function _inferDoneThreadIdsFromRefresh(fetchedItems) {
+        var previousItems = inboxMessages || []
+        var incomingItems = fetchedItems || []
+        if (previousItems.length === 0)
+            return []
+
+        var incomingByThread = {}
+        var oldestIncomingMs = 0
+        for (var index = 0; index < incomingItems.length; index++) {
+            var incoming = incomingItems[index]
+            if (!incoming || !incoming.threadId)
+                continue
+            incomingByThread[incoming.threadId] = true
+            var incomingMs = incoming.updatedAtMs || Date.parse(incoming.updatedAt || "") || 0
+            if (incomingMs && (oldestIncomingMs === 0 || incomingMs < oldestIncomingMs))
+                oldestIncomingMs = incomingMs
+        }
+
+        var doneState = operations.effectiveDoneThreadState || ({})
+        var inferred = []
+        var seen = {}
+
+        for (var prevIndex = 0; prevIndex < previousItems.length; prevIndex++) {
+            var previous = previousItems[prevIndex]
+            if (!previous || !previous.threadId || incomingByThread[previous.threadId]
+                    || doneState[previous.threadId] || seen[previous.threadId])
+                continue
+
+            var previousMs = previous.updatedAtMs || Date.parse(previous.updatedAt || "") || 0
+            if (incomingItems.length > 0
+                    && (!oldestIncomingMs || !previousMs || previousMs < oldestIncomingMs))
+                continue
+
+            seen[previous.threadId] = true
+            inferred.push(previous.threadId)
+        }
+
+        if (inferred.length > 0 && GitHubConstants.profileLoggingEnabled)
+            console.warn("[GitHubInbox] inferred " + inferred.length
+                         + " missing threads as done after refresh")
+        return inferred
     }
 
     function _scheduleApiStatsRefreshComplete() {
@@ -1100,10 +1280,15 @@ PluginComponent {
 
     function _mergeCachedMessageFields(items) {
         var existingByThread = {}
+        var localAvatarsByLogin = _collectKnownLocalAvatarsByLogin()
         for (var existingIndex = 0; existingIndex < inboxMessages.length; existingIndex++) {
             var existing = inboxMessages[existingIndex]
-            if (existing && existing.threadId)
+            if (existing && existing.threadId) {
                 existingByThread[existing.threadId] = existing
+                _rememberKnownLocalAvatar(localAvatarsByLogin,
+                                          existing.repositoryOwnerLogin,
+                                          existing.repositoryOwnerAvatarUrl)
+            }
         }
 
         var merged = []
@@ -1116,7 +1301,7 @@ PluginComponent {
 
             var cached = existingByThread[item.threadId]
             if (!cached || (cached.updatedAt || "") !== (item.updatedAt || "")) {
-                merged.push(item)
+                merged.push(_applyKnownLocalRepoAvatar(item, localAvatarsByLogin))
                 continue
             }
 
@@ -1130,6 +1315,12 @@ PluginComponent {
                 copy.webUrlResolved = true
             }
 
+            var cachedSubjectReference = String(cached.subjectReference || "")
+            if (cachedSubjectReference && cachedSubjectReference !== (item.subjectReference || "")) {
+                copy = _cloneMessageForMerge(copy)
+                copy.subjectReference = cachedSubjectReference
+            }
+
             var cachedRepoAvatar = String(cached.repositoryOwnerAvatarUrl || "")
             if (cachedRepoAvatar.indexOf("file://") === 0
                     && cachedRepoAvatar !== item.repositoryOwnerAvatarUrl) {
@@ -1137,9 +1328,86 @@ PluginComponent {
                 copy.repositoryOwnerAvatarUrl = cachedRepoAvatar
             }
 
+            copy = _applyKnownLocalRepoAvatar(copy, localAvatarsByLogin)
             merged.push(copy)
         }
         return merged
+    }
+
+    function _collectKnownLocalAvatarsByLogin() {
+        var localAvatarsByLogin = {}
+
+        for (var tid in authorsByThread) {
+            var authors = authorsByThread[tid] || []
+            for (var ai = 0; ai < authors.length; ai++) {
+                _rememberKnownLocalAvatar(localAvatarsByLogin,
+                                          authors[ai].login,
+                                          authors[ai].avatarUrl)
+            }
+        }
+
+        return localAvatarsByLogin
+    }
+
+    function _rememberKnownLocalAvatar(localAvatarsByLogin, login, avatarUrl) {
+        var normalizedLogin = String(login || "").trim()
+        var normalizedAvatarUrl = String(avatarUrl || "").trim()
+        if (!normalizedLogin || normalizedAvatarUrl.indexOf("file://") !== 0)
+            return
+        if (!localAvatarsByLogin.hasOwnProperty(normalizedLogin))
+            localAvatarsByLogin[normalizedLogin] = normalizedAvatarUrl
+    }
+
+    function _applyKnownLocalRepoAvatar(item, localAvatarsByLogin) {
+        if (!item)
+            return item
+
+        var login = String(item.repositoryOwnerLogin || "").trim()
+        var localAvatarUrl = login ? (localAvatarsByLogin[login] || "") : ""
+        if (!localAvatarUrl && login && cacheCoord.initialized) {
+            localAvatarUrl = cacheCoord.cachedLocalAvatarUrl(login)
+            if (localAvatarUrl)
+                localAvatarsByLogin[login] = localAvatarUrl
+        }
+        if (!localAvatarUrl || localAvatarUrl === item.repositoryOwnerAvatarUrl)
+            return item
+
+        var copy = _cloneMessageForMerge(item)
+        copy.repositoryOwnerAvatarUrl = localAvatarUrl
+        return copy
+    }
+
+    function _filterDoneMessages(items) {
+        var state = operations.effectiveDoneThreadState || ({})
+        var source = items || []
+        var filtered = []
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (item && item.threadId && state[item.threadId])
+                continue
+            filtered.push(item)
+        }
+        return filtered
+    }
+
+    function _latestMessageUpdatedAtMs(items) {
+        var latest = 0
+        var source = items || []
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (!item)
+                continue
+            var updatedAtMs = item.updatedAtMs || Date.parse(item.updatedAt || "") || 0
+            if (updatedAtMs > latest)
+                latest = updatedAtMs
+        }
+        return latest
+    }
+
+    function _operationShouldUpdateMessageCache(actionType) {
+        return actionType !== "thread_done"
+               && actionType !== "threads_done"
+               && actionType !== "repo_done"
     }
 
     function _cloneMessageForMerge(item) {
@@ -1177,25 +1445,39 @@ PluginComponent {
                && (left.subjectType || "") === (right.subjectType || "")
                && (left.title || "") === (right.title || "")
                && (left.subjectApiUrl || "") === (right.subjectApiUrl || "")
+               && (left.subjectReference || "") === (right.subjectReference || "")
                && (left.webUrl || "") === (right.webUrl || "")
                && (!!left.webUrlResolved === !!right.webUrlResolved)
     }
 
     function _updateMessageWebUrl(threadId, webUrl) {
-        if (!threadId || !webUrl)
+        _updateMessageSubjectDetails(threadId, webUrl, "")
+    }
+
+    function _updateMessageSubjectDetails(threadId, webUrl, subjectReference) {
+        if (!threadId)
             return
 
         var changed = false
         var nextItems = []
+        var normalizedSubjectReference = String(subjectReference || "").trim().replace(/^#/, "")
         for (var index = 0; index < inboxMessages.length; index++) {
             var item = inboxMessages[index]
-            if (item && item.threadId === threadId
-                    && (item.webUrl !== webUrl || !item.webUrlResolved)) {
+            var shouldUpdateWebUrl = item && item.threadId === threadId && webUrl
+                    && (item.webUrl !== webUrl || !item.webUrlResolved)
+            var shouldUpdateReference = item && item.threadId === threadId
+                    && normalizedSubjectReference
+                    && item.subjectReference !== normalizedSubjectReference
+            if (shouldUpdateWebUrl || shouldUpdateReference) {
                 var copy = {}
                 for (var key in item)
                     copy[key] = item[key]
-                copy.webUrl = webUrl
-                copy.webUrlResolved = true
+                if (shouldUpdateWebUrl) {
+                    copy.webUrl = webUrl
+                    copy.webUrlResolved = true
+                }
+                if (shouldUpdateReference)
+                    copy.subjectReference = normalizedSubjectReference
                 nextItems.push(copy)
                 changed = true
             } else {
@@ -1235,7 +1517,7 @@ PluginComponent {
         operations.resetState()
         avatarPreloader.reset()
         authorsByThread = ({})
-        _previousThreadIds = ({})
+        _latestLocalMessageUpdatedAtMs = 0
     }
 
     function _handleClearCacheRequest() {
@@ -1416,12 +1698,12 @@ PluginComponent {
             lastUpdated = 0
             fetcher.cancel()
             authorFetch.clearAllState()
-            operations.resetState()
+            operations.resetState(false)
             avatarPreloader.reset()
             authorsByThread = ({})
             expandedReposState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
             expandedDateGroupsState = ({ [GitHubConstants.expandedStateDefaultKey]: true })
-            _previousThreadIds = ({})
+            _latestLocalMessageUpdatedAtMs = 0
             return
         }
         if (cacheCoord.initialized)
@@ -1597,7 +1879,7 @@ PluginComponent {
 
                     StyledText {
                         id: groupingLabel
-                        text: "Group By:"
+                        text: "Group By"
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.surfaceVariantText
                         anchors.verticalCenter: parent.verticalCenter
@@ -1688,6 +1970,8 @@ PluginComponent {
                 authorsByThread: root.authorsByThread
                 showAuthorInfo: root.loadAuthorInfo
                 groupingMode: root.groupingMode
+                readFilter: root.readFilter
+                participationFilter: root.participationFilter
 
                 onRefreshNow: root._refreshNow()
                 onMarkAllRead: operations.markAllAsRead()
@@ -1704,6 +1988,7 @@ PluginComponent {
                     operations.markThreadsDone(items)
                 }
                 onMarkThreadRead: function(threadId) { operations.markThreadAsRead(threadId) }
+                onMarkThreadReadAfterOpen: function(threadId) { operations.markThreadReadAfterOpen(threadId) }
                 onMarkThreadUnread: function(threadId) { operations.markThreadAsUnread(threadId) }
                 onMarkThreadDone: function(threadId) { operations.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
@@ -1723,9 +2008,15 @@ PluginComponent {
                             break
                         }
                     }
-                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, true, null, resolvedSubjectTitle)
+                    authorFetch.enqueueAuthorFetch(threadId, resolvedSubjectApiUrl, resolvedSubjectType, notifUpdatedAt, false, null, resolvedSubjectTitle)
                 }
                 onClosePopout: root.closePopout()
+                onReadFilterChangedByUser: function(value) {
+                    root.setReadFilter(value)
+                }
+                onParticipationFilterChangedByUser: function(value) {
+                    root.setParticipationFilter(value)
+                }
                 onPersistExpandedRepos: function(state) {
                     root.expandedReposState = root._cloneExpandedState(state)
                 }

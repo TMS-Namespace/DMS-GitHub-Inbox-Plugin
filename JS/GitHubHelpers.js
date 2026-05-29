@@ -52,17 +52,11 @@ function parseMessagesPayload(payloadText) {
         if (unread)
             unreadCount++
 
-        var reason = item.reason || ""
-        var participatingReasons = {
-            comment: true, author: true, assign: true,
-            review_requested: true, mention: true, team_mention: true
-        }
-
         items.push({
             threadId: item.id || "",
             unread: unread,
-            reason: reason,
-            participated: !!participatingReasons[reason],
+            reason: item.reason || "",
+            participated: false,
             updatedAt: item.updated_at || "",
             repository: repository.full_name || "",
             repositoryUrl: repository.html_url || "",
@@ -71,6 +65,7 @@ function parseMessagesPayload(payloadText) {
             subjectType: subject.type || "Message",
             title: subject.title || "(untitled)",
             subjectApiUrl: subject.url || "",
+            subjectReference: "",
             webUrl: resolveWebUrl(item)
         })
     }
@@ -295,7 +290,10 @@ function relativeTimeFromIso(isoDate) {
     if (hours < 24)
         return hours + " hr ago"
 
-    var days = Math.floor(hours / 24)
+    var now = new Date()
+    var updated = new Date(timestamp)
+    var calendarDays = localDayNumber(now) - localDayNumber(updated)
+    var days = Math.max(1, calendarDays || Math.floor(hours / 24))
     if (days < 30)
         return days + " day" + (days !== 1 ? "s" : "") + " ago"
 
@@ -305,6 +303,11 @@ function relativeTimeFromIso(isoDate) {
 
     var years = Math.floor(days / 365)
     return years + " year" + (years !== 1 ? "s" : "") + " ago"
+}
+
+function localDayNumber(value) {
+    return Math.floor(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())
+                      / (24 * 60 * 60 * 1000))
 }
 
 function reasonLabel(reason) {
@@ -378,4 +381,77 @@ function subjectIconName(subjectType) {
         return "fact_check"
 
     return "notifications"
+}
+
+function subjectDisplayLabel(subjectType) {
+    var type = String(subjectType || "").toLowerCase()
+
+    if (type === "pullrequest")
+        return "PR"
+    if (type === "checksuite" || type === "checkrun" || type === "workflowrun")
+        return "Workflow"
+    if (type === "release")
+        return "Release"
+    if (type === "issue")
+        return "Issue"
+    if (type === "discussion")
+        return "Discussion"
+    if (type === "commit")
+        return "Commit"
+    if (type === "repositoryvulnerabilityalert"
+        || type === "repositoryadvisory"
+        || type === "repositorydependabotalert"
+        || type === "vulnerabilityalert"
+        || type === "dependabotalert"
+        || type === "codescanningalert")
+        return "Security"
+
+    return splitCamelCase(subjectType || "Message")
+}
+
+function subjectReferenceLabel(subjectType, subjectApiUrl, webUrl, explicitReference) {
+    var number = String(explicitReference || "").trim().replace(/^#/, "")
+    if (!number)
+        number = subjectReferenceNumber(subjectType, subjectApiUrl, webUrl)
+    return number ? ("#" + number) : ""
+}
+
+function subjectReferenceNumber(subjectType, subjectApiUrl, webUrl) {
+    var type = String(subjectType || "").toLowerCase()
+    var apiUrl = String(subjectApiUrl || "")
+    var pageUrl = String(webUrl || "")
+    var match
+
+    if (type === "pullrequest") {
+        match = apiUrl.match(/\/pulls\/([0-9]+)(?:$|[?#])/)
+             || pageUrl.match(/\/pull\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    if (type === "issue") {
+        match = apiUrl.match(/\/issues\/([0-9]+)(?:$|[?#])/)
+             || pageUrl.match(/\/issues\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    if (type === "discussion") {
+        match = apiUrl.match(/\/discussions\/([0-9]+)(?:$|[?#])/)
+             || pageUrl.match(/\/discussions\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    if (type === "checksuite" || type === "checkrun" || type === "workflowrun") {
+        match = apiUrl.match(/\/actions\/runs\/([0-9]+)(?:$|[?#])/)
+             || apiUrl.match(/\/check-(?:suites|runs)\/([0-9]+)(?:$|[?#])/)
+        return match ? match[1] : ""
+    }
+
+    return ""
+}
+
+function splitCamelCase(value) {
+    var text = String(value || "").trim()
+    if (!text)
+        return "Message"
+    return text.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
 }

@@ -67,6 +67,15 @@ QtObject {
                    + encodeURIComponent(owner) + "/"
                    + encodeURIComponent(repo) + "/commits/" + subjectId
 
+        if (section === "actions" && subjectId === "runs" && parts.length >= 5) {
+            var runId = parts[4]
+            if (!/^[0-9]+$/.test(runId))
+                return ""
+            return GitHubConstants.githubApiReposPrefix
+                   + encodeURIComponent(owner) + "/"
+                   + encodeURIComponent(repo) + "/actions/runs/" + runId
+        }
+
         return ""
     }
 
@@ -122,29 +131,26 @@ QtObject {
     //  Author Fetch URL Building
     // =========================================================================
 
-    function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails) {
+    function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails, reason) {
         var urls = []
         var perPageQuery = GitHubConstants.authorFetchPerPageQuery
-
         function push(url) {
             if (!url || urls.indexOf(url) >= 0)
                 return
             urls.push(url)
         }
 
+        var threadParentUrl = isThreadParentApiUrl(subjectApiUrl)
         push(subjectApiUrl)
 
         if (includeDetails === false)
             return urls
 
-        if (isThreadParentApiUrl(subjectApiUrl)) {
+        if (threadParentUrl) {
             var isPR = subjectApiUrl.indexOf("/pulls/") >= 0
             var issueApiUrl = isPR
                 ? subjectApiUrl.replace("/pulls/", "/issues/")
                 : subjectApiUrl
-
-            if (isPR)
-                push(appendAuthorQuery(subjectApiUrl + "/reviews", perPageQuery))
 
             push(appendAuthorQuery(issueApiUrl + "/timeline", perPageQuery))
         }
@@ -260,11 +266,29 @@ QtObject {
         if (avatarUrl)
             return avatarUrl
 
+        var htmlUrl = String(authorLike.htmlUrl || authorLike.html_url || "").trim()
+        if (isGitHubAppUrl(htmlUrl))
+            return htmlUrl + ".png?size=" + GitHubConstants.avatarDefaultSizePx
+
         var login = String(authorLike.login || "").trim()
         if (login)
             return defaultAvatarUrlForLogin(login)
 
         return ""
+    }
+
+    function appSlugFromHtmlUrl(htmlUrl) {
+        var normalized = String(htmlUrl || "").trim()
+        var prefix = GitHubConstants.githubWebBaseUrl + "/apps/"
+        if (normalized.indexOf(prefix) !== 0)
+            return ""
+
+        var slug = normalized.substring(prefix.length).split(/[/?#]/)[0]
+        return String(slug || "").trim()
+    }
+
+    function isGitHubAppUrl(htmlUrl) {
+        return appSlugFromHtmlUrl(htmlUrl) !== ""
     }
 
     function authorKey(login, htmlUrl, avatarUrl) {
@@ -302,9 +326,11 @@ QtObject {
         var normalizedType = String(userLike.type || "").trim().toLowerCase()
         if (normalizedType === "user"
                 || normalizedType === "bot"
-                || normalizedType === "organization"
+                || normalizedType === "app"
                 || normalizedType === "mannequin")
             return true
+        if (normalizedType === "organization")
+            return false
 
         var normalizedAvatar = String(avatarUrl || "").trim().toLowerCase()
         if (normalizedAvatar.indexOf("https://avatars.githubusercontent.com/") === 0)
@@ -315,6 +341,8 @@ QtObject {
 
         var normalizedHtml = String(htmlUrl || "").trim().toLowerCase()
         var lowerLogin = normalizedLogin.toLowerCase()
+        if (appSlugFromHtmlUrl(normalizedHtml) === lowerLogin)
+            return true
         if (normalizedHtml === GitHubConstants.githubWebBaseUrl + "/" + lowerLogin)
             return true
         if (normalizedHtml.indexOf(GitHubConstants.githubWebBaseUrl + "/" + lowerLogin + "/") === 0)
@@ -331,17 +359,19 @@ QtObject {
         if (!userLike || typeof userLike !== "object")
             return
 
-        var login = String(userLike.login || "").trim()
-        var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
         var htmlUrl = userLike.html_url || userLike.htmlUrl || ""
+        var login = String(userLike.login || userLike.slug || appSlugFromHtmlUrl(htmlUrl) || "").trim()
+        var avatarUrl = userLike.avatar_url || userLike.avatarUrl || ""
         if (!isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl))
             return
 
         htmlUrl = String(htmlUrl || "").trim()
+        if (!htmlUrl && String(userLike.slug || "").trim())
+            htmlUrl = GitHubConstants.githubWebBaseUrl + "/apps/" + encodeURIComponent(String(userLike.slug).trim())
         if (!htmlUrl)
             htmlUrl = GitHubConstants.githubWebBaseUrl + "/" + encodeURIComponent(login)
 
-        avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl })
+        avatarUrl = authorAvatarUrl({ login: login, avatarUrl: avatarUrl, htmlUrl: htmlUrl })
 
         var key = authorKey(login, htmlUrl, avatarUrl)
         if (!key)
@@ -396,8 +426,45 @@ QtObject {
             return []
         }
 
+        if (isPreExtractedAuthorPayload(parsed)) {
+            for (var extractedIndex = 0; extractedIndex < parsed.authors.length; extractedIndex++)
+                pushAuthorCandidate(authors, byKey, parsed.authors[extractedIndex])
+            return authors
+        }
+
+        function pushAuthorValue(value) {
+            if (!value)
+                return
+
+            if (Array.isArray(value)) {
+                for (var arrayIndex = 0; arrayIndex < value.length; arrayIndex++)
+                    pushAuthorValue(value[arrayIndex])
+                return
+            }
+
+            pushAuthorCandidate(authors, byKey, value)
+        }
+
+        function collectFromNode(value) {
+            if (typeof value !== "object")
+                return
+
+            if (value.triggering_actor)
+                pushAuthorValue(value.triggering_actor)
+            else
+                pushAuthorValue(value.actor)
+
+            pushAuthorValue(value.user)
+            pushAuthorValue(value.author)
+            pushAuthorValue(value.sender)
+            pushAuthorValue(value.creator)
+            pushAuthorValue(value.merged_by)
+            pushAuthorValue(value.closed_by)
+            pushAuthorValue(value.dismissed_by)
+        }
+
         function walk(value, depth) {
-            if (!value || depth > GitHubConstants.authorWalkMaxDepth)
+            if (!value || depth > 4)
                 return
 
             if (Array.isArray(value)) {
@@ -409,21 +476,14 @@ QtObject {
             if (typeof value !== "object")
                 return
 
-            if (value.login || value.avatar_url || value.avatarUrl || value.html_url || value.htmlUrl)
-                pushAuthorCandidate(authors, byKey, value)
-
-            pushAuthorCandidate(authors, byKey, value.user)
-            pushAuthorCandidate(authors, byKey, value.author)
-            pushAuthorCandidate(authors, byKey, value.assignee)
-            pushAuthorCandidate(authors, byKey, value.sender)
-            pushAuthorCandidate(authors, byKey, value.creator)
-            pushAuthorCandidate(authors, byKey, value.merged_by)
-            pushAuthorCandidate(authors, byKey, value.closed_by)
-            pushAuthorCandidate(authors, byKey, value.dismissed_by)
-            pushAuthorCandidate(authors, byKey, value.actor)
+            collectFromNode(value)
 
             for (var key in value) {
                 if (!value.hasOwnProperty(key))
+                    continue
+                if (key === "owner" || key === "repository" || key === "repo"
+                        || key === "head_repository" || key === "base_repository"
+                        || key === "head_repo" || key === "base_repo")
                     continue
                 var child = value[key]
                 if (!child || typeof child !== "object")
@@ -434,6 +494,16 @@ QtObject {
 
         walk(parsed, 0)
         return authors
+    }
+
+    function isPreExtractedAuthorPayload(value) {
+        return value
+               && typeof value === "object"
+               && !Array.isArray(value)
+               && Array.isArray(value.authors)
+               && (value.hasOwnProperty("subjectWebUrl")
+                   || value.hasOwnProperty("actionRuns")
+                   || value.hasOwnProperty("release"))
     }
 
     function parseSubjectAuthorsMulti(payloadText, splitToken) {

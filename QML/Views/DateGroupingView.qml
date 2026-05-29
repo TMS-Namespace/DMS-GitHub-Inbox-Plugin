@@ -15,6 +15,7 @@ Column {
     property int titleLines: 2
 
     signal markThreadRead(string threadId)
+    signal markThreadReadAfterOpen(string threadId)
     signal markGroupRead(var items)
     signal markGroupDone(var items)
     signal markThreadUnread(string threadId)
@@ -50,6 +51,7 @@ Column {
             onMarkGroupRead: function(items) { view.markGroupRead(items) }
             onMarkGroupDone: function(items) { view.markGroupDone(items) }
             onMarkThreadRead: function(threadId) { view.markThreadRead(threadId) }
+            onMarkThreadReadAfterOpen: function(threadId) { view.markThreadReadAfterOpen(threadId) }
             onMarkThreadUnread: function(threadId) { view.markThreadUnread(threadId) }
             onMarkThreadDone: function(threadId) { view.markThreadDone(threadId) }
             onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {

@@ -39,10 +39,13 @@ Item {
     signal markRepoRead(var items)
     signal markRepoDone(var items)
     signal markThreadRead(string threadId)
+    signal markThreadReadAfterOpen(string threadId)
     signal markThreadUnread(string threadId)
     signal markThreadDone(string threadId)
     signal requestThreadAuthors(string threadId, string subjectApiUrl, string subjectType)
     signal closePopout()
+    signal readFilterChangedByUser(string value)
+    signal participationFilterChangedByUser(string value)
     signal persistExpandedRepos(var state)
     signal persistExpandedDateGroups(var state)
     signal markDateGroupRead(var items)
@@ -358,6 +361,7 @@ Item {
                 onMarkRepoRead: function(items) { panel.markRepoRead(items) }
                 onMarkRepoDone: function(items) { panel.markRepoDone(items) }
                 onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                onMarkThreadReadAfterOpen: function(threadId) { panel.markThreadReadAfterOpen(threadId) }
                 onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
                 onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
@@ -379,6 +383,7 @@ Item {
                 onMarkGroupRead: function(items) { panel.markDateGroupRead(items) }
                 onMarkGroupDone: function(items) { panel.markDateGroupDone(items) }
                 onMarkThreadRead: function(threadId) { panel.markThreadRead(threadId) }
+                onMarkThreadReadAfterOpen: function(threadId) { panel.markThreadReadAfterOpen(threadId) }
                 onMarkThreadUnread: function(threadId) { panel.markThreadUnread(threadId) }
                 onMarkThreadDone: function(threadId) { panel.markThreadDone(threadId) }
                 onRequestThreadAuthors: function(threadId, subjectApiUrl, subjectType) {
@@ -460,7 +465,7 @@ Item {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: panel.readFilter = modelData.value
+                                    onClicked: panel.readFilterChangedByUser(modelData.value)
                                 }
 
                                 StyledText {
@@ -523,7 +528,7 @@ Item {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: panel.participationFilter = modelData.value
+                                    onClicked: panel.participationFilterChangedByUser(modelData.value)
                                 }
 
                                 StyledText {

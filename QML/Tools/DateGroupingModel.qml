@@ -120,16 +120,16 @@ QtObject {
 
         var updated = new Date(timestamp)
         var now = new Date()
-        var dayMs = 24 * 60 * 60 * 1000
 
-        var todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-        var updatedDayStart = new Date(updated.getFullYear(), updated.getMonth(), updated.getDate()).getTime()
+        var todayDay = _localDayNumber(now)
+        var updatedDay = _localDayNumber(updated)
+        var calendarDayDiff = todayDay - updatedDay
 
-        if (updatedDayStart === todayStart)
+        if (calendarDayDiff === 0)
             return "today"
-        if (updatedDayStart === todayStart - dayMs)
+        if (calendarDayDiff === 1)
             return "yesterday"
-        if (updatedDayStart === todayStart - 2 * dayMs)
+        if (calendarDayDiff === 2)
             return "two_days_ago"
 
         var mondayOffset = (now.getDay() + 6) % 7
@@ -137,7 +137,7 @@ QtObject {
         if (timestamp >= weekStart)
             return "this_week"
 
-        var previousWeekStart = weekStart - 7 * dayMs
+        var previousWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset - 7).getTime()
         if (timestamp >= previousWeekStart)
             return "previous_week"
 
@@ -158,6 +158,11 @@ QtObject {
             return "previous_year"
 
         return "older"
+    }
+
+    function _localDayNumber(value) {
+        return Math.floor(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())
+                          / (24 * 60 * 60 * 1000))
     }
 
     function _groupMessagesByDate(items) {

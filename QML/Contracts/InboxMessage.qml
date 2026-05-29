@@ -18,6 +18,7 @@ QtObject {
     property string subjectType: "Message"
     property string title: "(untitled)"
     property string subjectApiUrl: ""
+    property string subjectReference: ""
     property string webUrl: ""
     property bool webUrlResolved: false
 
@@ -38,6 +39,7 @@ QtObject {
         subjectType = String(source.subjectType || "Message")
         title = String(source.title || "(untitled)")
         subjectApiUrl = String(source.subjectApiUrl || "")
+        subjectReference = String(source.subjectReference || "")
         webUrl = String(source.webUrl || "")
         webUrlResolved = !!source.webUrlResolved
     }
@@ -57,6 +59,7 @@ QtObject {
             subjectType: subjectType,
             title: title,
             subjectApiUrl: subjectApiUrl,
+            subjectReference: subjectReference,
             webUrl: webUrl,
             webUrlResolved: webUrlResolved
         }

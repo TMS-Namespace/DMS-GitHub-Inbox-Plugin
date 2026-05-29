@@ -796,7 +796,7 @@ QtObject {
     readonly property int uiStallLogThresholdMs: 750
 
     /// When true, log every profiled operation, not only slow ones.
-    readonly property bool profileLogAllOperations: false
+    readonly property bool profileLogAllOperations: isDevMode
 
     /// Enables lightweight API/refresh metric collection shown in settings.
     readonly property bool apiCallStatsEnabled: isDevMode

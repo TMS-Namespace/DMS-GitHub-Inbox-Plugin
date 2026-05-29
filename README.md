@@ -1,6 +1,6 @@
 # GitHub Inbox Plugin for DMS
 
-A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your GitHub notifications (aka inbox) in a popup and lets you mark them as read or done.
+A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your `GitHub` notifications (or the so called `Inbox`) in a popup and lets you mark them as read or done.
 
 <div align="center">
 
@@ -12,16 +12,16 @@ A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget p
 
 ## Features
 
-- DankBar widget with unread count
+- `DankBar` widget with unread count.
 - Popup inbox grouped by repository or date with expandable sections.
-- Open thread source, repo page, or author's page directly in your browser
-- Mark single thread, group of threads, or all threads, as read/done.
+- Open a thread source, repository page, or author's page directly in your browser.
+- Mark a single thread, a group of threads, or all threads as read/done.
 - Configurable refresh interval and fetch size.
 - Configurable popup item limit and title line count.
-- Show `DMS` notification on new incoming threads.
+- Show a `DMS` notification for new incoming threads.
 - Filter options:
-  - Show already read/not read/all thread.
-  - Show messages that you participated in/not participated/all.
+  - Show read, unread, or all threads.
+  - Show threads you participated in, did not participate in, or all threads.
 
 <div align="center">
 
@@ -33,20 +33,30 @@ A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget p
 
 ## Authentication
 
-This plugin uses a **GitHub classic personal access token**, it can be created on <https://github.com/settings/tokens>.
+This plugin uses a **GitHub classic personal access token**, which can be created on <https://github.com/settings/tokens>.
 
 *Recommended token scope*:
 
 - `notifications`
-- If you need also full details for threads originated from private repositories, you need also to enable full `repo` permission for this token.
+- To show full details for threads from private repositories, also enable the full `repo` permission for this token.
 
 ## Requirements
 
-- `DMS` >= `1.2.0`
-- `curl` in `$PATH` (usually pre-installed on most distros.)
-- `secret-tool` in `$PATH` (usually pre-installed with `libsecret` on most distros)
-- To present authors, `jq` command line tool is needed to parse `json`  (usually needs a manual install).
-- Internet access to `api.github.com`
+- `DMS` >= `1.2.0``
+- `curl` in `$PATH` (usually pre-installed on most distros).
+- `secret-tool` in `$PATH` (usually pre-installed with `libsecret` on most distros).
+- To show authors, the `jq` command-line tool is needed to parse `JSON` (usually needs a manual install).
+- Internet access to `api.github.com``
+
+## Limitations
+
+- The `GitHub` notifications API exposes only whether a message is `Read`/`Unread`, but it does not expose a `Done` state.
+
+  Because of that, this plugin maintains and caches `Done` state locally for actions performed inside the plugin.
+
+  If you mark a notification as `Done` in the GitHub web UI, the API can still return it as a `Read` thread. In that case the plugin cannot reliably detect that it was marked `Done`, so it may remain visible as `Read`.
+
+- Notifications from `Dependabots` are supported, since `Github` does not provide a well generalizable  way to fetch them.
 
 ## Install
 

@@ -19,6 +19,7 @@ Item {
     property int extraHeight: 0
 
     signal markRead(string threadId)
+    signal markReadAfterOpen(string threadId)
     signal markUnread(string threadId)
     signal markDone(string threadId)
     signal requestAuthors(string threadId, string subjectApiUrl, string subjectType)
@@ -30,6 +31,12 @@ Item {
     property string subjectType: messageData.subjectType || "Message"
     property string subjectApiUrl: messageData.subjectApiUrl || ""
     property string reason: GitHub.reasonLabel(messageData.reason)
+    property string subjectLabel: GitHub.subjectDisplayLabel(subjectType)
+    property string subjectReference: GitHub.subjectReferenceLabel(subjectType,
+                                                                   subjectApiUrl,
+                                                                   webUrl,
+                                                                   messageData.subjectReference || "")
+    property string subjectDisplay: subjectReference ? (subjectLabel + " " + subjectReference) : subjectLabel
     property string updatedAt: messageData.updatedAt || ""
     property string webUrl: effectiveWebUrl()
     property string updatedText: GitHub.relativeTimeFromIso(updatedAt)
@@ -139,6 +146,16 @@ Item {
         Qt.openUrlExternally(repoUrl)
     }
 
+    function openMessageUrl() {
+        if (!webUrl)
+            return
+        var shouldMarkRead = row.unread && row.threadId
+        Qt.openUrlExternally(webUrl)
+        if (shouldMarkRead)
+            row.markReadAfterOpen(row.threadId)
+        row.closePopout()
+    }
+
     function authorRequestDelayMs() {
         var numericId = parseInt(threadId || "0")
         if (isNaN(numericId))
@@ -243,12 +260,7 @@ Item {
                             height: titleHost.height
                             hoverEnabled: true
                             cursorShape: webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                if (webUrl) {
-                                    row.closePopout()
-                                    Qt.openUrlExternally(webUrl)
-                                }
-                            }
+                            onClicked: row.openMessageUrl()
                         }
                     }
 
@@ -300,7 +312,7 @@ Item {
                         spacing: Theme.spacingXS
 
                         StyledText {
-                            text: row.subjectType
+                            text: row.subjectDisplay
                             font.pixelSize: GitHubConstants.messageMetadataFontSizePx
                             color: Theme.surfaceVariantText
                         }

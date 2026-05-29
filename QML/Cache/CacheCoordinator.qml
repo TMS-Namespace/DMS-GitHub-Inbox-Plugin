@@ -92,6 +92,7 @@ Item {
             messages: diskCache.cachedMessages || [],
             authorsByThread: diskCache.cachedAuthorsByThread || ({}),
             authorFetchedAt: diskCache.cachedAuthorFetchedAt || ({}),
+            doneThreadState: diskCache.cachedDoneThreadState || ({}),
             timestamp: diskCache.cachedTimestamp || 0
         })
         var result = cachedStateModel.toObject()
@@ -106,6 +107,7 @@ Item {
         _perfLog("resolveMessageAvatars — count=" + (items ? items.length : 0))
         if (!diskCache.initialized) return
         var downloads = []
+        var resolvedLocalAvatars = {}
         for (var i = 0; i < items.length; i++) {
             var item = items[i]
             var login = (item.repositoryOwnerLogin || "").trim()
@@ -118,9 +120,11 @@ Item {
                 currentUrl = _remoteAvatarUrl(login)
 
             var resolved = diskCache.resolveAvatarUrl(currentUrl, login)
-            if (resolved !== currentUrl)
+            if (resolved !== currentUrl) {
                 item.repositoryOwnerAvatarUrl = resolved
-            else if (!_isLocalUrl(resolved)) {
+                if (_isLocalUrl(resolved))
+                    resolvedLocalAvatars[login] = resolved
+            } else if (!_isLocalUrl(resolved)) {
                 item.repositoryOwnerAvatarUrl = resolved
                 downloads.push({ login: login, remoteUrl: resolved })
             } else
@@ -128,6 +132,8 @@ Item {
         }
         if (downloads.length > 0)
             avatarWorker.batchQueueAvatarDownloads(downloads)
+        for (var resolvedLogin in resolvedLocalAvatars)
+            coordinator.avatarCachedLocally(resolvedLogin, resolvedLocalAvatars[resolvedLogin])
         _profile("resolveMessageAvatars", profileStart,
                  "items=" + (items ? items.length : 0) + " downloads=" + downloads.length)
     }
@@ -137,6 +143,7 @@ Item {
         _perfLog("resolveAuthorAvatars — count=" + (authors ? authors.length : 0))
         if (!diskCache.initialized) return
         var downloads = []
+        var resolvedLocalAvatars = {}
         for (var i = 0; i < authors.length; i++) {
             var author = authors[i]
             var login = (author.login || "").trim()
@@ -149,9 +156,11 @@ Item {
                 currentUrl = _remoteAvatarUrl(login)
 
             var resolved = diskCache.resolveAvatarUrl(currentUrl, login)
-            if (resolved !== currentUrl)
+            if (resolved !== currentUrl) {
                 author.avatarUrl = resolved
-            else if (!_isLocalUrl(resolved)) {
+                if (_isLocalUrl(resolved))
+                    resolvedLocalAvatars[login] = resolved
+            } else if (!_isLocalUrl(resolved)) {
                 author.avatarUrl = resolved
                 downloads.push({ login: login, remoteUrl: resolved })
             } else
@@ -159,8 +168,20 @@ Item {
         }
         if (downloads.length > 0)
             avatarWorker.batchQueueAvatarDownloads(downloads)
+        for (var resolvedLogin in resolvedLocalAvatars)
+            coordinator.avatarCachedLocally(resolvedLogin, resolvedLocalAvatars[resolvedLogin])
         _profile("resolveAuthorAvatars", profileStart,
                  "authors=" + (authors ? authors.length : 0) + " downloads=" + downloads.length)
+    }
+
+    function cachedLocalAvatarUrl(login) {
+        var normalizedLogin = String(login || "").trim()
+        if (!diskCache.initialized || !normalizedLogin)
+            return ""
+
+        var resolved = diskCache.resolveAvatarUrl(_remoteAvatarUrl(normalizedLogin),
+                                                  normalizedLogin)
+        return _isLocalUrl(resolved) ? resolved : ""
     }
 
     /// Returns true if url is a file:// URL
@@ -183,6 +204,10 @@ Item {
 
     function updateMessages(items) {
         diskCache.updateMessages(items)
+    }
+
+    function updateDoneThreadState(state) {
+        diskCache.updateDoneThreadState(state)
     }
 
     function bulkUpdateAuthors(authorsMap) {

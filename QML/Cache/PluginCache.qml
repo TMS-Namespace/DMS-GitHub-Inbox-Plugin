@@ -24,6 +24,7 @@ Item {
     property var cachedMessages: []
     property var cachedAuthorsByThread: ({})
     property var cachedAuthorFetchedAt: ({})
+    property var cachedDoneThreadState: ({})
     property var avatarLocalPaths: ({})     // login -> "file:///abs/path.png"
     property real cachedTimestamp: 0
     property bool initialized: false
@@ -61,6 +62,10 @@ Item {
 
     AvatarCacheEntry {
         id: avatarCacheEntryModel
+    }
+
+    DoneThreadState {
+        id: doneThreadStateModel
     }
 
     // -- Initialization / worker state ---------------------------------------
@@ -233,6 +238,12 @@ Item {
         _queueSave()
     }
 
+    function updateDoneThreadState(state) {
+        doneThreadStateModel.readFromObject(state)
+        cachedDoneThreadState = doneThreadStateModel.toObject()
+        _queueSave()
+    }
+
     // -- Authors --------------------------------------------------------------
 
     function updateAuthors(threadId, authors) {
@@ -357,6 +368,7 @@ Item {
         cachedMessages = []
         cachedAuthorsByThread = ({})
         cachedAuthorFetchedAt = ({})
+        cachedDoneThreadState = ({})
         avatarLocalPaths = ({})
         cachedTimestamp = 0
 
@@ -456,6 +468,8 @@ Item {
         cachedMessages = cachePayloadModel.notifications || []
         cachedAuthorsByThread = cachePayloadModel.authorsByThread || ({})
         cachedAuthorFetchedAt = cachePayloadModel.authorFetchedAt || ({})
+        doneThreadStateModel.readFromObject(cachePayloadModel.doneThreadState)
+        cachedDoneThreadState = doneThreadStateModel.toObject()
         cachedTimestamp = cachePayloadModel.lastFetched || 0
 
         // Rebuild avatar local path map, validating files still exist on disk
@@ -485,7 +499,10 @@ Item {
             return
         }
 
+        var normalized = _normalizeCachedResourceUrls(paths)
         avatarLocalPaths = paths
+        if (normalized)
+            _queueSave()
         _perfLog("_applyParsedCache — end, msgs=" + cachedMessages.length + " avatars=" + Object.keys(paths).length)
         _profile("_applyParsedCache", profileStart,
                  "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
@@ -525,6 +542,7 @@ Item {
         cachePayloadModel.authorsByThread = cachedAuthorsByThread
         cachePayloadModel.authorFetchedAt = cachedAuthorFetchedAt
         cachePayloadModel.avatarMap = avatarMap
+        cachePayloadModel.doneThreadState = cachedDoneThreadState
 
         _cacheWriteSeq = _cacheWriteSeq + 1
         cacheWorker.sendMessage({
@@ -534,7 +552,8 @@ Item {
         })
         _profile("_writeToDisk.preparePayload", profileStart,
                  "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length
-                 + " avatars=" + Object.keys(avatarMap).length)
+                 + " avatars=" + Object.keys(avatarMap).length
+                 + " done=" + Object.keys(cachedDoneThreadState).length)
     }
 
     function _flushPendingMetadata(queueSaveAfterFlush) {
@@ -666,7 +685,9 @@ Item {
             }
         }
 
-        if (changed || initializing) {
+        var normalized = initializing ? _normalizeCachedResourceUrls(nextPaths) : false
+
+        if (changed || initializing || normalized) {
             avatarLocalPaths = nextPaths
             _queueSave()
             if (redownloads.length > 0)
@@ -678,5 +699,41 @@ Item {
             initialized = true
             cacheReady()
         }
+    }
+
+    function _normalizeCachedResourceUrls(localPaths) {
+        var paths = localPaths || ({})
+        var changed = false
+
+        for (var messageIndex = 0; messageIndex < cachedMessages.length; messageIndex++) {
+            var message = cachedMessages[messageIndex]
+            if (!message)
+                continue
+
+            var ownerLogin = String(message.repositoryOwnerLogin || "").trim()
+            var ownerLocalUrl = ownerLogin ? (paths[ownerLogin] || "") : ""
+            if (ownerLocalUrl && message.repositoryOwnerAvatarUrl !== ownerLocalUrl) {
+                message.repositoryOwnerAvatarUrl = ownerLocalUrl
+                changed = true
+            }
+        }
+
+        for (var threadId in cachedAuthorsByThread) {
+            var authors = cachedAuthorsByThread[threadId] || []
+            for (var authorIndex = 0; authorIndex < authors.length; authorIndex++) {
+                var author = authors[authorIndex]
+                if (!author)
+                    continue
+
+                var login = String(author.login || "").trim()
+                var localUrl = login ? (paths[login] || "") : ""
+                if (localUrl && author.avatarUrl !== localUrl) {
+                    author.avatarUrl = localUrl
+                    changed = true
+                }
+            }
+        }
+
+        return changed
     }
 }
