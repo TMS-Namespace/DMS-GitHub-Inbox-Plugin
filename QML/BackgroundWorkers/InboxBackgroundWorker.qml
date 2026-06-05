@@ -14,13 +14,13 @@ Item {
 
     // -- Configuration --------------------------------------------------------
     property string token: ""
-    property int fetchPageCount: 1
+    property real targetOldestVisibleUpdatedAtMs: 0
     property string fetchSplitToken: GitHubConstants.fetchPayloadSplitToken
-    property var doneThreadState: ({})
 
     // -- State ----------------------------------------------------------------
     property bool isLoading: false
     property bool fetchQueued: false
+    property bool lastFetchWasComplete: false
     property int parseRequestSeq: 0
     property int fetchGeneration: 0
 
@@ -51,53 +51,77 @@ Item {
         }
 
         isLoading = true
+        lastFetchWasComplete = false
         var generation = fetchGeneration
         ApiCallStats.resetSession()
 
-        var pages = Math.max(1, fetchPageCount)
-        var baseQuery = "per_page=" + GitHubConstants.messagesApiPageSize
-        var allBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true"
-        var participatingBaseUrl = GitHubConstants.githubInboxApiUrl + "?" + baseQuery + "&all=true&participating=true"
-        var command = ["curl", "--fail-early"]
-
-        // Fetch "all" pages first
-        for (var page = 1; page <= pages; page++) {
-            if (page > 1)
-                command.push("--next")
-            command.push(
-                "-sS",
-                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
-                "--max-time", GitHubConstants.curlMaxTimeSeconds,
-                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
-                "-H", "Authorization: token " + token,
-                "-w", "\n" + fetchSplitToken + "\n",
-                allBaseUrl + "&page=" + page
-            )
-        }
-
-        // Fetch "participating" pages to resolve the participation flag
-        for (var pPage = 1; pPage <= pages; pPage++) {
-            command.push("--next")
-            command.push(
-                "-sS",
-                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
-                "--max-time", GitHubConstants.curlMaxTimeSeconds,
-                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
-                "-H", "Authorization: token " + token,
-                "-w", "\n" + fetchSplitToken + "\n",
-                participatingBaseUrl + "&page=" + pPage
-            )
-        }
-
-        ApiCallStats.recordCalls(pages * 2)
-        _perfLog("fetch — spawning curl, pages=" + pages)
+        var targetOldest = Math.max(0, Math.floor(targetOldestVisibleUpdatedAtMs || 0))
+        var maxPages = targetOldest > 0
+            ? GitHubConstants.dynamicFetchMaxPages
+            : GitHubConstants.firstRunFetchPageCount
+        var command = buildDynamicFetchCommand(targetOldest, maxPages)
+        _perfLog("fetch — spawning curl, targetOldestMs=" + targetOldest
+                 + " maxPages=" + maxPages)
         var process = fetchComponentDef.createObject(fetcher, {
             generation: generation
         })
         process.command = command
         process.running = true
+    }
+
+    function buildDynamicFetchCommand(targetOldestMs, maxPages) {
+        var script = ""
+            + "token=$1\n"
+            + "split=$2\n"
+            + "page_size=$3\n"
+            + "target_oldest_ms=$4\n"
+            + "max_pages=$5\n"
+            + "connect_timeout=$6\n"
+            + "max_time=$7\n"
+            + "accept_header=$8\n"
+            + "api_version=$9\n"
+            + "inbox_url=${10}\n"
+            + "command -v jq >/dev/null 2>&1 || exit 127\n"
+            + "base_query=\"per_page=${page_size}\"\n"
+            + "all_base_url=\"${inbox_url}?${base_query}&all=true\"\n"
+            + "participating_base_url=\"${inbox_url}?${base_query}&all=true&participating=true\"\n"
+            + "page=1\n"
+            + "pages=0\n"
+            + "while [ \"$page\" -le \"$max_pages\" ]; do\n"
+            + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"${all_base_url}&page=${page}\") || exit $?\n"
+            + "  printf '%s\\n%s\\n' \"$body\" \"$split\"\n"
+            + "  pages=$page\n"
+            + "  length=$(printf '%s\\n' \"$body\" | jq 'if type == \"array\" then length else -1 end') || exit $?\n"
+            + "  if [ \"$length\" -lt 0 ]; then exit 22; fi\n"
+            + "  if [ \"$length\" -lt \"$page_size\" ]; then break; fi\n"
+            + "  if [ \"$target_oldest_ms\" -gt 0 ]; then\n"
+            + "    oldest_sec=$(printf '%s\\n' \"$body\" | jq '[.[].updated_at | fromdateiso8601?] | min // 0') || exit $?\n"
+            + "    oldest_ms=$((oldest_sec * 1000))\n"
+            + "    if [ \"$oldest_ms\" -gt 0 ] && [ \"$oldest_ms\" -le \"$target_oldest_ms\" ]; then break; fi\n"
+            + "  fi\n"
+            + "  page=$((page + 1))\n"
+            + "done\n"
+            + "p_page=1\n"
+            + "while [ \"$p_page\" -le \"$pages\" ]; do\n"
+            + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"${participating_base_url}&page=${p_page}\") || exit $?\n"
+            + "  printf '%s\\n%s\\n' \"$body\" \"$split\"\n"
+            + "  p_page=$((p_page + 1))\n"
+            + "done\n"
+            + "printf '__GH_FETCH_PAGES=%s\\n' \"$pages\" >&2\n"
+
+        return [
+            "sh", "-c", script, "github-inbox-fetch",
+            token,
+            fetchSplitToken,
+            String(GitHubConstants.messagesApiPageSize),
+            String(targetOldestMs),
+            String(maxPages),
+            String(GitHubConstants.curlConnectTimeoutSeconds),
+            String(GitHubConstants.curlMaxTimeSeconds),
+            GitHubConstants.httpAcceptHeader,
+            GitHubConstants.githubApiVersionHeader,
+            GitHubConstants.githubInboxApiUrl
+        ]
     }
 
     function cancel() {
@@ -135,7 +159,8 @@ Item {
                     var trimmed = line.trim()
                     if (trimmed) {
                         _stderrLines.push(trimmed)
-                        console.warn("[GitHubInbox] fetch:", line)
+                        if (trimmed.indexOf("__GH_FETCH_PAGES=") !== 0)
+                            console.warn("[GitHubInbox] fetch:", line)
                     }
                 }
             }
@@ -156,13 +181,17 @@ Item {
 
                 var nextSeq = fetcher.parseRequestSeq + 1
                 fetcher.parseRequestSeq = nextSeq
+                var pageCount = fetcher._parseFetchedPageCount(_stderrLines)
+                if (pageCount > 0)
+                    ApiCallStats.recordCalls(pageCount * 2)
                 fetcher._perfLog("curl done, sending payload to WorkerScript (len=" + (_chunks.join("\n").length) + ")")
                 parseWorker.sendMessage({
                     seq: nextSeq,
                     payloadText: _chunks.join("\n") + "\n",
                     separator: fetcher.fetchSplitToken,
-                    allSegmentCount: fetcher.fetchPageCount,
-                    doneThreadState: fetcher.doneThreadState,
+                    allSegmentCount: pageCount,
+                    targetOldestVisibleUpdatedAtMs: fetcher.targetOldestVisibleUpdatedAtMs,
+                    pageSize: GitHubConstants.messagesApiPageSize,
                     chunkSize: GitHubConstants.messagesParseChunkSize
                 })
 
@@ -203,6 +232,7 @@ Item {
             if (message.phase === "begin") {
                 var totalCount = parseInt(message.totalCount || 0)
                 var unreadCount = parseInt(message.unreadCount || 0)
+                fetcher.lastFetchWasComplete = !!message.isComplete
                 fetcher.fetchBegin(totalCount, unreadCount)
 
                 if (totalCount === 0) {
@@ -254,5 +284,18 @@ Item {
         if (text)
             return "GitHub request failed: " + text.split("\n")[0]
         return "GitHub request failed. Check token or network."
+    }
+
+    function _parseFetchedPageCount(lines) {
+        var source = lines || []
+        for (var index = source.length - 1; index >= 0; index--) {
+            var line = String(source[index] || "").trim()
+            var marker = "__GH_FETCH_PAGES="
+            if (line.indexOf(marker) !== 0)
+                continue
+            var value = parseInt(line.substring(marker.length))
+            return isNaN(value) ? 0 : value
+        }
+        return 0
     }
 }

@@ -64,7 +64,9 @@ WorkerScript.onMessage = function (message) {
         var parsed = parseMessagesWithParticipationSegments(
             message.payloadText || "",
             message.separator || _FETCH_PAYLOAD_SPLIT_TOKEN,
-            message.allSegmentCount || 1
+            message.allSegmentCount || 0,
+            message.pageSize || 50,
+            message.targetOldestVisibleUpdatedAtMs || 0
         )
 
         if (parsed.error) {
@@ -75,14 +77,11 @@ WorkerScript.onMessage = function (message) {
             return
         }
 
-        var doneState = message.doneThreadState || {}
         var filtered = []
         var unread = 0
 
         for (var index = 0; index < parsed.items.length; index++) {
             var item = parsed.items[index]
-            if (doneState[item.threadId])
-                continue
             item.participated = !!item.participated
             if (item.unread)
                 unread++
@@ -98,7 +97,8 @@ WorkerScript.onMessage = function (message) {
             seq: seq,
             phase: "begin",
             unreadCount: unread,
-            totalCount: filtered.length
+            totalCount: filtered.length,
+            isComplete: !!parsed.isComplete
         })
 
         if (filtered.length === 0) {
@@ -128,7 +128,7 @@ WorkerScript.onMessage = function (message) {
     }
 }
 
-function parseMessagesWithParticipationSegments(payloadText, separator, allSegmentCount) {
+function parseMessagesWithParticipationSegments(payloadText, separator, allSegmentCount, pageSize, targetOldestVisibleUpdatedAtMs) {
     var splitToken = separator || "__GH_PARTICIPATING_SPLIT__"
     var marker = "\n" + splitToken + "\n"
     var normalizedPayload = String(payloadText || "")
@@ -146,9 +146,12 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
     if (segments.length === 0)
         return { items: [] }
 
-    var count = parseInt(allSegmentCount || 1)
-    if (isNaN(count) || count < 1)
-        count = 1
+    var count = parseInt(allSegmentCount || 0)
+    if (isNaN(count) || count < 1) {
+        count = Math.floor(segments.length / 2)
+        if (count < 1)
+            count = 1
+    }
 
     var expectedSegmentCount = count * 2
     if (segments.length < expectedSegmentCount) {
@@ -159,22 +162,38 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
 
     var allSegments = segments.slice(0, Math.min(count, segments.length))
     var participatingSegments = segments.slice(Math.min(count, segments.length))
+    var expectedPageSize = parseInt(pageSize || 50)
+    if (isNaN(expectedPageSize) || expectedPageSize < 1)
+        expectedPageSize = 50
 
     var allItemsByThread = {}
     var participationMap = {}
+    var isComplete = false
+    var targetOldestMs = parseInt(targetOldestVisibleUpdatedAtMs || 0)
+    if (isNaN(targetOldestMs))
+        targetOldestMs = 0
+    var oldestFetchedMs = 0
 
     for (var allIndex = 0; allIndex < allSegments.length; allIndex++) {
         var allParsed = parseMessagesPayload(allSegments[allIndex])
         if (allParsed.error)
             return allParsed
+        if (allIndex === allSegments.length - 1)
+            isComplete = allParsed.items.length < expectedPageSize
         for (var allItemIndex = 0; allItemIndex < allParsed.items.length; allItemIndex++) {
             var allItem = allParsed.items[allItemIndex]
             if (!allItem.threadId)
                 continue
+            var updatedAtMs = allItem.updatedAtMs || 0
+            if (updatedAtMs && (oldestFetchedMs === 0 || updatedAtMs < oldestFetchedMs))
+                oldestFetchedMs = updatedAtMs
             if (!allItemsByThread[allItem.threadId])
                 allItemsByThread[allItem.threadId] = allItem
         }
     }
+
+    if (!isComplete && targetOldestMs > 0 && oldestFetchedMs > 0)
+        isComplete = oldestFetchedMs <= targetOldestMs
 
     for (var partIndex = 0; partIndex < participatingSegments.length; partIndex++) {
         var partParsed = parseMessagesPayload(participatingSegments[partIndex])
@@ -202,7 +221,7 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
         return tB - tA
     })
 
-    return { items: mergedItems }
+    return { items: mergedItems, isComplete: isComplete }
 }
 
 function parseMessagesPayload(payloadText) {

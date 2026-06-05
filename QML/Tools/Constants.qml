@@ -267,9 +267,6 @@ QtObject {
     /// Default maximum number of inbox messages shown per repository group.
     readonly property int defaultGroupItemLimit: 10
 
-    /// Default number of API pages fetched per refresh cycle.
-    readonly property int defaultFetchPageCount: 3
-
     /// Default popup height expressed in message-row "height units".
     readonly property int defaultPopupHeightUnits: 15
 
@@ -287,12 +284,6 @@ QtObject {
     /// Maximum allowed value for the group item limit setting.
     readonly property int maxGroupItemLimit: 25
 
-    /// Minimum allowed value for the fetch page count setting.
-    readonly property int minFetchPageCount: 1
-
-    /// Maximum allowed value for the fetch page count setting.
-    readonly property int maxFetchPageCount: 10
-
     /// Minimum allowed value for the popup height units setting.
     readonly property int minPopupHeightUnits: 5
 
@@ -304,6 +295,22 @@ QtObject {
 
     /// Maximum allowed value for the title lines setting.
     readonly property int maxTitleLines: 6
+
+    /// Number of pages fetched on the first run, before there is a visible
+    /// local inbox window to compare against.
+    readonly property int firstRunFetchPageCount: 3
+
+    /// Hard safety cap for dynamic GitHub inbox pagination. Refresh starts at
+    /// one page and continues only until the fetched window covers the oldest
+    /// currently loaded visible item, or until this cap is reached.
+    readonly property int dynamicFetchMaxPages: 20
+
+    /// Age after which locally done thread entries can be removed from the
+    /// object cache. Avatars are intentionally not cleaned by this policy.
+    readonly property real doneStateRetentionMs: 60 * 24 * 60 * 60 * 1000
+
+    /// Minimum interval between done-state cache cleanup passes.
+    readonly property real doneStateCleanupIntervalMs: 24 * 60 * 60 * 1000
 
 
     // =========================================================================

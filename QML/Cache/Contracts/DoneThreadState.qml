@@ -25,17 +25,29 @@ QtObject {
             for (var index = 0; index < value.length; index++) {
                 var arrayId = String(value[index] || "").trim()
                 if (arrayId)
-                    result[arrayId] = true
+                    result[arrayId] = {
+                        source: "local",
+                        updatedAt: "",
+                        savedAt: 0
+                    }
             }
             return result
         }
 
         if (typeof value === "object") {
             for (var key in value) {
-                if (value[key]) {
-                    var objectId = String(key || "").trim()
-                    if (objectId)
-                        result[objectId] = true
+                var objectId = String(key || "").trim()
+                if (!objectId)
+                    continue
+
+                var entry = value[key]
+                if (!entry || typeof entry !== "object" || Array.isArray(entry))
+                    continue
+
+                result[objectId] = {
+                    source: String(entry.source || "local"),
+                    updatedAt: String(entry.updatedAt || ""),
+                    savedAt: entry.savedAt || 0
                 }
             }
         }

@@ -153,16 +153,26 @@ Item {
         doneThreadState = _normalizeDoneThreadState(state)
     }
 
-    function markThreadIdsLocallyDone(threadIds) {
+    function markThreadIdsLocallyDone(threadIds, source) {
+        var messages = []
+        var ids = threadIds || []
+        for (var idIndex = 0; idIndex < ids.length; idIndex++)
+            messages.push({ threadId: ids[idIndex] })
+        markMessagesLocallyDone(messages, source)
+    }
+
+    function markMessagesLocallyDone(messages, source) {
         var doneCopy = _cloneMap(doneThreadState)
         var pendingCopy = _cloneMap(pendingDoneThreadState)
         var changed = false
-        var ids = threadIds || []
-        for (var index = 0; index < ids.length; index++) {
-            var threadId = String(ids[index] || "").trim()
+        var items = messages || []
+        var stateSource = String(source || "local")
+        for (var index = 0; index < items.length; index++) {
+            var item = items[index] || ({})
+            var threadId = String(item.threadId || "").trim()
             if (!threadId || doneCopy[threadId])
                 continue
-            doneCopy[threadId] = true
+            doneCopy[threadId] = _doneStateEntryForThread(threadId, stateSource, item)
             delete pendingCopy[threadId]
             _removePendingDoneMessage(threadId)
             changed = true
@@ -171,6 +181,48 @@ Item {
             return
         doneThreadState = doneCopy
         pendingDoneThreadState = pendingCopy
+    }
+
+    function clearReturnedInferredDoneThreadIds(threadIds) {
+        var ids = threadIds || []
+        if (ids.length === 0)
+            return
+
+        var doneCopy = _cloneMap(doneThreadState)
+        var changed = false
+        for (var index = 0; index < ids.length; index++) {
+            var threadId = String(ids[index] || "").trim()
+            var entry = doneCopy[threadId]
+            if (!threadId || !entry || typeof entry !== "object")
+                continue
+            if (String(entry.source || "") !== "github_missing_from_complete_refresh")
+                continue
+            delete doneCopy[threadId]
+            changed = true
+        }
+        if (changed)
+            doneThreadState = doneCopy
+    }
+
+    function pruneDoneThreadState(retentionMs) {
+        var maxAge = Math.max(0, parseInt(retentionMs || 0))
+        if (maxAge <= 0)
+            return
+
+        var cutoff = Date.now() - maxAge
+        var next = {}
+        var changed = false
+        for (var threadId in doneThreadState) {
+            var entry = doneThreadState[threadId]
+            var timestamp = _doneStateTimestampMs(entry)
+            if (timestamp > 0 && timestamp < cutoff) {
+                changed = true
+                continue
+            }
+            next[threadId] = entry
+        }
+        if (changed)
+            doneThreadState = next
     }
 
     function applyPendingReadState(messages) {
@@ -206,7 +258,7 @@ Item {
 
         if (actionType === "thread_done_sync") {
             if (threadId) {
-                doneCopy[threadId] = true
+                doneCopy[threadId] = _doneStateEntryForThread(threadId, "local")
                 delete pendingCopy[threadId]
                 doneThreadState = doneCopy
                 pendingDoneThreadState = pendingCopy
@@ -575,6 +627,25 @@ Item {
         pendingDoneMessagesByThread = next
     }
 
+    function _doneStateEntryForThread(threadId, source, item) {
+        var pendingMessage = item || pendingDoneMessagesByThread[threadId] || ({})
+        return {
+            source: String(source || "local"),
+            updatedAt: pendingMessage.updatedAt || "",
+            savedAt: Date.now()
+        }
+    }
+
+    function _doneStateTimestampMs(entry) {
+        if (!entry || typeof entry !== "object")
+            return 0
+        var updatedAtMs = Date.parse(entry.updatedAt || "") || 0
+        if (updatedAtMs > 0)
+            return updatedAtMs
+        var savedAtMs = parseInt(entry.savedAt || 0)
+        return isNaN(savedAtMs) ? 0 : savedAtMs
+    }
+
     function _stashPendingReadMessages(threadIds, messages) {
         var idSet = _threadIdSet(threadIds || [])
         var next = _cloneMap(pendingReadMessagesByThread)
@@ -656,16 +727,28 @@ Item {
             for (var index = 0; index < value.length; index++) {
                 var arrayId = String(value[index] || "").trim()
                 if (arrayId)
-                    result[arrayId] = true
+                    result[arrayId] = {
+                        source: "local",
+                        updatedAt: "",
+                        savedAt: 0
+                    }
             }
             return result
         }
 
         for (var key in value) {
-            if (value[key]) {
-                var objectId = String(key || "").trim()
-                if (objectId)
-                    result[objectId] = true
+            var objectId = String(key || "").trim()
+            if (!objectId)
+                continue
+
+            var entry = value[key]
+            if (!entry || typeof entry !== "object" || Array.isArray(entry))
+                continue
+
+            result[objectId] = {
+                source: String(entry.source || "local"),
+                updatedAt: String(entry.updatedAt || ""),
+                savedAt: entry.savedAt || 0
             }
         }
 

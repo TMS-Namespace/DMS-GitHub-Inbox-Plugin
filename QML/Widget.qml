@@ -36,12 +36,6 @@ PluginComponent {
             return GitHubConstants.defaultGroupItemLimit
         return Math.max(GitHubConstants.minGroupItemLimit, Math.min(GitHubConstants.maxGroupItemLimit, value))
     }
-    property int fetchPageCount: {
-        var value = parseInt(pluginData.fetchPages || GitHubConstants.defaultFetchPageCount)
-        if (isNaN(value))
-            return GitHubConstants.defaultFetchPageCount
-        return Math.max(GitHubConstants.minFetchPageCount, Math.min(GitHubConstants.maxFetchPageCount, value))
-    }
     property int popupHeightUnits: {
         var rawValue = pluginData.popupHeight
         if (rawValue === undefined || rawValue === "")
@@ -98,6 +92,7 @@ PluginComponent {
     property bool _activeFetchWasManual: false
     property string _lastErrorNotificationText: ""
     property real _lastErrorNotificationAt: 0
+    property real _lastDoneCacheCleanupAt: 0
     property bool isRefreshBusy: fetcher.isLoading || authorFetch.isBusy || cacheCoord.isDownloadingAvatars
     property bool popoutVisible: false
     property bool _refreshAfterPopoutClose: false
@@ -195,8 +190,7 @@ PluginComponent {
     InboxBackgroundWorker {
         id: fetcher
         token: root.token
-        fetchPageCount: root.fetchPageCount
-        doneThreadState: operations.effectiveDoneThreadState
+        targetOldestVisibleUpdatedAtMs: root._oldestMessageUpdatedAtMs(root.inboxMessages)
 
         onFetchBegin: function(totalCount, unreadCount) {
             root._perfLog("onFetchBegin — total=" + totalCount + " unread=" + unreadCount)
@@ -1167,6 +1161,7 @@ PluginComponent {
     function _finalizeFetchCycle(messagesChanged) {
         if (messagesChanged)
             _pruneAuthorCaches()
+        _cleanupDoneCacheIfDue()
         _activeFetchWasManual = false
         _scheduleApiStatsRefreshComplete()
         fetcher.retryIfQueued()
@@ -1174,10 +1169,14 @@ PluginComponent {
 
     function _applyFetchedMessages(items, unread) {
         var nextItems = _mergeCachedMessageFields(items || [])
+        operations.clearReturnedInferredDoneThreadIds(_threadIdsForMessages(nextItems))
         nextItems = operations.applyPendingReadState(nextItems)
-        var inferredDoneThreadIds = _inferDoneThreadIdsFromRefresh(nextItems)
-        if (inferredDoneThreadIds.length > 0)
-            operations.markThreadIdsLocallyDone(inferredDoneThreadIds)
+        if (fetcher.lastFetchWasComplete) {
+            var inferredDoneMessages = _inferDoneMessagesFromRefresh(nextItems)
+            if (inferredDoneMessages.length > 0)
+                operations.markMessagesLocallyDone(inferredDoneMessages,
+                                                   "github_missing_from_complete_refresh")
+        }
         nextItems = _filterDoneMessages(nextItems)
         var nextUnread = _recalculateUnread(nextItems)
         var unchanged = nextUnread === unreadCount
@@ -1201,7 +1200,7 @@ PluginComponent {
         return true
     }
 
-    function _inferDoneThreadIdsFromRefresh(fetchedItems) {
+    function _inferDoneMessagesFromRefresh(fetchedItems) {
         var previousItems = inboxMessages || []
         var incomingItems = fetchedItems || []
         if (previousItems.length === 0)
@@ -1223,6 +1222,18 @@ PluginComponent {
         var inferred = []
         var seen = {}
 
+        if (incomingItems.length === 0) {
+            for (var emptyIndex = 0; emptyIndex < previousItems.length; emptyIndex++) {
+                var emptyPrevious = previousItems[emptyIndex]
+                if (!emptyPrevious || !emptyPrevious.threadId
+                        || doneState[emptyPrevious.threadId] || seen[emptyPrevious.threadId])
+                    continue
+                seen[emptyPrevious.threadId] = true
+                inferred.push(emptyPrevious)
+            }
+            return inferred
+        }
+
         for (var prevIndex = 0; prevIndex < previousItems.length; prevIndex++) {
             var previous = previousItems[prevIndex]
             if (!previous || !previous.threadId || incomingByThread[previous.threadId]
@@ -1230,18 +1241,28 @@ PluginComponent {
                 continue
 
             var previousMs = previous.updatedAtMs || Date.parse(previous.updatedAt || "") || 0
-            if (incomingItems.length > 0
-                    && (!oldestIncomingMs || !previousMs || previousMs < oldestIncomingMs))
+            if (!oldestIncomingMs || !previousMs || previousMs < oldestIncomingMs)
                 continue
 
             seen[previous.threadId] = true
-            inferred.push(previous.threadId)
+            inferred.push(previous)
         }
 
         if (inferred.length > 0 && GitHubConstants.profileLoggingEnabled)
             console.warn("[GitHubInbox] inferred " + inferred.length
-                         + " missing threads as done after refresh")
+                         + " missing threads as done after complete refresh")
         return inferred
+    }
+
+    function _threadIdsForMessages(items) {
+        var ids = []
+        var source = items || []
+        for (var index = 0; index < source.length; index++) {
+            var threadId = String((source[index] && source[index].threadId) || "").trim()
+            if (threadId)
+                ids.push(threadId)
+        }
+        return ids
     }
 
     function _scheduleApiStatsRefreshComplete() {
@@ -1392,6 +1413,30 @@ PluginComponent {
                 latest = updatedAtMs
         }
         return latest
+    }
+
+    function _oldestMessageUpdatedAtMs(items) {
+        var oldest = 0
+        var source = items || []
+        for (var index = 0; index < source.length; index++) {
+            var item = source[index]
+            if (!item)
+                continue
+            var updatedAtMs = item.updatedAtMs || Date.parse(item.updatedAt || "") || 0
+            if (updatedAtMs && (oldest === 0 || updatedAtMs < oldest))
+                oldest = updatedAtMs
+        }
+        return oldest
+    }
+
+    function _cleanupDoneCacheIfDue() {
+        var now = Date.now()
+        if (_lastDoneCacheCleanupAt > 0
+                && now - _lastDoneCacheCleanupAt < GitHubConstants.doneStateCleanupIntervalMs)
+            return
+        _lastDoneCacheCleanupAt = now
+        operations.pruneDoneThreadState(GitHubConstants.doneStateRetentionMs)
+        cacheCoord.updateMessages(inboxMessages)
     }
 
     function _operationShouldUpdateMessageCache(actionType) {
@@ -1718,11 +1763,6 @@ PluginComponent {
     }
 
     onGroupItemLimitChanged: {
-        if (token && cacheCoord.initialized)
-            _fetchInbox()
-    }
-
-    onFetchPageCountChanged: {
         if (token && cacheCoord.initialized)
             _fetchInbox()
     }
