@@ -13,7 +13,6 @@ PluginSettings {
     property string tokenValue: ""
     property bool showToken: false
     property int groupLimitValue: GitHubConstants.defaultGroupItemLimit
-    property int fetchPagesValue: GitHubConstants.defaultFetchPageCount
     property int popupHeightValue: GitHubConstants.defaultPopupHeightUnits
     property string tokenStatusMessage: ""
     property bool tokenSaveFailed: false
@@ -55,17 +54,6 @@ PluginSettings {
         groupLimitValue = clampGroupLimit(loadValue("groupItemLimit", GitHubConstants.defaultGroupItemLimit))
     }
 
-    function clampFetchPages(value) {
-        var pages = parseInt(value || GitHubConstants.defaultFetchPageCount)
-        if (isNaN(pages))
-            return GitHubConstants.defaultFetchPageCount
-        return Math.max(GitHubConstants.minFetchPageCount, Math.min(GitHubConstants.maxFetchPageCount, pages))
-    }
-
-    function loadFetchPages() {
-        fetchPagesValue = clampFetchPages(loadValue("fetchPages", GitHubConstants.defaultFetchPageCount))
-    }
-
     function clampPopupHeight(value) {
         var units = parseInt(value || GitHubConstants.defaultPopupHeightUnits)
         if (isNaN(units))
@@ -81,7 +69,6 @@ PluginSettings {
         if (pluginService) {
             loadToken()
             loadGroupLimit()
-            loadFetchPages()
             loadPopupHeight()
         }
     }
@@ -89,7 +76,6 @@ PluginSettings {
     Component.onCompleted: {
         loadToken()
         loadGroupLimit()
-        loadFetchPages()
         loadPopupHeight()
     }
 
@@ -401,95 +387,6 @@ PluginSettings {
                         groupSlider.value = limited
                         root.groupLimitValue = limited
                         root.saveValue("groupItemLimit", String(limited))
-                    }
-                }
-            }
-        }
-    }
-
-    Item {
-        width: parent.width
-        height: GitHubConstants.settingsSliderItemHeightPx
-
-        Column {
-            anchors.fill: parent
-            spacing: GitHubConstants.settingsSliderColumnSpacingPx
-
-            Row {
-                width: parent.width
-
-                StyledText {
-                    text: "Max Pages to Fetch"
-                    font.pixelSize: Theme.fontSizeMedium
-                    color: Theme.surfaceText
-                }
-
-                Item { width: Theme.spacingS; height: 1 }
-
-                StyledText {
-                    text: fetchPagesSlider.value.toFixed(0)
-                    font.pixelSize: Theme.fontSizeMedium
-                    font.weight: Font.Bold
-                    color: Theme.primary
-                }
-            }
-
-            Item {
-                width: parent.width
-                height: GitHubConstants.settingsSliderKnobAreaHeightPx
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: GitHubConstants.settingsSliderTrackHeightPx
-                    radius: GitHubConstants.settingsSliderTrackRadiusPx
-                    color: Theme.surfaceContainerHighest
-
-                    Rectangle {
-                        width: (fetchPagesSlider.value - GitHubConstants.minFetchPageCount) / (GitHubConstants.maxFetchPageCount - GitHubConstants.minFetchPageCount) * parent.width
-                        height: parent.height
-                        radius: GitHubConstants.settingsSliderTrackRadiusPx
-                        color: Theme.primary
-                    }
-                }
-
-                Rectangle {
-                    id: fetchPagesHandle
-                    width: GitHubConstants.settingsSliderHandleSizePx
-                    height: GitHubConstants.settingsSliderHandleSizePx
-                    radius: GitHubConstants.settingsSliderHandleRadiusPx
-                    color: fetchPagesMouse.pressed ? Theme.primary : Theme.surfaceContainerHighest
-                    border.color: Theme.primary
-                    border.width: GitHubConstants.settingsSliderHandleBorderWidthPx
-                    x: (fetchPagesSlider.value - GitHubConstants.minFetchPageCount) / (GitHubConstants.maxFetchPageCount - GitHubConstants.minFetchPageCount) * (parent.width - width)
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                QtObject {
-                    id: fetchPagesSlider
-                    property real value: root.fetchPagesValue
-                }
-
-                MouseArea {
-                    id: fetchPagesMouse
-                    anchors.fill: parent
-                    anchors.topMargin: -GitHubConstants.settingsSliderTouchExpansionPx
-                    anchors.bottomMargin: -GitHubConstants.settingsSliderTouchExpansionPx
-                    cursorShape: Qt.PointingHandCursor
-
-                    function updateValue(mouseX) {
-                        var ratio = Math.max(0, Math.min(1, mouseX / width))
-                        fetchPagesSlider.value = Math.round(GitHubConstants.minFetchPageCount + ratio * (GitHubConstants.maxFetchPageCount - GitHubConstants.minFetchPageCount))
-                    }
-
-                    onPressed: function(mouse) { updateValue(mouse.x) }
-                    onPositionChanged: function(mouse) { if (pressed) updateValue(mouse.x) }
-                    onReleased: {
-                        var limited = root.clampFetchPages(fetchPagesSlider.value)
-                        fetchPagesSlider.value = limited
-                        root.fetchPagesValue = limited
-                        root.saveValue("fetchPages", String(limited))
                     }
                 }
             }
