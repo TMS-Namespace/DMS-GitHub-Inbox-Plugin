@@ -183,22 +183,46 @@ Item {
         pendingDoneThreadState = pendingCopy
     }
 
-    function clearReturnedInferredDoneThreadIds(threadIds) {
-        var ids = threadIds || []
-        if (ids.length === 0)
+    // GitHub's notifications response does not expose a Done flag. A DELETE
+    // performed by this plugin is retained locally, but GitHub can reopen that
+    // thread when later activity arrives. Clear local Done only when the returned
+    // thread's `updated_at` is newer than the timestamp saved at Done time.
+    // Inferred entries may always be cleared when returned. API reference:
+    // https://docs.github.com/en/rest/activity/notifications#list-notifications-for-the-authenticated-user
+    function clearReturnedDoneThreadState(messages) {
+        var source = messages || []
+        if (source.length === 0)
             return
 
         var doneCopy = _cloneMap(doneThreadState)
         var changed = false
-        for (var index = 0; index < ids.length; index++) {
-            var threadId = String(ids[index] || "").trim()
+        for (var index = 0; index < source.length; index++) {
+            var message = source[index] || ({})
+            var threadId = String(message.threadId || "").trim()
             var entry = doneCopy[threadId]
             if (!threadId || !entry || typeof entry !== "object")
                 continue
-            if (String(entry.source || "") !== "github_missing_from_complete_refresh")
+
+            var doneSource = String(entry.source || "")
+            if (doneSource === "github_missing_from_complete_refresh") {
+                delete doneCopy[threadId]
+                changed = true
                 continue
-            delete doneCopy[threadId]
-            changed = true
+            }
+
+            if (doneSource !== "local")
+                continue
+
+            var returnedUpdatedAtMs = message.updatedAtMs
+                    || Date.parse(message.updatedAt || "") || 0
+            var doneUpdatedAtMs = Date.parse(entry.updatedAt || "") || 0
+            var doneSavedAtMs = parseInt(entry.savedAt || 0)
+            var doneBoundaryMs = doneUpdatedAtMs || doneSavedAtMs
+            if (returnedUpdatedAtMs > 0 && doneBoundaryMs > 0
+                    && returnedUpdatedAtMs > doneBoundaryMs) {
+                delete doneCopy[threadId]
+                changed = true
+            }
         }
         if (changed)
             doneThreadState = doneCopy

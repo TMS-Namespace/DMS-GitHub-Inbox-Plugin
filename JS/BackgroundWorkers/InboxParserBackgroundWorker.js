@@ -192,6 +192,10 @@ function parseMessagesWithParticipationSegments(payloadText, separator, allSegme
         }
     }
 
+    // A bounded fetch is authoritative for pseudo-Done reconciliation only once
+    // its oldest returned `updated_at` reaches the oldest cached visible thread.
+    // See Widget.qml::_inferDoneMessagesFromRefresh and GitHub's pagination docs:
+    // https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api
     if (!isComplete && targetOldestMs > 0 && oldestFetchedMs > 0)
         isComplete = oldestFetchedMs <= targetOldestMs
 
@@ -470,8 +474,8 @@ function parseSubjectAuthors(payloadText) {
         for (var k in value) {
             if (!value.hasOwnProperty(k)) continue
             if (k === "owner" || k === "repository" || k === "repo"
-                    || k === "head_repository" || k === "base_repository"
-                    || k === "head_repo" || k === "base_repo")
+                || k === "head_repository" || k === "base_repository"
+                || k === "head_repo" || k === "base_repo")
                 continue
             var child = value[k]
             if (!child || typeof child !== "object") continue

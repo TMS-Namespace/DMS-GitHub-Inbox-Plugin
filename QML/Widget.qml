@@ -1168,8 +1168,16 @@ PluginComponent {
     }
 
     function _applyFetchedMessages(items, unread) {
+        // GitHub's list response has no Done field. Pseudo-sync Done by treating
+        // a previously cached thread as Done only after the fetcher confirms that
+        // its response covers the cached window (or has reached its final page).
+        // This is deliberately based on `updated_at`, not notification reason or
+        // repository visibility: https://docs.github.com/en/rest/activity/notifications#list-notifications-for-the-authenticated-user
+        // A returned thread clears a prior inferred entry. For plugin-originated
+        // Done entries, a later `updated_at` reopens the thread; an unchanged
+        // response preserves the local Done choice.
         var nextItems = _mergeCachedMessageFields(items || [])
-        operations.clearReturnedInferredDoneThreadIds(_threadIdsForMessages(nextItems))
+        operations.clearReturnedDoneThreadState(nextItems)
         nextItems = operations.applyPendingReadState(nextItems)
         if (fetcher.lastFetchWasComplete) {
             var inferredDoneMessages = _inferDoneMessagesFromRefresh(nextItems)
@@ -1201,6 +1209,10 @@ PluginComponent {
     }
 
     function _inferDoneMessagesFromRefresh(fetchedItems) {
+        // `lastFetchWasComplete` guarantees that `incomingItems` spans at least
+        // through the oldest cached item. A missing cached thread at or newer than
+        // that boundary is therefore interpreted as Done in GitHub's web UI.
+        // Older cached threads are outside the observed window and must remain.
         var previousItems = inboxMessages || []
         var incomingItems = fetchedItems || []
         if (previousItems.length === 0)
@@ -1252,17 +1264,6 @@ PluginComponent {
             console.warn("[GitHubInbox] inferred " + inferred.length
                          + " missing threads as done after complete refresh")
         return inferred
-    }
-
-    function _threadIdsForMessages(items) {
-        var ids = []
-        var source = items || []
-        for (var index = 0; index < source.length; index++) {
-            var threadId = String((source[index] && source[index].threadId) || "").trim()
-            if (threadId)
-                ids.push(threadId)
-        }
-        return ids
     }
 
     function _scheduleApiStatsRefreshComplete() {
