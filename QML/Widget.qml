@@ -744,16 +744,31 @@ PluginComponent {
             var parts = []
             for (var i = 0; i < newMessages.length; i++) {
                 var title = (newMessages[i].title || "").split("\n")[0].trim()
-                parts.push(title || "New message")
+                var repository = (newMessages[i].repository || "").trim()
+                var detail = title || "New message"
+                if (repository)
+                    detail += "\n" + repository
+                parts.push(detail)
             }
-            body = parts.join("\n")
+            body = parts.join("\n\n")
         } else {
-            body = "New GitHub inbox messages"
+            var repositories = []
+            var seenRepositories = {}
+            for (var repoIndex = 0; repoIndex < newMessages.length; repoIndex++) {
+                var repoName = (newMessages[repoIndex].repository || "").trim()
+                if (!repoName || seenRepositories[repoName])
+                    continue
+                seenRepositories[repoName] = true
+                repositories.push(repoName)
+            }
+            body = "New GitHub messages"
+            if (repositories.length > 0)
+                body += "\n" + repositories.join(", ")
         }
 
         var summary = newMessages.length === 1
-            ? "New GitHub Inbox Message"
-            : newMessages.length + " New GitHub Inbox Messages"
+            ? "New GitHub Message"
+            : newMessages.length + " New GitHub Messages"
 
         var iconPath = _resolveNotificationIcon(newMessages)
 
@@ -797,18 +812,21 @@ PluginComponent {
     }
 
     function _resolveNotificationIcon(newMessages) {
-        // If all messages are from a single repo and we have a cached avatar, use it
-        var firstRepo = (newMessages[0].repositoryOwnerLogin || "").trim()
-        if (firstRepo) {
-            var singleRepo = true
+        // GitHub repositories do not have a separate icon in this payload, so
+        // use the repository owner's cached avatar when the batch shares one.
+        var firstOwnerLogin = (newMessages[0].repositoryOwnerLogin || "").trim()
+        if (firstOwnerLogin) {
+            var singleOwner = true
             for (var i = 1; i < newMessages.length; i++) {
-                if ((newMessages[i].repositoryOwnerLogin || "").trim() !== firstRepo) {
-                    singleRepo = false
+                if ((newMessages[i].repositoryOwnerLogin || "").trim() !== firstOwnerLogin) {
+                    singleOwner = false
                     break
                 }
             }
-            if (singleRepo) {
+            if (singleOwner) {
                 var avatarUrl = (newMessages[0].repositoryOwnerAvatarUrl || "").toString()
+                if (avatarUrl.indexOf("file://") !== 0)
+                    avatarUrl = cacheCoord.cachedLocalAvatarUrl(firstOwnerLogin)
                 if (avatarUrl.indexOf("file://") === 0)
                     return avatarUrl.substring(7)
             }
@@ -1877,8 +1895,21 @@ PluginComponent {
             detailsText: ""
             showCloseButton: false
 
-            Component.onCompleted: root.popoutVisible = true
+            function syncPopoutVisibility() {
+                root.popoutVisible = !!(parentPopout && parentPopout.shouldBeVisible)
+            }
+
+            Component.onCompleted: Qt.callLater(syncPopoutVisibility)
             Component.onDestruction: root.popoutVisible = false
+            onParentPopoutChanged: syncPopoutVisibility()
+
+            Connections {
+                target: popout.parentPopout
+
+                function onShouldBeVisibleChanged() {
+                    popout.syncPopoutVisibility()
+                }
+            }
 
             Item {
                 id: popoutDetailsRow
@@ -1991,6 +2022,8 @@ PluginComponent {
                 isOperating: operations.isBusy
                 isDownloadingAvatars: cacheCoord.isDownloadingAvatars
                 errorMessage: root.errorMessage
+                lastUpdated: root.lastUpdated
+                popupOpen: root.popoutVisible
                 headerOffset: popout.headerHeight + popoutDetailsRow.height
                 headerHoverHeight: popout.headerHeight
                 headerHoverBottomInset: popoutDetailsRow.height

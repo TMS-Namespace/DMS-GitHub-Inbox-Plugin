@@ -60,6 +60,8 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Theme.spacingS
+        anchors.leftMargin: GitHubConstants.popoutGroupContentHorizontalInsetPx
+        anchors.rightMargin: GitHubConstants.popoutGroupContentHorizontalInsetPx
         spacing: Theme.spacingS
 
         Item {
@@ -77,6 +79,7 @@ Rectangle {
 
             StyledText {
                 anchors.left: parent.left
+                anchors.leftMargin: GitHubConstants.popoutGroupHeaderLeadingInsetPx
                 anchors.right: dateMeta.left
                 anchors.rightMargin: Theme.spacingS
                 anchors.verticalCenter: parent.verticalCenter

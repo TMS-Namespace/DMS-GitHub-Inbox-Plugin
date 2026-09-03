@@ -425,6 +425,12 @@ QtObject {
     /// Height of the repository-group header row.
     readonly property int popoutRepoHeaderHeightPx: 28
 
+    /// Horizontal inset between a group edge and its message panels.
+    readonly property int popoutGroupContentHorizontalInsetPx: 8
+
+    /// Additional leading inset for group-header text/icon content.
+    readonly property int popoutGroupHeaderLeadingInsetPx: 4
+
     /// Width and height (square) of the repo-owner avatar shown in the group
     /// header.
     readonly property int popoutRepoAvatarSizePx: 20
@@ -502,12 +508,12 @@ QtObject {
     /// the notification list.
     readonly property int popoutScrollIndicatorWidthPx: 4
 
+    /// Space between the scrollbar's right edge and the popup's right edge.
+    readonly property int popoutScrollRightEdgeInsetPx: 6
+
     /// Interactive gutter width around the scroll indicator.  The thumb stays
     /// visually thin, but this gives the mouse a usable target.
     readonly property int popoutScrollGutterWidthPx: 10
-
-    /// Gap between the message cards and the scroll gutter.
-    readonly property int popoutScrollContentGapPx: 2
 
     /// Corner radius of the scroll thumb rectangle.
     readonly property int popoutScrollIndicatorRadiusPx: 2

@@ -20,6 +20,8 @@ Item {
     property bool isOperating: false
     property bool isDownloadingAvatars: false
     property string errorMessage: ""
+    property real lastUpdated: 0
+    property bool popupOpen: false
     property real headerOffset: 0
     property real headerHoverHeight: headerOffset
     property real headerHoverBottomInset: 0
@@ -32,6 +34,7 @@ Item {
     property string groupingMode: "repo"              // repo | date
     property string readFilter: "both"                // yes | no | both
     property string participationFilter: "both"       // yes | no | both
+    property real _relativeTimeReferenceMs: Date.now()
 
     // -- Actions --------------------------------------------------------------
     signal refreshNow()
@@ -77,6 +80,33 @@ Item {
         return groupingMode === "date" ? dateGrouping : repoGrouping
     }
 
+    function _padTwo(value) {
+        var text = String(Math.max(0, Math.floor(value)))
+        return text.length < 2 ? "0" + text : text
+    }
+
+    function _lastUpdatedText() {
+        var timestamp = Number(lastUpdated || 0)
+        if (timestamp <= 0)
+            return ""
+
+        var updated = new Date(timestamp)
+        var elapsedMinutes = Math.max(0, Math.floor((_relativeTimeReferenceMs - timestamp) / 60000))
+        var elapsedHours = Math.floor(elapsedMinutes / 60)
+        var elapsedMinutePart = elapsedMinutes % 60
+        return "Updated "
+                + _padTwo(updated.getHours()) + ":" + _padTwo(updated.getMinutes()) + " "
+                + _padTwo(updated.getDate()) + "/" + _padTwo(updated.getMonth() + 1) + "/"
+                + _padTwo(updated.getFullYear() % 100) + " ("
+                + _padTwo(elapsedHours) + ":" + _padTwo(elapsedMinutePart) + " min. ago)"
+    }
+
+    onLastUpdatedChanged: _relativeTimeReferenceMs = Date.now()
+    onPopupOpenChanged: {
+        if (popupOpen)
+            _relativeTimeReferenceMs = Date.now()
+    }
+
     // -- Models ---------------------------------------------------------------
     RepoGroupingModel {
         id: repoGrouping
@@ -101,6 +131,19 @@ Item {
     // =========================================================================
     //  HEADER HOVER BUTTONS
     // =========================================================================
+
+    StyledText {
+        id: lastUpdatedLabel
+        anchors.right: parent.right
+        anchors.rightMargin: Theme.spacingS
+        y: -panel.headerOffset + (panel.headerHoverHeight - height) / 2
+        visible: panel.lastUpdated > 0 && !headerButtons.visible
+        text: panel._lastUpdatedText()
+        font.pixelSize: Math.max(6, Theme.fontSizeSmall - 4)
+        color: Theme.surfaceVariantText
+        opacity: 0.4
+        z: 101
+    }
 
     MouseArea {
         id: headerHoverArea
@@ -331,8 +374,11 @@ Item {
     Flickable {
         id: groupedFlick
         anchors.left: parent.left
-        anchors.right: scrollGutter.visible ? scrollGutter.left : parent.right
-        anchors.rightMargin: scrollGutter.visible ? GitHubConstants.popoutScrollContentGapPx : 0
+        anchors.right: parent.right
+        anchors.rightMargin: scrollGutter.visible
+                             ? GitHubConstants.popoutScrollIndicatorWidthPx
+                               + GitHubConstants.popoutScrollRightEdgeInsetPx
+                             : 0
         anchors.top: parent.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
         clip: true
@@ -550,6 +596,10 @@ Item {
         id: scrollGutter
         visible: groupedFlick.visible && groupedFlick.contentHeight > groupedFlick.height
         anchors.right: parent.right
+        // PluginPopout adds Theme.spacingS around its content. Move the track
+        // into that shell inset, leaving the requested gap at the popup edge.
+        // Accounting for the indicator width above preserves equal outer gaps.
+        anchors.rightMargin: GitHubConstants.popoutScrollRightEdgeInsetPx - Theme.spacingS
         anchors.top: groupedFlick.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
         width: GitHubConstants.popoutScrollGutterWidthPx
@@ -563,7 +613,7 @@ Item {
             opacity: groupedFlick.moving || scrollDragArea.pressed || scrollDragArea.containsMouse
                      ? GitHubConstants.popoutScrollIndicatorActiveOpacity
                      : GitHubConstants.popoutScrollIndicatorIdleOpacity
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.right: parent.right
 
             property real ratio: groupedFlick.height / groupedFlick.contentHeight
             height: Math.max(GitHubConstants.popoutScrollIndicatorMinHeightPx, parent.height * ratio)
