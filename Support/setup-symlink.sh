@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # setup-symlink.sh - Link this plugin into the DMS plugins directory
 
 PLUGIN_DIR="$HOME/.config/DankMaterialShell/plugins"

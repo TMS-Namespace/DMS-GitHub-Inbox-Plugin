@@ -1965,7 +1965,7 @@ PluginComponent {
                         Row {
                             anchors.fill: parent
                             anchors.margins: 0
-                            spacing: 1
+                            spacing: Math.max(1, (Theme.spacingXXS || 0) + GitHubConstants.popoutFilterSegmentSpacingDelta)
 
                             Repeater {
                                 model: [
@@ -1975,7 +1975,7 @@ PluginComponent {
 
                                 delegate: Rectangle {
                                     required property var modelData
-                                    width: (parent.width - 1) / 2
+                                    width: (parent.width - parent.spacing) / 2
                                     height: parent.height
                                     radius: Theme.cornerRadius
                                     color: root.groupingMode === modelData.value

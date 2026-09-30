@@ -436,13 +436,18 @@ Item {
         isOperating = true
 
         var process = operationComponentDef.createObject(operations, {
+            requestToken: token,
             actionType: actionType || "thread_read",
             threadId: threadId || "",
             repositoryFullName: repositoryFullName || "",
             generation: operationGeneration
         })
 
+        // The token arrives on stdin; abort instead of sending an unauthenticated request if it is missing.
         var cmd = [
+            "bash", "-c",
+            "IFS= read -r auth && [ -n \"$auth\" ] || exit 2; exec \"$@\" -H \"$auth\"",
+            "github-inbox-mutation",
             "curl", "-sS",
             "-o", "/dev/null",
             "-w", GitHubConstants.curlStatusCodeFormat,
@@ -451,7 +456,6 @@ Item {
             "-X", method,
             "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
             "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
-            "-H", "Authorization: token " + token,
             url
         ]
         if (payloadJson)
@@ -787,6 +791,13 @@ Item {
         id: operationComponentDef
 
         Process {
+            property string requestToken: ""
+            stdinEnabled: true
+            onStarted: {
+                write("Authorization: token " + requestToken + "\n")
+                stdinEnabled = false
+                requestToken = ""
+            }
             property string _buffer: ""
             property string actionType: "thread_read"
             property string threadId: ""

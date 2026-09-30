@@ -5,7 +5,7 @@
     "category": "productivity",
     "repo": "https://github.com/TMS-Namespace/DMS-GitHub-Inbox-Plugin",
     "description": "View and manage GitHub inbox messages from a DMS popup widget",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "TMS-Namespace",
     "icon": "code",
     "type": "widget",
@@ -15,5 +15,5 @@
     "requires_dms": ">=1.2.0",
     "distro": ["any"],
     "compositors": ["any"],
-    "dependencies": ["curl", "secret-tool", "jq"]
+    "dependencies": ["curl", "secret-tool", "jq", "notify-send", "file"]
 }

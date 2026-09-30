@@ -60,14 +60,14 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Theme.spacingS
-        anchors.leftMargin: GitHubConstants.popoutGroupContentHorizontalInsetPx
-        anchors.rightMargin: GitHubConstants.popoutGroupContentHorizontalInsetPx
+        anchors.leftMargin: Theme.spacingS + GitHubConstants.popoutGroupContentHorizontalInsetDelta
+        anchors.rightMargin: Theme.spacingS + GitHubConstants.popoutGroupContentHorizontalInsetDelta
         spacing: Theme.spacingS
 
         Item {
             id: repoHeader
             width: parent.width
-            height: GitHubConstants.popoutRepoHeaderHeightPx
+            height: Theme.fontSizeMedium + GitHubConstants.popoutRepoHeaderHeightDelta
 
             MouseArea {
                 id: repoHeaderArea
@@ -79,7 +79,7 @@ Rectangle {
 
             Row {
                 anchors.left: parent.left
-                anchors.leftMargin: GitHubConstants.popoutGroupHeaderLeadingInsetPx
+                anchors.leftMargin: Theme.spacingXS + GitHubConstants.popoutGroupHeaderLeadingInsetDelta
                 anchors.right: repoMeta.left
                 anchors.rightMargin: Theme.spacingS
                 anchors.verticalCenter: parent.verticalCenter
@@ -118,7 +118,7 @@ Rectangle {
                 Rectangle {
                     width: GitHubConstants.popoutRepoDoneButtonSizePx
                     height: GitHubConstants.popoutRepoDoneButtonSizePx
-                    radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
+                    radius: Math.max(0, Math.min(GitHubConstants.popoutRepoDoneButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutRepoDoneButtonRadiusDelta))
                     visible: groupCard.expanded && groupCard.hasActionItems
                     opacity: groupCard.hasUnreadActionItems
                              && groupCard.headerActionsHovered ? 1 : 0
@@ -151,7 +151,7 @@ Rectangle {
                 Rectangle {
                     width: GitHubConstants.popoutRepoDoneButtonSizePx
                     height: GitHubConstants.popoutRepoDoneButtonSizePx
-                    radius: GitHubConstants.popoutRepoDoneButtonRadiusPx
+                    radius: Math.max(0, Math.min(GitHubConstants.popoutRepoDoneButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutRepoDoneButtonRadiusDelta))
                     visible: groupCard.expanded && groupCard.hasActionItems
                     opacity: groupCard.headerActionsHovered ? 1 : 0
                     color: groupCard.isBusy
@@ -182,8 +182,8 @@ Rectangle {
 
                 Rectangle {
                     visible: groupCard.hasActionItems
-                    height: GitHubConstants.popoutRepoCountBadgeHeightPx
-                    radius: GitHubConstants.popoutRepoCountBadgeRadiusPx
+                    height: Theme.fontSizeSmall + GitHubConstants.popoutRepoCountBadgeHeightDelta
+                    radius: Math.max(0, Math.min(height / 2, Theme.cornerRadius + GitHubConstants.popoutRepoCountBadgeRadiusDelta))
                     width: groupCountText.implicitWidth + Theme.spacingS
                     color: (groupCard.groupData.unreadCount || 0) > 0
                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutRepoCountBadgeUnreadOpacity)
@@ -199,7 +199,7 @@ Rectangle {
                                    ? (unread + "/" + items.length)
                                    : String(items.length)
                         }
-                        font.pixelSize: GitHubConstants.popoutRepoCountFontSizePx
+                        font.pixelSize: Theme.fontSizeSmall + GitHubConstants.popoutRepoCountFontSizeDelta
                         font.weight: Font.Medium
                         color: (groupCard.groupData.unreadCount || 0) > 0
                                ? Theme.primary
@@ -238,7 +238,7 @@ Rectangle {
                     id: repoActionTooltipText
                     anchors.centerIn: parent
                     text: "Not available during refresh"
-                    font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                    font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                     color: Theme.surfaceVariantText
                 }
             }

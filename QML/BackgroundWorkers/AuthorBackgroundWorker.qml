@@ -591,6 +591,7 @@ Item {
             startedRequests++
             var process = authorFetchComponentDef.createObject(authorFetcher, {
                 generation: requestGeneration,
+                requestToken: token,
                 threadId: request.threadId,
                 requestedUrls: urls,
                 updatedAt: request.updatedAt || "",
@@ -882,47 +883,41 @@ Item {
     }
 
     function buildRawAuthorFetchCommand(urls) {
-        var command = ["curl"]
-        for (var urlIndex = 0; urlIndex < urls.length; urlIndex++) {
-            var url = urls[urlIndex]
-            if (!url)
-                continue
-            if (command.length > 1)
-                command.push("--next")
-            command.push(
-                "-sS",
-                "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds,
-                "--max-time", GitHubConstants.curlMaxTimeSeconds,
-                "-H", "Accept: " + GitHubConstants.httpAcceptHeader,
-                "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader,
-                "-H", "Authorization: token " + token,
-                "-w", "\n" + authorSplitToken + "\n",
-                url
-            )
-        }
+        var script = ""
+            + "IFS= read -r token || exit 1\n"
+            + "split=$1; connect_timeout=$2; max_time=$3; accept_header=$4; api_version=$5\n"
+            + "shift 5\n"
+            + "for url in \"$@\"; do\n"
+            + "  printf 'Authorization: token %s\\n' \"$token\" | curl -sS --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- -w \"\\n$split\\n\" \"$url\"\n"
+            + "done\n"
+        var command = ["bash", "-c", script, "github-author-fetch",
+            authorSplitToken, GitHubConstants.curlConnectTimeoutSeconds,
+            GitHubConstants.curlMaxTimeSeconds, GitHubConstants.httpAcceptHeader,
+            GitHubConstants.githubApiVersionHeader]
+        for (var urlIndex = 0; urlIndex < urls.length; urlIndex++)
+            if (urls[urlIndex]) command.push(urls[urlIndex])
         return command
     }
 
     function buildAutomaticAuthorExtractCommand(urls) {
         var script = ""
-            + "token=$1\n"
-            + "split=$2\n"
-            + "connect_timeout=$3\n"
-            + "max_time=$4\n"
-            + "accept_header=$5\n"
-            + "api_version=$6\n"
-            + "shift 6\n"
+            + "IFS= read -r token || exit 1\n"
+            + "split=$1\n"
+            + "connect_timeout=$2\n"
+            + "max_time=$3\n"
+            + "accept_header=$4\n"
+            + "api_version=$5\n"
+            + "shift 5\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
             + "filter='def appslug($u): if (($u // \"\") | startswith(\"https://github.com/apps/\")) then (($u | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then reverse[] else . end; def authorobj: . as $o | (($o.html_url? // $o.htmlUrl? // \"\") as $html | ($o.login? // $o.slug? // appslug($html) // \"\") as $login | ($o.avatar_url? // $o.avatarUrl? // $o.logo_url? // $o.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($o.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $o.slug) else \"\" end)), type:($o.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($o): $o.actor?, $o.triggering_actor?, $o.user?, $o.author?, $o.sender?, $o.creator?, $o.merged_by?, $o.closed_by?, $o.dismissed_by?; rootobj as $root | {authors:([nodes as $n | author_sources($n) | validauthor] | reduce .[] as $a ([]; if any(.[]; .login == $a.login and .htmlUrl == $a.htmlUrl and .avatarUrl == $a.avatarUrl) then . else . + [$a] end)), subjectWebUrl:($root.html_url // \"\"), subjectReference:(($root.subjectReference // $root.subject_reference // $root.run_number // \"\") | tostring), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), runNumber:((.run_number // \"\") | tostring), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\"), actor:(if .actor? then (.actor | authorobj) else null end), triggeringActor:(if .triggering_actor? then (.triggering_actor | authorobj) else null end)})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n"
             + "for url in \"$@\"; do\n"
-            + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"$url\") || exit $?\n"
+            + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"$url\") || exit $?\n"
             + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n"
             + "  printf '\\n%s\\n' \"$split\"\n"
             + "done\n"
 
         var command = [
-            "nice", "-n", "10", "sh", "-c", script, "github-author-extract",
-            token,
+            "nice", "-n", "10", "bash", "-c", script, "github-author-extract",
             authorSplitToken,
             GitHubConstants.curlConnectTimeoutSeconds,
             GitHubConstants.curlMaxTimeSeconds,
@@ -945,6 +940,13 @@ Item {
         id: authorFetchComponentDef
 
         Process {
+            property string requestToken: ""
+            stdinEnabled: true
+            onStarted: {
+                write(requestToken + "\n")
+                stdinEnabled = false
+                requestToken = ""
+            }
             property string threadId: ""
             property var requestedUrls: []
             property string updatedAt: ""

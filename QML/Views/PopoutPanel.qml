@@ -161,7 +161,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: Theme.spacingXS
         y: -panel.headerOffset + Theme.spacingXS
-        spacing: GitHubConstants.popoutHeaderButtonSpacingPx
+        spacing: Theme.spacingS + GitHubConstants.popoutHeaderButtonSpacingDelta
         visible: panel.anyBusy || panel.hasError || panel._headerHovered
         z: 101
         opacity: visible ? 1 : 0
@@ -174,7 +174,7 @@ Item {
             visible: panel._headerHovered
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: GitHubConstants.popoutHeaderButtonRadiusPx
+            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
             color: expandAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -200,7 +200,7 @@ Item {
             visible: panel._headerHovered
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: GitHubConstants.popoutHeaderButtonRadiusPx
+            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
             color: collapseAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -226,7 +226,7 @@ Item {
         Rectangle {
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: GitHubConstants.popoutHeaderButtonRadiusPx
+            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
             color: refreshAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -270,7 +270,7 @@ Item {
                 visible: panel.hasError && !panel.anyBusy
                 width: 12
                 height: 12
-                radius: 6
+                radius: Math.max(0, Math.min(width / 2, Theme.cornerRadius + GitHubConstants.popoutErrorBadgeRadiusDelta))
                 anchors.right: parent.right
                 anchors.top: parent.top
                 color: Theme.error
@@ -280,7 +280,7 @@ Item {
                 StyledText {
                     anchors.centerIn: parent
                     text: "!"
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeSmall + GitHubConstants.popoutErrorBadgeFontSizeDelta
                     font.weight: Font.Bold
                     color: Theme.surfaceText
                 }
@@ -304,7 +304,7 @@ Item {
                     anchors.centerIn: parent
                     width: parent.width - Theme.spacingS * 2
                     text: panel.refreshTooltipText
-                    font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                    font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                     color: panel.hasError ? Theme.error : Theme.surfaceVariantText
                     wrapMode: Text.WordWrap
                     maximumLineCount: 3
@@ -317,7 +317,7 @@ Item {
         Rectangle {
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: GitHubConstants.popoutHeaderButtonRadiusPx
+            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
             visible: panel._headerHovered && panel.tokenConfigured && panel.unreadCount > 0
             color: markAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
@@ -345,7 +345,7 @@ Item {
             visible: panel._headerHovered
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: GitHubConstants.popoutHeaderButtonRadiusPx
+            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
             color: closeArea.containsMouse
                    ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -377,7 +377,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: scrollGutter.visible
                              ? GitHubConstants.popoutScrollIndicatorWidthPx
-                               + GitHubConstants.popoutScrollRightEdgeInsetPx
+                               + Theme.spacingS + GitHubConstants.popoutScrollRightEdgeInsetDelta
                              : 0
         anchors.top: parent.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
@@ -446,7 +446,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: panel.tokenConfigured && !panel.hasBlockingError
-        height: filterRow.implicitHeight + GitHubConstants.popoutFilterBarVerticalPaddingPx
+        height: filterRow.implicitHeight + Theme.spacingS + GitHubConstants.popoutFilterBarVerticalPaddingDelta
         z: 5
 
         Item {
@@ -456,7 +456,7 @@ Item {
             anchors.leftMargin: Theme.spacingXS
             anchors.rightMargin: Theme.spacingXS
             anchors.top: parent.top
-            anchors.topMargin: GitHubConstants.popoutFilterBarVerticalPaddingPx
+            anchors.topMargin: Theme.spacingS + GitHubConstants.popoutFilterBarVerticalPaddingDelta
             implicitHeight: GitHubConstants.popoutFilterSegmentHeightPx
 
             property int segmentWidth: {
@@ -490,7 +490,7 @@ Item {
                     Row {
                         anchors.fill: parent
                         anchors.margins: 0
-                        spacing: 1
+                        spacing: Math.max(1, (Theme.spacingXXS || 0) + GitHubConstants.popoutFilterSegmentSpacingDelta)
 
                         Repeater {
                             model: [
@@ -501,7 +501,7 @@ Item {
 
                             delegate: Rectangle {
                                 required property var modelData
-                                width: (parent.width - 2) / 3
+                                width: (parent.width - parent.spacing * 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
                                 color: panel.readFilter === modelData.value
@@ -553,7 +553,7 @@ Item {
                     Row {
                         anchors.fill: parent
                         anchors.margins: 0
-                        spacing: 1
+                        spacing: Math.max(1, (Theme.spacingXXS || 0) + GitHubConstants.popoutFilterSegmentSpacingDelta)
 
                         Repeater {
                             model: [
@@ -564,7 +564,7 @@ Item {
 
                             delegate: Rectangle {
                                 required property var modelData
-                                width: (parent.width - 2) / 3
+                                width: (parent.width - parent.spacing * 2) / 3
                                 height: parent.height
                                 radius: Theme.cornerRadius
                                 color: panel.participationFilter === modelData.value
@@ -599,7 +599,7 @@ Item {
         // PluginPopout adds Theme.spacingS around its content. Move the track
         // into that shell inset, leaving the requested gap at the popup edge.
         // Accounting for the indicator width above preserves equal outer gaps.
-        anchors.rightMargin: GitHubConstants.popoutScrollRightEdgeInsetPx - Theme.spacingS
+        anchors.rightMargin: Theme.spacingS + GitHubConstants.popoutScrollRightEdgeInsetDelta - Theme.spacingS
         anchors.top: groupedFlick.top
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
         width: GitHubConstants.popoutScrollGutterWidthPx
@@ -608,7 +608,7 @@ Item {
         Rectangle {
             id: scrollThumb
             width: GitHubConstants.popoutScrollIndicatorWidthPx
-            radius: GitHubConstants.popoutScrollIndicatorRadiusPx
+            radius: Math.max(0, Math.min(GitHubConstants.popoutScrollIndicatorWidthPx / 2, Theme.cornerRadius + GitHubConstants.popoutScrollIndicatorRadiusDelta))
             color: Theme.outlineVariant
             opacity: groupedFlick.moving || scrollDragArea.pressed || scrollDragArea.containsMouse
                      ? GitHubConstants.popoutScrollIndicatorActiveOpacity

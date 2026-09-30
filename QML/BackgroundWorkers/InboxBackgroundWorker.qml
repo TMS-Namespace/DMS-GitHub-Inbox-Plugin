@@ -63,7 +63,8 @@ Item {
         _perfLog("fetch — spawning curl, targetOldestMs=" + targetOldest
                  + " maxPages=" + maxPages)
         var process = fetchComponentDef.createObject(fetcher, {
-            generation: generation
+            generation: generation,
+            requestToken: token
         })
         process.command = command
         process.running = true
@@ -71,16 +72,16 @@ Item {
 
     function buildDynamicFetchCommand(targetOldestMs, maxPages) {
         var script = ""
-            + "token=$1\n"
-            + "split=$2\n"
-            + "page_size=$3\n"
-            + "target_oldest_ms=$4\n"
-            + "max_pages=$5\n"
-            + "connect_timeout=$6\n"
-            + "max_time=$7\n"
-            + "accept_header=$8\n"
-            + "api_version=$9\n"
-            + "inbox_url=${10}\n"
+            + "IFS= read -r token || exit 1\n"
+            + "split=$1\n"
+            + "page_size=$2\n"
+            + "target_oldest_ms=$3\n"
+            + "max_pages=$4\n"
+            + "connect_timeout=$5\n"
+            + "max_time=$6\n"
+            + "accept_header=$7\n"
+            + "api_version=$8\n"
+            + "inbox_url=$9\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
             + "base_query=\"per_page=${page_size}\"\n"
             + "all_base_url=\"${inbox_url}?${base_query}&all=true\"\n"
@@ -88,7 +89,7 @@ Item {
             + "page=1\n"
             + "pages=0\n"
             + "while [ \"$page\" -le \"$max_pages\" ]; do\n"
-            + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"${all_base_url}&page=${page}\") || exit $?\n"
+            + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"${all_base_url}&page=${page}\") || exit $?\n"
             + "  printf '%s\\n%s\\n' \"$body\" \"$split\"\n"
             + "  pages=$page\n"
             + "  length=$(printf '%s\\n' \"$body\" | jq 'if type == \"array\" then length else -1 end') || exit $?\n"
@@ -103,15 +104,14 @@ Item {
             + "done\n"
             + "p_page=1\n"
             + "while [ \"$p_page\" -le \"$pages\" ]; do\n"
-            + "  body=$(curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H \"Authorization: token $token\" \"${participating_base_url}&page=${p_page}\") || exit $?\n"
+            + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"${participating_base_url}&page=${p_page}\") || exit $?\n"
             + "  printf '%s\\n%s\\n' \"$body\" \"$split\"\n"
             + "  p_page=$((p_page + 1))\n"
             + "done\n"
             + "printf '__GH_FETCH_PAGES=%s\\n' \"$pages\" >&2\n"
 
         return [
-            "sh", "-c", script, "github-inbox-fetch",
-            token,
+            "bash", "-c", script, "github-inbox-fetch",
             fetchSplitToken,
             String(GitHubConstants.messagesApiPageSize),
             String(targetOldestMs),
@@ -147,6 +147,14 @@ Item {
 
         Process {
             property int generation: 0
+            property string requestToken: ""
+            stdinEnabled: true
+
+            onStarted: {
+                write(requestToken + "\n")
+                stdinEnabled = false
+                requestToken = ""
+            }
             property var _chunks: []
             property var _stderrLines: []
 

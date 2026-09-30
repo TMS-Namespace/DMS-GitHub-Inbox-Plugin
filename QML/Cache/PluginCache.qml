@@ -220,7 +220,7 @@ Item {
         // Determine default cache dir from environment
         var proc = resolveDirComponent.createObject(cache)
         proc.command = [
-            "sh", "-c",
+            "bash", "-c",
             "echo \"${XDG_CACHE_HOME:-$HOME/.cache}/" + GitHubConstants.cacheRootDirectoryName + "\""
         ]
         proc.running = true
@@ -384,7 +384,7 @@ Item {
             duringInitialize: _clearCacheDuringInitialize
         })
         proc.command = [
-            "sh", "-c",
+            "bash", "-c",
             "find " + _shellQuote(cacheDir) + " -mindepth 1 -exec rm -rf -- {} +"
             + " ; mkdir -p " + _shellQuote(cacheObjectsDir)
             + " " + _shellQuote(cacheAvatarsDir)
@@ -642,7 +642,7 @@ Item {
         }
 
         var proc = avatarValidateComponent.createObject(cache)
-        proc.command = ["sh", "-c", parts.join("; ")]
+        proc.command = ["bash", "-c", parts.join("; ")]
         proc.running = true
     }
 

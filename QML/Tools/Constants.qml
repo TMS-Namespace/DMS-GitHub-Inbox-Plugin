@@ -21,6 +21,9 @@ QtObject {
     /// PluginSettings.  Must match the value in plugin.json.
     readonly property string pluginNamespaceId: "githubInbox"
 
+    /// External commands required for the plugin's full operation.
+    readonly property var requiredCommands: ["bash", "curl", "secret-tool", "jq", "notify-send", "file"]
+
 
     // =========================================================================
     // GitHub Web & API URLs
@@ -394,11 +397,17 @@ QtObject {
     /// Width and height (square) of each icon button in the popout header.
     readonly property int popoutHeaderButtonSizePx: 28
 
-    /// Corner radius of individual popout header icon buttons.
-    readonly property int popoutHeaderButtonRadiusPx: 14
+    /// Offset from Theme.cornerRadius for popout header buttons.
+    readonly property int popoutHeaderButtonRadiusDelta: 2
 
-    /// Spacing between adjacent buttons in the popout header button row.
-    readonly property int popoutHeaderButtonSpacingPx: 6
+    /// Offset from Theme.spacingS between popout header buttons.
+    readonly property int popoutHeaderButtonSpacingDelta: -2
+
+    /// Offset from Theme.cornerRadius for the refresh-error badge.
+    readonly property int popoutErrorBadgeRadiusDelta: -6
+
+    /// Offset from Theme.fontSizeSmall for the refresh-error symbol.
+    readonly property int popoutErrorBadgeFontSizeDelta: -3
 
     /// Duration (ms) of the popout header button-row fade-in / fade-out
     /// animation triggered by hovering the header area.
@@ -422,14 +431,14 @@ QtObject {
     // Popout Repository Group Row
     // =========================================================================
 
-    /// Height of the repository-group header row.
-    readonly property int popoutRepoHeaderHeightPx: 28
+    /// Offset from Theme.fontSizeMedium for the repository-group header height.
+    readonly property int popoutRepoHeaderHeightDelta: 14
 
-    /// Horizontal inset between a group edge and its message panels.
-    readonly property int popoutGroupContentHorizontalInsetPx: 8
+    /// Offset from Theme.spacingS between a group edge and its messages.
+    readonly property int popoutGroupContentHorizontalInsetDelta: 0
 
-    /// Additional leading inset for group-header text/icon content.
-    readonly property int popoutGroupHeaderLeadingInsetPx: 4
+    /// Offset from Theme.spacingXS for group-header leading content.
+    readonly property int popoutGroupHeaderLeadingInsetDelta: 0
 
     /// Width and height (square) of the repo-owner avatar shown in the group
     /// header.
@@ -439,14 +448,14 @@ QtObject {
     /// loaded yet.
     readonly property int popoutRepoAvatarFallbackIconSizePx: 18
 
-    /// Height of the notification-count badge pill in the group header.
-    readonly property int popoutRepoCountBadgeHeightPx: 18
+    /// Offset from Theme.fontSizeSmall for the notification-count badge height.
+    readonly property int popoutRepoCountBadgeHeightDelta: 6
 
-    /// Corner radius of the notification-count badge pill.
-    readonly property int popoutRepoCountBadgeRadiusPx: 9
+    /// Offset from Theme.cornerRadius for notification-count badges.
+    readonly property int popoutRepoCountBadgeRadiusDelta: -3
 
-    /// Font size of the count text inside the count badge.
-    readonly property int popoutRepoCountFontSizePx: 10
+    /// Offset from Theme.fontSizeSmall for notification-count badges.
+    readonly property int popoutRepoCountFontSizeDelta: -2
 
     /// Pixel size of the expand / collapse chevron icon in the group header.
     readonly property int popoutRepoExpandIconSizePx: 18
@@ -458,8 +467,8 @@ QtObject {
     /// header.
     readonly property int popoutRepoDoneButtonSizePx: 20
 
-    /// Corner radius of the "mark repo done" button.
-    readonly property int popoutRepoDoneButtonRadiusPx: 10
+    /// Offset from Theme.cornerRadius for group-done buttons.
+    readonly property int popoutRepoDoneButtonRadiusDelta: -2
 
     /// Size of the icon inside the "mark repo done" button.
     readonly property int popoutRepoDoneIconSizePx: 13
@@ -496,8 +505,11 @@ QtObject {
     /// Fill opacity of the tint shown on the currently active filter segment.
     readonly property real popoutFilterActiveTintOpacity: 0.22
 
-    /// Vertical padding (px) above the filter row inside the bar.
-    readonly property int popoutFilterBarVerticalPaddingPx: 6
+    /// Offset from Theme.spacingS above the filter row.
+    readonly property int popoutFilterBarVerticalPaddingDelta: -2
+
+    /// Offset from Theme.spacingXXS between filter segments.
+    readonly property int popoutFilterSegmentSpacingDelta: -1
 
 
     // =========================================================================
@@ -508,15 +520,15 @@ QtObject {
     /// the notification list.
     readonly property int popoutScrollIndicatorWidthPx: 4
 
-    /// Space between the scrollbar's right edge and the popup's right edge.
-    readonly property int popoutScrollRightEdgeInsetPx: 6
+    /// Offset from Theme.spacingS between scrollbar and popup edges.
+    readonly property int popoutScrollRightEdgeInsetDelta: -2
 
     /// Interactive gutter width around the scroll indicator.  The thumb stays
     /// visually thin, but this gives the mouse a usable target.
     readonly property int popoutScrollGutterWidthPx: 10
 
-    /// Corner radius of the scroll thumb rectangle.
-    readonly property int popoutScrollIndicatorRadiusPx: 2
+    /// Offset from Theme.cornerRadius for the scroll thumb.
+    readonly property int popoutScrollIndicatorRadiusDelta: -10
 
     /// Minimum pixel height of the scroll thumb so it stays visible even when
     /// content is very long.
@@ -536,22 +548,22 @@ QtObject {
     // Inbox Message Row Layout
     // =========================================================================
 
-    /// Minimum row height regardless of content, ensuring tap targets stay
-    /// large enough on touch displays.
-    readonly property int messageRowMinHeightPx: 72
+    /// Minimum row height: Theme.fontSizeMedium * 3 plus this delta, ensuring
+    /// tap targets stay large enough on touch displays.
+    readonly property int messageRowMinHeightDelta: 30
 
-    /// Minimum pixel height of the title/metadata content area inside a row.
-    readonly property int messageRowContentMinHeightPx: 40
+    /// Minimum title/metadata height: Theme.fontSizeMedium * 2 plus this delta.
+    readonly property int messageRowContentMinHeightDelta: 12
 
-    /// Pixel height contribution added per title line when sizing a row.
-    readonly property int messageRowTitleLineHeightPx: 16
+    /// Offset from Theme.fontSizeMedium added per title line.
+    readonly property int messageRowTitleLineHeightDelta: 2
 
-    /// Extra vertical padding applied below the author column when calculating
+    /// Offset from Theme.spacingM below the author column when calculating
     /// the total row height.
-    readonly property int messageRowAuthorColumnPaddingPx: 14
+    readonly property int messageRowAuthorColumnPaddingDelta: 2
 
-    /// Height of each individual author entry row within an inbox message row.
-    readonly property int messageAuthorRowHeightPx: 26
+    /// Offset from Theme.fontSizeMedium for each author entry row.
+    readonly property int messageAuthorRowHeightDelta: 12
 
     /// Width of the left icon slot that contains the subject-type badge.
     readonly property int messageIconSlotWidthPx: 26
@@ -562,8 +574,8 @@ QtObject {
     /// Height of the rounded-rectangle badge behind the subject-type icon.
     readonly property int messageIconBadgeHeightPx: 24
 
-    /// Corner radius of the subject-type icon badge.
-    readonly property int messageIconBadgeRadiusPx: 13
+    /// Offset from Theme.cornerRadius for the subject-type badge.
+    readonly property int messageIconBadgeRadiusDelta: 1
 
     /// Pixel size of the subject-type icon glyph.
     readonly property int messageSubjectIconSizePx: 17
@@ -575,18 +587,18 @@ QtObject {
     /// becomes smaller than a comfortable reading width.
     readonly property int messageMainInfoMinWidthPx: 120
 
-    /// Font pixel size of the subject-type, reason, and timestamp labels.
-    readonly property int messageMetadataFontSizePx: 12
+    /// Offset from Theme.fontSizeSmall for subject-type, reason, and time labels.
+    readonly property int messageMetadataFontSizeDelta: 0
 
-    /// Vertical spacing (px) between items in the title/metadata column.
-    readonly property int messageMainInfoColumnSpacingPx: 3
+    /// Offset from Theme.spacingXS between title/metadata items.
+    readonly property int messageMainInfoColumnSpacingDelta: -1
 
     /// Minimum pixel width of the author-list column to the right of the main
     /// info area.
     readonly property int messageAuthorColumnMinWidthPx: 72
 
-    /// Vertical spacing between individual author entry rows.
-    readonly property int messageAuthorColumnItemSpacingPx: 2
+    /// Offset from Theme.spacingXXS between author rows.
+    readonly property int messageAuthorColumnItemSpacingDelta: 0
 
     /// Fill opacity of the background tint applied to unread inbox message rows.
     readonly property real messageRowUnreadBackgroundOpacity: 0.10
@@ -612,9 +624,9 @@ QtObject {
     /// Width and height (square) of the circular author avatar canvas.
     readonly property int authorAvatarSizePx: 24
 
-    /// Font pixel size of the author login / display-name label beside the
+    /// Offset from Theme.fontSizeSmall for the author login / display-name label beside the
     /// avatar.
-    readonly property int authorNameFontSizePx: 11
+    readonly property int authorNameFontSizeDelta: -1
 
     /// Minimum pixel width of the author name label to avoid collapsed text.
     readonly property int authorNameMinWidthPx: 28
@@ -634,21 +646,21 @@ QtObject {
     /// Total pixel height of the action-button overlay host item.
     readonly property int messageActionsHostHeightPx: 24
 
-    /// Left and bottom margin (px) between the action-button overlay and the
+    /// Offset from Theme.spacingXS between the action-button overlay and the
     /// inbox message row border.
-    readonly property int messageActionsHostMarginPx: 4
+    readonly property int messageActionsHostMarginDelta: 0
 
     /// Width and height (square) of each individual action button.
     readonly property int messageActionButtonSizePx: 22
 
-    /// Corner radius of each action button rectangle.
-    readonly property int messageActionButtonRadiusPx: 11
+    /// Offset from Theme.cornerRadius for message action buttons.
+    readonly property int messageActionButtonRadiusDelta: -1
 
     /// Pixel size of the icon glyph inside each action button.
     readonly property int messageActionButtonIconSizePx: 13
 
-    /// Gap (px) between adjacent action buttons.
-    readonly property int messageActionButtonsSpacingPx: 4
+    /// Offset from Theme.spacingXS between message action buttons.
+    readonly property int messageActionButtonsSpacingDelta: 0
 
     /// Background opacity of action button rectangles at rest.
     readonly property real messageActionButtonBgOpacity: 0.9
@@ -662,57 +674,17 @@ QtObject {
     // Settings Page UI
     // =========================================================================
 
-    /// Pixel height of the GitHub token text-input field.
-    readonly property int settingsTokenFieldHeightPx: 42
+    /// Offset from Theme.fontSizeSmall for the API stats header row.
+    readonly property int settingsStatsHeaderRowHeightDelta: 6
 
-    /// Width and height (square) of the token-visibility toggle button.
-    readonly property int settingsVisibilityButtonSizePx: 30
+    /// Offset from Theme.fontSizeSmall for each API stats data row.
+    readonly property int settingsStatsDataRowHeightDelta: 8
 
-    /// Corner radius of the token-visibility toggle button.
-    readonly property int settingsVisibilityButtonRadiusPx: 15
+    /// Offset from Theme.fontSizeSmall for API stats table text.
+    readonly property int settingsStatsFontSizeDelta: -2
 
-    /// Right margin between the visibility button and the token-field edge.
-    readonly property int settingsVisibilityButtonRightMarginPx: 5
-
-    /// Pixel size of the eye icon inside the token-visibility toggle button.
-    readonly property int settingsVisibilityIconSizePx: 18
-
-    /// Total height of a labelled slider setting item (label row + track row).
-    readonly property int settingsSliderItemHeightPx: 52
-
-    /// Height of the slider groove / track rectangle.
-    readonly property int settingsSliderTrackHeightPx: 4
-
-    /// Corner radius of the slider groove / track rectangle.
-    readonly property int settingsSliderTrackRadiusPx: 2
-
-    /// Height of the interactive slider hit-area that encompasses the thumb.
-    readonly property int settingsSliderKnobAreaHeightPx: 24
-
-    /// Width and height (square) of the slider thumb handle.
-    readonly property int settingsSliderHandleSizePx: 18
-
-    /// Corner radius of the slider thumb handle.
-    readonly property int settingsSliderHandleRadiusPx: 9
-
-    /// Border width drawn around the slider thumb handle.
-    readonly property int settingsSliderHandleBorderWidthPx: 2
-
-    /// Vertical padding (px) added on each side of the slider hit-area to
-    /// increase the touch / click target without changing the visual size.
-    readonly property int settingsSliderTouchExpansionPx: 8
-
-    /// Vertical spacing between the slider label row and the track row.
-    readonly property int settingsSliderColumnSpacingPx: 4
-
-    /// Height of the column-header row in the API stats table.
-    readonly property int settingsStatsHeaderRowHeightPx: 18
-
-    /// Height of each data row in the API stats table.
-    readonly property int settingsStatsDataRowHeightPx: 20
-
-    /// Font pixel size of all text inside the API stats table.
-    readonly property int settingsStatsFontSizePx: 10
+    /// Offset from Theme.spacingXXS between API stats table rows.
+    readonly property int settingsStatsRowSpacingDelta: 0
 
     /// Duration (ms) of the expand / collapse animation for the API stats
     /// section.
@@ -745,18 +717,6 @@ QtObject {
     /// Number of pixels subtracted from the configured icon size to size the
     /// bar-pill icon slightly smaller than surrounding text.
     readonly property int barIconSizeReductionPx: 4
-
-
-    // =========================================================================
-    // Settings Page - Additional Values
-    // =========================================================================
-
-    /// Height of the outer Item container wrapping the token-field column
-    /// (label + input field).
-    readonly property int settingsTokenItemHeightPx: 72
-
-    /// Background-fill opacity of the token-visibility toggle button on hover.
-    readonly property real settingsButtonHoverOpacity: 0.16
 
 
     // =========================================================================

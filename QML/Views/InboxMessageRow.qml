@@ -57,17 +57,17 @@ Item {
         return list.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage)
     }
 
-    property int authorRowHeight: GitHubConstants.messageAuthorRowHeightPx
+    property int authorRowHeight: Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta
     property int authorColumnHeight: showAuthors
                                      ? GitHubConstants.maxAuthorsDisplayedPerMessage * authorRowHeight
                                      : 0
-    property int repositoryRowHeight: showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
-    property int repositoryRowSpacing: showRepositoryInfo ? GitHubConstants.messageMainInfoColumnSpacingPx : 0
-    property int contentMinHeight: GitHubConstants.messageRowContentMinHeightPx
-                                   + (Math.max(1, titleLines) * GitHubConstants.messageRowTitleLineHeightPx)
+    property int repositoryRowHeight: showRepositoryInfo ? Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta : 0
+    property int repositoryRowSpacing: showRepositoryInfo ? Theme.spacingXS + GitHubConstants.messageMainInfoColumnSpacingDelta : 0
+    property int contentMinHeight: Theme.fontSizeMedium * 2 + GitHubConstants.messageRowContentMinHeightDelta
+                                   + (Math.max(1, titleLines) * (Theme.fontSizeMedium + GitHubConstants.messageRowTitleLineHeightDelta))
                                    + repositoryRowHeight
                                    + repositoryRowSpacing
-    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + GitHubConstants.messageRowAuthorColumnPaddingPx)
+    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Theme.spacingM + GitHubConstants.messageRowAuthorColumnPaddingDelta)
 
     function openAuthorProfile(url) {
         if (url) {
@@ -165,7 +165,7 @@ Item {
         return 300 + (numericId % 8) * 120
     }
 
-    height: Math.max(GitHubConstants.messageRowMinHeightPx, rowHeight) + extraHeight
+    height: Math.max(Theme.fontSizeMedium * 3 + GitHubConstants.messageRowMinHeightDelta, rowHeight) + extraHeight
 
     onThreadIdChanged: authorRequestSent = false
     onUpdatedAtChanged: authorRequestSent = false
@@ -210,7 +210,7 @@ Item {
             Rectangle {
                 width: GitHubConstants.messageIconBadgeWidthPx
                 height: GitHubConstants.messageIconBadgeHeightPx
-                radius: GitHubConstants.messageIconBadgeRadiusPx
+                radius: Math.max(0, Math.min(GitHubConstants.messageIconBadgeWidthPx / 2, Theme.cornerRadius + GitHubConstants.messageIconBadgeRadiusDelta))
                 anchors.top: parent.top
                 color: Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, GitHubConstants.messageIconBadgeBackgroundOpacity)
 
@@ -238,7 +238,7 @@ Item {
                            ? Math.max(GitHubConstants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * GitHubConstants.messageMainInfoWidthRatio))
                            : bodySlot.width
                     anchors.top: parent.top
-                    spacing: GitHubConstants.messageMainInfoColumnSpacingPx
+                    spacing: Theme.spacingXS + GitHubConstants.messageMainInfoColumnSpacingDelta
 
                     Item {
                         id: titleHost
@@ -269,7 +269,7 @@ Item {
                     Item {
                         id: repositoryInfoRow
                         width: parent.width
-                        height: row.showRepositoryInfo ? GitHubConstants.messageAuthorRowHeightPx : 0
+                        height: row.showRepositoryInfo ? Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta : 0
                         visible: row.showRepositoryInfo
 
                         Item {
@@ -293,7 +293,7 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             text: row.messageData.repository || "Unknown repository"
-                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             font.weight: Font.Medium
                             color: Theme.surfaceVariantText
                             elide: Text.ElideRight
@@ -315,31 +315,31 @@ Item {
 
                         StyledText {
                             text: row.subjectDisplay
-                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.reason
-                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: "\u2022"
-                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             color: Theme.surfaceVariantText
                         }
 
                         StyledText {
                             text: row.updatedText
-                            font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             color: Theme.surfaceVariantText
                             elide: Text.ElideRight
                         }
@@ -356,7 +356,7 @@ Item {
                         id: authorColumn
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: GitHubConstants.messageAuthorColumnItemSpacingPx
+                        spacing: Math.max(0, (Theme.spacingXXS || 0) + GitHubConstants.messageAuthorColumnItemSpacingDelta)
 
                         Repeater {
                             model: row.limitedAuthors
@@ -387,7 +387,7 @@ Item {
                                     StyledText {
                                         width: Math.max(GitHubConstants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
                                         text: row.authorDisplayName(modelData)
-                                        font.pixelSize: GitHubConstants.authorNameFontSizePx
+                                        font.pixelSize: Theme.fontSizeSmall + GitHubConstants.authorNameFontSizeDelta
                                         color: Theme.surfaceVariantText
                                         elide: Text.ElideRight
                                         maximumLineCount: 1
@@ -415,8 +415,8 @@ Item {
         id: actionsHost
         anchors.left: parent.left
         anchors.bottom: parent.bottom
-        anchors.leftMargin: GitHubConstants.messageActionsHostMarginPx
-        anchors.bottomMargin: GitHubConstants.messageActionsHostMarginPx
+        anchors.leftMargin: Theme.spacingXS + GitHubConstants.messageActionsHostMarginDelta
+        anchors.bottomMargin: Theme.spacingXS + GitHubConstants.messageActionsHostMarginDelta
         width: GitHubConstants.messageActionsHostWidthPx
         height: GitHubConstants.messageActionsHostHeightPx
         z: 10
@@ -430,7 +430,7 @@ Item {
 
         Row {
             id: actionButtons
-            spacing: GitHubConstants.messageActionButtonsSpacingPx
+            spacing: Theme.spacingXS + GitHubConstants.messageActionButtonsSpacingDelta
             visible: rowArea.containsMouse
                      || actionsHoverArea.containsMouse
                      || readToggleArea.containsMouse
@@ -444,7 +444,7 @@ Item {
             Rectangle {
                 width: GitHubConstants.messageActionButtonSizePx
                 height: GitHubConstants.messageActionButtonSizePx
-                radius: GitHubConstants.messageActionButtonRadiusPx
+                radius: Math.max(0, Math.min(GitHubConstants.messageActionButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.messageActionButtonRadiusDelta))
                 color: row.isBusy
                        ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
                        : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
@@ -477,7 +477,7 @@ Item {
             Rectangle {
                 width: GitHubConstants.messageActionButtonSizePx
                 height: GitHubConstants.messageActionButtonSizePx
-                radius: GitHubConstants.messageActionButtonRadiusPx
+                radius: Math.max(0, Math.min(GitHubConstants.messageActionButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.messageActionButtonRadiusDelta))
                 color: row.isBusy
                        ? Theme.withAlpha(Theme.surfaceVariant, 0.55)
                        : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
@@ -521,7 +521,7 @@ Item {
                 id: rowActionTooltipText
                 anchors.centerIn: parent
                 text: "Not available during refresh"
-                font.pixelSize: GitHubConstants.messageMetadataFontSizePx
+                font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                 color: Theme.surfaceVariantText
             }
         }
