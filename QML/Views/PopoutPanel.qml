@@ -174,7 +174,7 @@ Item {
             visible: panel._headerHovered
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
+            radius: width / 2
             color: expandAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -200,7 +200,7 @@ Item {
             visible: panel._headerHovered
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
+            radius: width / 2
             color: collapseAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -226,7 +226,7 @@ Item {
         Rectangle {
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
+            radius: width / 2
             color: refreshAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
@@ -317,7 +317,7 @@ Item {
         Rectangle {
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
+            radius: width / 2
             visible: panel._headerHovered && panel.tokenConfigured && panel.unreadCount > 0
             color: markAllArea.containsMouse
                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
@@ -345,7 +345,7 @@ Item {
             visible: panel._headerHovered
             width: GitHubConstants.popoutHeaderButtonSizePx
             height: GitHubConstants.popoutHeaderButtonSizePx
-            radius: Math.max(0, Math.min(GitHubConstants.popoutHeaderButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutHeaderButtonRadiusDelta))
+            radius: width / 2
             color: closeArea.containsMouse
                    ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity)
                    : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)

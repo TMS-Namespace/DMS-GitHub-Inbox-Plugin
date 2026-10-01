@@ -400,9 +400,6 @@ QtObject {
     /// Width and height (square) of each icon button in the popout header.
     readonly property int popoutHeaderButtonSizePx: 28
 
-    /// Offset from Theme.cornerRadius for popout header buttons.
-    readonly property int popoutHeaderButtonRadiusDelta: 2
-
     /// Offset from Theme.spacingS between popout header buttons.
     readonly property int popoutHeaderButtonSpacingDelta: -2
 
