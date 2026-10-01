@@ -52,6 +52,18 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 - Currently, Github notifications API does not return a separate `Done` flag. The plugin caches done status of messages locally, and infers that a currently visible thread was marked done on GitHub when it disappears from the returned by API results. This is a best-effort workaround.
 - Some GitHub inbox messages, including organization security alerts, and `Dependabots`, will be missed, since `GitHub` does not provide a well generalizable way to fetch them.
 
+## Version History
+
+- v1.0.1 :
+  - Fixed `DMS` comments [published here](https://github.com/AvengeMedia/dms-plugin-registry/issues/554#issuecomment-5899485656).
+  - Fixed some inbox messages was missing.
+  - Ensuring all command lines uses `bash` to avoid issues when user has a different default shell.
+  - Token passed via `stdin`.
+  - Dynamic `Github` page logic, with improved `done` management logic.
+  - Added retry in specific cases.
+- v1.0.0 :
+  - Initial version.
+
 ## Install
 
 ### Method 1

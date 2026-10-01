@@ -78,6 +78,9 @@ QtObject {
     /// Passed as a string because it is spliced directly into the command array.
     readonly property string curlMaxTimeSeconds: "20"
 
+    /// Extra attempts for a GitHub inbox GET canceled at the HTTP/2 stream layer.
+    readonly property int inboxHttp2RetryCount: 2
+
 
     // =========================================================================
     // HTTP Headers & Status Codes

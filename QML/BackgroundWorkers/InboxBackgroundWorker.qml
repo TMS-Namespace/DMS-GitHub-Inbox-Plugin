@@ -82,14 +82,28 @@ Item {
             + "accept_header=$7\n"
             + "api_version=$8\n"
             + "inbox_url=$9\n"
+            + "http2_retries=${10}\n"
             + "command -v jq >/dev/null 2>&1 || exit 127\n"
+            + "retry_count=0\n"
+            + "fetch_page() {\n"
+            + "  page_url=$1\n"
+            + "  attempts=0\n"
+            + "  while :; do\n"
+            + "    body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"$page_url\")\n"
+            + "    status=$?\n"
+            + "    if [ \"$status\" -eq 0 ]; then return 0; fi\n"
+            + "    if [ \"$status\" -ne 92 ] || [ \"$attempts\" -ge \"$http2_retries\" ]; then return \"$status\"; fi\n"
+            + "    attempts=$((attempts + 1))\n"
+            + "    retry_count=$((retry_count + 1))\n"
+            + "  done\n"
+            + "}\n"
             + "base_query=\"per_page=${page_size}\"\n"
             + "all_base_url=\"${inbox_url}?${base_query}&all=true\"\n"
             + "participating_base_url=\"${inbox_url}?${base_query}&all=true&participating=true\"\n"
             + "page=1\n"
             + "pages=0\n"
             + "while [ \"$page\" -le \"$max_pages\" ]; do\n"
-            + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"${all_base_url}&page=${page}\") || exit $?\n"
+            + "  fetch_page \"${all_base_url}&page=${page}\" || exit $?\n"
             + "  printf '%s\\n%s\\n' \"$body\" \"$split\"\n"
             + "  pages=$page\n"
             + "  length=$(printf '%s\\n' \"$body\" | jq 'if type == \"array\" then length else -1 end') || exit $?\n"
@@ -104,11 +118,11 @@ Item {
             + "done\n"
             + "p_page=1\n"
             + "while [ \"$p_page\" -le \"$pages\" ]; do\n"
-            + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"${participating_base_url}&page=${p_page}\") || exit $?\n"
+            + "  fetch_page \"${participating_base_url}&page=${p_page}\" || exit $?\n"
             + "  printf '%s\\n%s\\n' \"$body\" \"$split\"\n"
             + "  p_page=$((p_page + 1))\n"
             + "done\n"
-            + "printf '__GH_FETCH_PAGES=%s\\n' \"$pages\" >&2\n"
+            + "printf '__GH_FETCH_PAGES=%s\\n__GH_FETCH_RETRIES=%s\\n' \"$pages\" \"$retry_count\" >&2\n"
 
         return [
             "bash", "-c", script, "github-inbox-fetch",
@@ -120,7 +134,8 @@ Item {
             String(GitHubConstants.curlMaxTimeSeconds),
             GitHubConstants.httpAcceptHeader,
             GitHubConstants.githubApiVersionHeader,
-            GitHubConstants.githubInboxApiUrl
+            GitHubConstants.githubInboxApiUrl,
+            String(GitHubConstants.inboxHttp2RetryCount)
         ]
     }
 
@@ -167,7 +182,9 @@ Item {
                     var trimmed = line.trim()
                     if (trimmed) {
                         _stderrLines.push(trimmed)
-                        if (trimmed.indexOf("__GH_FETCH_PAGES=") !== 0)
+                        if (trimmed.indexOf("__GH_FETCH_PAGES=") !== 0
+                                && trimmed.indexOf("__GH_FETCH_RETRIES=") !== 0
+                                && trimmed.indexOf("curl: (92)") !== 0)
                             console.warn("[GitHubInbox] fetch:", line)
                     }
                 }
@@ -180,6 +197,12 @@ Item {
                 }
 
                 if (exitCode !== 0) {
+                    var transportError = ""
+                    for (var errorLine of _stderrLines)
+                        if (errorLine.indexOf("curl: (92)") === 0)
+                            transportError = errorLine
+                    if (transportError)
+                        console.warn("[GitHubInbox] fetch:", transportError)
                     fetcher.isLoading = false
                     fetcher.fetchError(fetcher._describeFetchFailure(_stderrLines.join("\n")))
                     fetcher.retryIfQueued()
@@ -189,9 +212,10 @@ Item {
 
                 var nextSeq = fetcher.parseRequestSeq + 1
                 fetcher.parseRequestSeq = nextSeq
-                var pageCount = fetcher._parseFetchedPageCount(_stderrLines)
+                var pageCount = fetcher._parseFetchMarker(_stderrLines, "__GH_FETCH_PAGES=")
+                var retryCount = fetcher._parseFetchMarker(_stderrLines, "__GH_FETCH_RETRIES=")
                 if (pageCount > 0)
-                    ApiCallStats.recordCalls(pageCount * 2)
+                    ApiCallStats.recordCalls(pageCount * 2 + retryCount)
                 fetcher._perfLog("curl done, sending payload to WorkerScript (len=" + (_chunks.join("\n").length) + ")")
                 parseWorker.sendMessage({
                     seq: nextSeq,
@@ -294,11 +318,10 @@ Item {
         return "GitHub request failed. Check token or network."
     }
 
-    function _parseFetchedPageCount(lines) {
+    function _parseFetchMarker(lines, marker) {
         var source = lines || []
         for (var index = source.length - 1; index >= 0; index--) {
             var line = String(source[index] || "").trim()
-            var marker = "__GH_FETCH_PAGES="
             if (line.indexOf(marker) !== 0)
                 continue
             var value = parseInt(line.substring(marker.length))
