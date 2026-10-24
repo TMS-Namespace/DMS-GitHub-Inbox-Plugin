@@ -6,7 +6,7 @@ A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget p
 
 | Group by repo | Group by date |
 |:---:|:---:|
-| <img src="Images/plugin_group_by_repo.png" width="400"/> | <img src="Images/plugin_group_by_date.png" width="400"/> |
+| <img src="images/plugin_group_by_repo.png" width="400"/> | <img src="images/plugin_group_by_date.png" width="400"/> |
 
 </div>
 
@@ -27,7 +27,7 @@ A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget p
 
 | Settings |
 |:---:|
-| <img src="Images/plugin_settings.png" width="400"/> |
+| <img src="images/plugin_settings.png" width="400"/> |
 
 </div>
 
@@ -42,8 +42,8 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 
 ## Requirements
 
-- DMS >= 1.2.0.
-- Required commands in `$PATH`: `bash`, `curl`, `jq`, `secret-tool` (libsecret), `notify-send` (libnotify), and `file`.
+- DMS >= 2.0.0.
+- `GNU coreutils` (or compatible: `sh`, `ls`, `mkdir`, `rm`, `mktemp`, `cat`, `tail`) in `$PATH`, used to fetch data and manage cache.
 - Unlocked Freedesktop Secret Service keyring to store the token.
 - Internet access to GitHub's API and avatar hosts.
 
@@ -54,6 +54,11 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 
 ## Version History
 
+- v2.0.0 :
+  - Improvement: Structural refactoring for easier future maintenance.
+  - Improvement: Better test coverage.
+  - Fix: Bug with how date grouping works.
+  - Fix: Some security issues related to `curl`.
 - v1.0.1 :
   - Fixed `DMS` comments [published here](https://github.com/AvengeMedia/dms-plugin-registry/issues/554#issuecomment-5899485656).
   - Fixed some inbox messages was missing.
@@ -80,16 +85,23 @@ In DMS:
 Or clone repo, and run (this will add `Symlink` to plugin folder):
 
 ```bash
-chmod +x Support/setup-symlink.sh
-Support/setup-symlink.sh
+chmod +x support/setup-symlink.sh
+support/setup-symlink.sh
 ```
 
 ## Privacy & Security
 
 - Contacts `api.github.com` for inbox and author data, `avatars.githubusercontent.com` for user avatars, and `github.com` for app avatars and the GitHub icon.
 - Opening a thread, repository, author, or token-settings link launches the system browser.
-- Writes cache files under `~/.cache/dms-github-inbox-plugin`, and fallback to `/tmp/dms-github-inbox-plugin` if the normal cache path cannot be resolved. The cache includes notification, authors metadata, downloaded avatars.
+- Writes cache files under `${XDG_CACHE_HOME:-~/.cache}/dms-github-inbox-plugin`, falling back to `/tmp/dms-github-inbox-plugin` if the normal cache path cannot be resolved. The cache includes notifications, author metadata, downloaded avatars, and backups of unreadable or incompatible cache files.
 - Stores the GitHub token through `Freedesktop Secret Service` via `secret-tool`. Authenticated requests send the token to `curl` over stdin.
+- Does not require elevated privileges.
+
+## Contributions
+
+Feel free to submit your PR, try to follow [Code Requirements](docs/code_requirements.md).
+
+The plugin has `isDevMode` in `src/QML/Tools/Constants.qml`, which enables logging for debugging when true.
 
 ## Disclaimers
 

@@ -1,0 +1,8 @@
+singleton AuthorUtils 1.0 AuthorUtils.qml
+singleton Constants 1.0 Constants.qml
+AvatarState 1.0 AvatarState.qml
+DateGroupingModel 1.0 DateGroupingModel.qml
+InboxMessageState 1.0 InboxMessageState.qml
+singleton PluginLogger 1.0 PluginLogger.qml
+singleton InboxMessageDetails 1.0 InboxMessageDetails.qml
+RepoGroupingModel 1.0 RepoGroupingModel.qml

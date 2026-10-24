@@ -1,0 +1,17 @@
+singleton GitHubManager 1.0 GitHubManager.qml
+singleton ApiCallStats 1.0 ApiCallStats.qml
+ErrorService 1.0 ErrorService.qml
+AvatarPreloader 1.0 AvatarPreloader.qml
+CacheCoordinator 1.0 CacheCoordinator.qml
+DesktopNotificationService 1.0 DesktopNotificationService.qml
+AvatarPropagationService 1.0 AvatarPropagationService.qml
+SettingsService 1.0 SettingsService.qml
+InboxViewState 1.0 InboxViewState.qml
+InboxEnrichmentService 1.0 InboxEnrichmentService.qml
+InboxPreferencesService 1.0 InboxPreferencesService.qml
+InboxFetchService 1.0 InboxFetchService.qml
+InboxRefreshCoordinator 1.0 InboxRefreshCoordinator.qml
+InboxOperations 1.0 InboxOperations.qml
+PluginCache 1.0 PluginCache.qml
+ResourceRepository 1.0 ResourceRepository.qml
+SecretStore 1.0 SecretStore.qml

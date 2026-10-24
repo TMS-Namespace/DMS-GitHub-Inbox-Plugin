@@ -1,6 +1,6 @@
 # Code requirements
 
-Generic rules for QML/JavaScript plugins in this style. They describe how code is divided, named, tested and
+Generic rules for QML and JavaScript plugins in this style. They describe how code is divided, named, tested and
 failed, not what any one plugin does.
 
 ## 0. Naming and style
@@ -8,13 +8,14 @@ failed, not what any one plugin does.
 - Always add comments to all classes, entities, functions, and complex logic.
 - Use easily readable language for comments and documents, do not be very abstract.
 - Always prefer to use OOP-like programming, and following SOLID principles and clean code.
-- Do not use em-dashes `—`.
+- Do not use the em dash character.
 - Use clear, descriptive names. No abbreviations (`c`, `s`, `k`, `sel`, `ctx`, `fn`, `btn`, `tmp`), including in
   lambdas, loops over keys, shell variables and QML ids. `i` (and `j` when nested) is fine for a running index.
 - Name a variable for what it **is**: `selection`, `pluginService`, `pendingGroup`, not its type or a shortening.
 - Do not shadow or reuse a name for a different meaning in the same scope.
 - Every file starts with a short header stating its role and its rules.
 - Match the surrounding code: comment density, naming, idiom.
+- Keep each JavaScript module line count small; split it by responsibility before it grows further.
 - One concept, one place: no duplicated approaches (for example, one clamp function, not two variants).
 
 ## 1. Division of labour (QML vs JavaScript)
@@ -30,15 +31,18 @@ failed, not what any one plugin does.
 
 ## 2. Layers and folders
 
-- Mirror the structure in `src/` and `tests/`. Each folder has one role:
-  - `QML/Contracts`: data holders.
-  - `QML/Services`: stateful objects shared across the plugin.
-  - `QML/Helpers`: per-widget helper items.
-  - `QML/Views`: UI only.
-  - `JS/Contracts`: value domains (enums with `isValid`/`label`) and the exception type.
-  - `JS/Helpers`: pure logic modules.
-  - `JS/<Integration>/<Name>/`: everything specific to one external integration (see section 6).
-- Dependencies point one way: Views → Helpers/Services → Contracts. A lower layer never imports a higher one.
+- Mirror the structure in `src/JS/`, `src/QML/`, and `tests/`. Each folder has one role:
+  - `src/QML/Contracts`: data holders.
+  - `src/QML/Services`: stateful objects shared across the plugin.
+  - `src/QML/Tools`: per-widget calculations, grouping models, and presentation helpers; do not put shared queues, caches, or storage here.
+  - `src/QML/Views`: UI only.
+  - `src/QML/BackgroundWorkers`: bounded background process and parsing workers.
+  - `src/JS/Contracts`: value domains (enums with `isValid`/`label`) and the exception type.
+  - `src/JS/Helpers`: pure logic modules.
+  - `src/JS/Storage`: cache-format decoding, migration and serialization before data enters runtime state.
+  - `src/JS/<Integration>/<Name>/`: everything specific to one external integration (see section 6).
+- Stateful cache, secret-storage, API-statistics, request, and resource-queue components belong in `src/QML/Services`, even when used by one view.
+- Dependencies point one way: Views → Tools/Services → Contracts. A lower layer never imports a higher one.
 - Keep DMS entry points focused on composing views and connecting host APIs. Per-instance controller helpers own
   form actions and widget lifecycles. Controllers receive data and emit signals; they never reference visual controls.
 - Shared Dux widgets use `qs.DCommon.Widgets` and their current `D*` names. Keep shell-specific plugin types in
@@ -65,7 +69,7 @@ failed, not what any one plugin does.
 - A manager only manages: it enumerates what is supported, initialises it, and hands out the facade. It does no
   work itself.
 - A facade is the **only** door to its resource. The rest of the code never reaches around it to the underlying
-  JS/API. Enforce this with an audit test.
+  JavaScript API. Enforce this with an audit test.
 - A broken component is recorded and reported (a load error list); it never prevents the others from working.
 
 ## 5. Data formats and migration
@@ -81,17 +85,17 @@ failed, not what any one plugin does.
 
 - Each integration is a folder with **declared properties as plain data** (names, URLs, rules, limits) and an **API
   module** (build requests, read answers) plus its constants.
-- Provider API classes extend `JS/Contracts/ProviderApi.js`; declarations extend `JS/Contracts/ProviderProperties.js`.
+- Provider API classes extend `src/JS/Contracts/ProviderApi.js`; declarations extend `src/JS/Contracts/ProviderProperties.js`.
   Both modules export `create()`. Override every required API method; optional hooks have inherited defaults.
 - Lint checks every provider's inheritance, required overrides, method signatures, property names and property types
-  before starting QML. `node support/CheckProviders.js` runs these contributor checks on their own.
+  before starting QML. `node audit/CheckProviders.js` runs these contributor checks on their own.
 - The properties are checked as a whole when the integration is loaded; unknown keys and inconsistent declarations
   are errors.
 - Integrations should preferably be stateless and see only current-format data. They know nothing about storage, UI,
   retries or other integrations.
 - Limits (ranges, resolutions, polling rates) are declared by the integration and verified against the real service.
   Requests outside the declared limits are refused before any request is made; nothing is silently approximated.
-- Retries, queues, timeouts and response interpretation are centralised once, in the facade, not per integration.
+- Bounded retries and retry timing are declared and built by the provider facade, not duplicated by request callers.
 - Add a new integration by adding a folder, one enum value and one registry entry. No other file changes.
 
 ## 7. Error handling
@@ -117,11 +121,9 @@ failed, not what any one plugin does.
   to do. No raw `setTimeout`/`setInterval`.
 - Process work (shell, network) is queued and limited in concurrency.
 - Share identical in-flight requests while preserving each caller's context, parsing limits and error handling.
-  Discard obsolete callers before launching queued work. A rate-limit response pauses the affected provider's
-  whole queue, with a bounded retry budget and growing cooldown.
+  Discard obsolete callers before launching queued work.
 - Restore the refresh schedule only for valid cached data with matching settings and sane timestamps.
   Startup fetches only what is due; an explicit manual refresh still fetches immediately, subject to rate limits.
-- Keep bulk chart candles as plain validated data. Removing a symbol releases its data, scheduling state and errors.
 
 ## 9. Time, text and security
 
@@ -152,6 +154,8 @@ failed, not what any one plugin does.
   that save on every change, data that changes later. Assert that nothing is reported to the user in that window.
 - Any runtime warning from the code under test (an undefined property, a component that is not ready, a binding
   error) fails the test run.
+  The runner inspects diagnostics and exits with failure normally; do not enable `QT_FATAL_WARNINGS`, which
+  aborts Qt and generates desktop crash reports. Intentional PluginLogger diagnostics are allowed in dev mode.
 - Do not assert source text as a substitute for behaviour; a static check that encodes an assumption hides the bug.
 - Tests mirror the source structure. Tests that need fresh state reset it in setup; no state leaks between tests.
 - Every bug fix and every rule above gets a test or an audit that would have caught it.
@@ -162,18 +166,18 @@ failed, not what any one plugin does.
 From the repository root, run:
 
 ```sh
-node support/Lint.js
+node audit/Lint.js
 node tests/RunAll.js
 ```
 
 To format all QML and JavaScript files, run:
 
 ```sh
-npm exec --yes --package=prettier@3.6.2 -- node support/Format.js
+npm exec --yes --package=prettier@3.9.10 -- node audit/Format.js
 ```
 
 Add `--check` to check formatting without changing source files. This uses Qt 6 `qmlls` and downloads
-Prettier as a development tool. Formatting settings live in `.qmlformat.ini` and `.prettierrc.json`;
+latest Prettier as a development tool. Formatting settings live in `.qmlformat.ini` and `.prettierrc.json`;
 QML JavaScript directives are preserved automatically. Run lint and tests afterwards.
 
 Lint checks provider contracts, QML language-server warnings and errors, and JavaScript syntax. It requires Node.js, installed
@@ -183,8 +187,18 @@ installation. No npm packages are required. The test suite requires Quickshell a
 isolated cache directories and deterministic provider responses. `node tests/RunAll.js --live` additionally
 tests the real providers and requires network access.
 
+The suite also launches an isolated `qs` configuration for native Process and WorkerScript integration checks.
+This is required on builds that statically link Quickshell's plugins into its executable. Credential, network and
+desktop-notification commands remain deterministic substitutes, and generated cache/config directories are removed
+afterwards. The native checks compare main-thread and worker parsing, legacy-cache migration, typed error transport,
+and token store/lookup/removal through actual process stdin/stdout.
+
+Some Qt builds emit `QObject::connect(QJSEngine, QtObject): invalid nullptr parameter` when starting multiple workers.
+The native test runner allows that exact engine diagnostic only if a separate pair of plain echo workers reproduces
+it in the same run. All other warnings still fail verification; the plugin's code is absent from that control fixture.
+
 The lint command also prepares the editor imports. After a fresh checkout or a Quickshell update, run it
-before opening the editor; `node support/PrepareQmlImports.js` prepares only the imports. Reload the QML
+before opening the editor; `node audit/PrepareQmlImports.js` prepares only the imports. Reload the QML
 language server if it was already running. The workspace settings resolve `qs.*` through the same DMS
 interface stand-ins audited by the tests, and Qt/Quickshell through the installed QML directories.
 
