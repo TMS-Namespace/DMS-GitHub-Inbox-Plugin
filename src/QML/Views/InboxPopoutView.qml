@@ -84,7 +84,6 @@ Item {
         detailsText: ""
         headerText: "GitHub Inbox"
         objectName: "compactInboxPopout"
-        showCloseButton: false
         width: view.width + 2 * view.paddingAdjustment
         x: -view.paddingAdjustment
         y: -view.paddingAdjustment

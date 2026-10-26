@@ -59,6 +59,7 @@ This plugin uses a **GitHub classic personal access token**, which can be create
   - Improvement: Migration to `Dux API v2`.
   - Improvement: Structural refactoring for easier future maintenance.
   - Improvement: Better test coverage.
+  - Improvement: Basic validation of the authentication token.
   - Fix: Bug with how grouping by date works.
   - Fix: API statistics were showing wrong info.
   - Fix: Some security issues related to `curl`.

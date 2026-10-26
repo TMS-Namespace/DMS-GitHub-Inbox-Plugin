@@ -6,6 +6,27 @@ const assert = require("node:assert/strict");
 const { createRegistry, loadModule } = require("../../../../audit/QmlJavaScript");
 const helpers = loadModule("src/JS/Integrations/GitHub/GitHubHelpers.js", createRegistry());
 
+for (const token of [
+    "",
+    "  ",
+    "ghp_" + "a".repeat(36),
+    " ghp_" + "B1_".repeat(12) + "\n",
+    "ghp_" + "a".repeat(251),
+    "abcdef0123".repeat(4)
+])
+    assert.equal(helpers.validateTokenFormat(token), "");
+for (const token of ["ghp_" + "a".repeat(35), "ghp_" + "a".repeat(252)])
+    assert.match(helpers.validateTokenFormat(token), /between 40 and 255/);
+for (const token of [
+    "github_pat_" + "a".repeat(82),
+    "gho_" + "a".repeat(36),
+    "GHP_" + "a".repeat(36),
+    "not-a-token".replaceAll("-", "_")
+])
+    assert.match(helpers.validateTokenFormat(token), /classic personal access token/);
+for (const character of [" ", "\n", "\r", "\t", "\u0000", "é", '"', "'", ";", "$", "\\", "-"])
+    assert.match(helpers.validateTokenFormat("ghp_" + "a".repeat(35) + character + "a"), /ASCII letters/);
+
 const makeNotification = (id, updatedAt, options = {}) => ({
     id,
     unread: options.unread === undefined ? true : options.unread,

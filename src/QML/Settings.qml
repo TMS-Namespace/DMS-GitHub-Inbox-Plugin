@@ -13,9 +13,11 @@ PluginSettings {
 
     property alias dependenciesChecked: settingsService.dependenciesChecked
     property alias dependenciesReady: settingsService.dependenciesReady
+    readonly property string displayedTokenValidationError: settingsService.displayedTokenValidationError
     property alias missingDependencies: settingsService.missingDependencies
     property alias tokenSaveFailed: settingsService.tokenSaveFailed
     property alias tokenStatusMessage: settingsService.tokenStatusMessage
+    readonly property string tokenValidationError: settingsService.tokenValidationError
     property alias tokenValue: settingsService.tokenValue
 
     pluginId: GitHubConstants.pluginNamespaceId
@@ -51,15 +53,16 @@ PluginSettings {
         id: settingsContent
 
         height: visible ? implicitHeight : 0
-        saveFailed: root.tokenSaveFailed
+        saveFailed: root.tokenSaveFailed || root.displayedTokenValidationError !== ""
         tokenEditedCallback: function (value) {
-            settingsService.scheduleTokenSave(value);
+            settingsService.updateTokenDraft(value);
         }
-        tokenStatusMessage: root.tokenStatusMessage
+        tokenStatusMessage: root.displayedTokenValidationError || root.tokenStatusMessage
         tokenValue: root.tokenValue
         visible: root.dependenciesReady
         width: parent.width
 
         onClearCacheRequested: root.saveValue("clearCacheRequested", "true")
+        onTokenEditingFinished: value => settingsService.finishTokenEdit(value)
     }
 }

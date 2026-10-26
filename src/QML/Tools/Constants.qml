@@ -666,8 +666,6 @@ QtObject {
     /// Width (ms) of the rolling window used for the "last hour" statistics
     /// bucket.
     readonly property int statsOneHourWindowMs: 3600000
-    /// Debounce interval for secure token persistence while editing settings.
-    readonly property int tokenSaveDelayMs: 500
 
     /// Minimum delayed timer gap logged as a UI-thread stall in DevMode.
     readonly property int uiStallLogThresholdMs: 750

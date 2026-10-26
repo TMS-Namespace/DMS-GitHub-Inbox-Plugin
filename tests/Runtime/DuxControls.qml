@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import Quickshell
+import "../../src/QML/Services" as Services
 import "../../src/QML/Views" as Views
 import qs.DCommon.Widgets
 
@@ -18,6 +19,7 @@ ShellRoot {
     property int readSelections: 0
     property int refreshActions: 0
     property int settingsActions: 0
+    property int tokenEdits: 0
 
     // Search real component instances rather than asserting source-text assumptions.
     function find(item, name) {
@@ -53,6 +55,9 @@ ShellRoot {
         panel.messages = items;
     }
 
+    Services.SettingsService {
+        id: tokenSettingsService
+    }
     Window {
         id: window
 
@@ -64,6 +69,20 @@ ShellRoot {
             id: defaultCacheButton
 
             visible: false
+        }
+        Views.GitHubTokenSetting {
+            id: tokenEditor
+
+            saveFailed: tokenSettingsService.tokenSaveFailed || tokenSettingsService.displayedTokenValidationError !== ""
+            statusMessage: tokenSettingsService.displayedTokenValidationError || tokenSettingsService.tokenStatusMessage
+            tokenValue: tokenSettingsService.tokenValue
+            width: 400
+
+            onTokenEdited: function (value) {
+                checks.tokenEdits++;
+                tokenSettingsService.updateTokenDraft(value);
+            }
+            onTokenEditingFinished: value => tokenSettingsService.finishTokenEdit(value)
         }
         Views.PopoutPanel {
             id: panel
@@ -144,7 +163,7 @@ ShellRoot {
         }
     }
     Timer {
-        interval: 150
+        interval: checks.phase === 1 ? 700 : 150
         repeat: true
         running: true
 
@@ -240,8 +259,23 @@ ShellRoot {
                     return;
                 checks.previousThumbSize = scroller.verticalScrollBar.size;
                 scroller.verticalScrollBar.position = 0.2;
+                tokenSettingsService.tokenValue = "ghp_" + "a".repeat(36);
+                if (!checks.require(checks.tokenEdits === 0, "Loading a token was treated as a user edit"))
+                    return;
+                let tokenInput = checks.find(tokenEditor, "githubTokenInput");
+                tokenInput.forceActiveFocus();
+                tokenInput.text = "  ghp_short  ";
+                if (!checks.require(tokenInput.getActiveFocus() && checks.tokenEdits === 1 && tokenEditor.tokenValue === "  ghp_short  ", "Native token edit was lost or repeated"))
+                    return;
                 checks.phase = 1;
             } else if (checks.phase === 1) {
+                let tokenInput = checks.find(tokenEditor, "githubTokenInput");
+                let tokenStatus = checks.find(tokenEditor, "githubTokenStatus");
+                if (!checks.require(tokenInput.text === "  ghp_short  " && tokenStatus.text.length > 0 && tokenInput.isError, "Live validation was missing or changed the draft"))
+                    return;
+                tokenInput.setFocus(false);
+                if (!checks.require(tokenInput.text === "ghp_short" && tokenInput.isError && tokenStatus.text.length > 0 && checks.tokenEdits === 1, "Native focus loss did not trim and validate exactly once"))
+                    return;
                 if (!checks.require(scroller.contentY > 0, "Moving the native thumb did not scroll content"))
                     return;
                 scroller.contentY = 0;
@@ -249,6 +283,9 @@ ShellRoot {
                 window.width = 360;
                 checks.phase = 2;
             } else {
+                let tokenStatus = checks.find(tokenEditor, "githubTokenStatus");
+                if (!checks.require(tokenStatus.text.length > 0 && tokenStatus.visible, "Committed validation feedback disappeared"))
+                    return;
                 if (!checks.require(scroller.verticalScrollBar.position === 0 && scroller.verticalScrollBar.size < checks.previousThumbSize, "Scrollbar did not follow content position and resize"))
                     return;
                 let readControl = checks.find(panel, "readFilterControl");

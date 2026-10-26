@@ -19,6 +19,7 @@ const githubProperties = loadModule("src/JS/Integrations/GitHub/GitHubProviderPr
 const githubHelpers = loadModule(
     "src/JS/Integrations/GitHub/GitHubHelpers.js",
     [
+        "validateTokenFormat",
         "isSafeGitHubLogin",
         "isSafeGitHubApiUrl",
         "isAllowedAvatarUrl",

@@ -17,6 +17,7 @@ Column {
     property string tokenValue: ""
 
     signal clearCacheRequested
+    signal tokenEditingFinished(string value)
 
     // Refresh displayed host controls after the settings service is attached.
     function loadSettings() {
@@ -46,6 +47,7 @@ Column {
                 if (content.tokenEditedCallback)
                     content.tokenEditedCallback(value);
             }
+            onTokenEditingFinished: value => content.tokenEditingFinished(value)
             onTokenHelpRequested: Qt.openUrlExternally(GitHubConstants.githubTokenSettingsUrl)
         }
     }

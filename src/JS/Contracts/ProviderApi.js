@@ -3,6 +3,7 @@
 .pragma library
 
 var requiredMethods = [
+    "validateTokenFormat",
     "createAuthorTools",
     "buildInboxUrl",
     "buildThreadActionRequest",
@@ -36,6 +37,7 @@ function create() {
     return {
         providerId: "",
         properties: null,
+        validateTokenFormat: null,
         createAuthorTools: null,
         buildInboxUrl: null,
         buildThreadActionRequest: null,
