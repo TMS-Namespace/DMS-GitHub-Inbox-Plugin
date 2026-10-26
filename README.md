@@ -57,7 +57,7 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 - v2.0.0 :
   - Improvement: Structural refactoring for easier future maintenance.
   - Improvement: Better test coverage.
-  - Fix: Bug with how date grouping works.
+  - Fix: Bug with how grouping by date works.
   - Fix: Some security issues related to `curl`.
 - v1.0.1 :
   - Fixed `DMS` comments [published here](https://github.com/AvengeMedia/dms-plugin-registry/issues/554#issuecomment-5899485656).

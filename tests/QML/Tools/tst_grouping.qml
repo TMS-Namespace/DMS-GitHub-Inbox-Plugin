@@ -2,6 +2,7 @@
 
 import QtQuick
 import QtTest
+import "../../../src/JS/Helpers/CalendarTime.js" as CalendarTime
 import "../../../src/QML/Tools"
 
 TestCase {
@@ -13,6 +14,21 @@ TestCase {
         dateModel.messages = [];
         dateModel.readFilter = "both";
         dateModel.participationFilter = "both";
+    }
+    function test_cardAgeMatchesGroupingCalendarBoundaries() {
+        let referenceMs = Date.UTC(2026, 9, 22, 0, 30);
+        let updatedAt = "2026-10-20T23:30:00Z";
+        compare(dateModel._dateBucketValue({
+            updatedAt: updatedAt
+        }, referenceMs), "two_days_ago");
+        compare(CalendarTime.relativeTimeFromIso(updatedAt, referenceMs), "2 days ago");
+
+        referenceMs = Date.UTC(2026, 9, 19, 0, 30);
+        updatedAt = "2026-10-18T23:30:00Z";
+        compare(dateModel._dateBucketValue({
+            updatedAt: updatedAt
+        }, referenceMs), "previous_week");
+        compare(CalendarTime.relativeTimeFromIso(updatedAt, referenceMs), "1 week ago");
     }
     function test_dateBucketsUseUtcCalendarBoundaries() {
         let referenceMs = Date.UTC(2026, 9, 22, 12);

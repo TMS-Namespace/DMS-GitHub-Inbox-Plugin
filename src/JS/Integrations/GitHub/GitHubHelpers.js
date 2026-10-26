@@ -6,6 +6,7 @@
 .pragma library
 .import "NotificationParser.js" as Notifications
 .import "../../Contracts/PluginError.js" as PluginError
+.import "../../Helpers/CalendarTime.js" as CalendarTime
 
 var _notifications = Notifications.createParser(PluginError);
 
@@ -170,39 +171,9 @@ function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     return _notifications.apiToWebUrl(apiUrl, subjectType, subjectTitle);
 }
 
-// Format elapsed time for display while retaining exact UTC timestamps in stored data.
-function relativeTimeFromIso(isoDate) {
-    if (!isoDate) return "";
-
-    var timestamp = Date.parse(isoDate);
-    if (isNaN(timestamp)) return "";
-
-    var seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 10) return "just now";
-    if (seconds < 60) return seconds + " sec ago";
-
-    var minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return minutes + " min ago";
-
-    var hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours + " hr ago";
-
-    var now = new Date();
-    var updated = new Date(timestamp);
-    var calendarDays = localDayNumber(now) - localDayNumber(updated);
-    var days = Math.max(1, calendarDays || Math.floor(hours / 24));
-    if (days < 30) return days + " day" + (days !== 1 ? "s" : "") + " ago";
-
-    var months = Math.floor(days / 30);
-    if (months < 12) return months + " month" + (months !== 1 ? "s" : "") + " ago";
-
-    var years = Math.floor(days / 365);
-    return years + " year" + (years !== 1 ? "s" : "") + " ago";
-}
-
-// Use local calendar days only for relative labels, never for persisted timestamps.
-function localDayNumber(value) {
-    return Math.floor(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / (24 * 60 * 60 * 1000));
+// Share UTC calendar boundaries with notification grouping instead of approximating durations.
+function relativeTimeFromIso(isoDate, referenceMs) {
+    return CalendarTime.relativeTimeFromIso(isoDate, referenceMs);
 }
 
 // Map API reason identifiers to readable labels without changing filter semantics.

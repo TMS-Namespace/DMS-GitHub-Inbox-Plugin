@@ -17,6 +17,7 @@ const javascriptTests = [
     "tests/JS/Integrations/GitHub/GitHubHelpers.test.js",
     "tests/JS/Integrations/GitHub/AuthorTools.test.js",
     "tests/JS/Helpers/CacheCommands.test.js",
+    "tests/JS/Helpers/CalendarTime.test.js",
     "tests/JS/Storage/CacheSerialization.test.js",
     "tests/JS/Integrations/GitHub/InboxParserBackgroundWorker.test.js",
     "tests/JS/BackgroundWorkers/CacheBackgroundWorker.test.js"

@@ -1,6 +1,7 @@
 // DateGroupingModel.qml - filters and groups inbox messages by date bucket.
 
 import QtQuick
+import "../../JS/Helpers/CalendarTime.js" as CalendarTime
 import ".."
 
 QtObject {
@@ -103,41 +104,7 @@ QtObject {
         if (!isFinite(currentTimestamp) || currentTimestamp <= 0)
             currentTimestamp = Date.now();
 
-        let updated = new Date(timestamp);
-        let now = new Date(currentTimestamp);
-        let calendarYearsAgo = now.getUTCFullYear() - updated.getUTCFullYear();
-        if (calendarYearsAgo > 0)
-            return calendarYearsAgo === 1 ? "previous_year" : "older";
-        if (calendarYearsAgo < 0)
-            return "this_year";
-
-        let calendarMonthsAgo = now.getUTCMonth() - updated.getUTCMonth();
-        if (calendarMonthsAgo > 0)
-            return calendarMonthsAgo === 1 ? "previous_month" : "this_year";
-        if (calendarMonthsAgo < 0)
-            return "this_month";
-
-        let mondayOffset = (now.getUTCDay() + 6) % 7;
-        let weekStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - mondayOffset);
-        let updatedMondayOffset = (updated.getUTCDay() + 6) % 7;
-        let updatedWeekStart = Date.UTC(updated.getUTCFullYear(), updated.getUTCMonth(), updated.getUTCDate() - updatedMondayOffset);
-        let calendarWeeksAgo = Math.round((weekStart - updatedWeekStart) / (7 * 24 * 60 * 60 * 1000));
-        if (calendarWeeksAgo === 1)
-            return "previous_week";
-        if (calendarWeeksAgo === 2)
-            return "two_weeks_ago";
-        if (calendarWeeksAgo > 2)
-            return "this_month";
-
-        let calendarDayDiff = _utcDayNumber(now) - _utcDayNumber(updated);
-        if (calendarDayDiff === 0)
-            return "today";
-        if (calendarDayDiff === 1)
-            return "yesterday";
-        if (calendarDayDiff === 2)
-            return "two_days_ago";
-
-        return "this_week";
+        return CalendarTime.bucketForTimestamp(timestamp, currentTimestamp);
     }
     // Limit visible rows without losing the full set used by group actions.
     function _groupMessagesByDate(items) {
@@ -177,10 +144,6 @@ QtObject {
             return timeB - timeA;
         });
         return copy;
-    }
-    // Represent UTC calendar dates consistently across timezone and daylight-saving boundaries.
-    function _utcDayNumber(value) {
-        return Math.floor(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()) / (24 * 60 * 60 * 1000));
     }
     // Persist one coherent collapsed state for all current groups.
     function collapseAllGroups() {
