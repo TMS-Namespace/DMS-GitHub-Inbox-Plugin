@@ -1,4 +1,4 @@
-// SettingsIntroView.qml - settings page title and token-scope guidance.
+// SettingsIntroView.qml - settings page title above the grouped controls.
 
 pragma ComponentBehavior: Bound
 
@@ -15,12 +15,5 @@ Column {
         font.pixelSize: Theme.fontSizeLarge
         font.weight: Font.Bold
         text: "GitHub Inbox"
-    }
-    StyledText {
-        color: Theme.surfaceVariantText
-        font.pixelSize: Theme.fontSizeSmall
-        text: "Use a GitHub classic personal access token with at least the 'notifications' scope."
-        width: parent.width
-        wrapMode: Text.WordWrap
     }
 }

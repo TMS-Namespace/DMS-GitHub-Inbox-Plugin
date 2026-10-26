@@ -18,7 +18,7 @@ QtObject {
     readonly property real actionButtonBackgroundOpacity: 0.9
 
     /// Enables lightweight API/refresh metric collection shown in settings.
-    readonly property bool apiCallStatsEnabled: isDevMode
+    readonly property bool apiCallStatsEnabled: true
 
     /// Size of the "person" fallback icon shown when no avatar URL is available.
     readonly property int authorAvatarFallbackIconSizePx: 12
@@ -623,10 +623,6 @@ QtObject {
 
     /// Offset from Theme.fontSizeSmall for each API stats data row.
     readonly property int settingsStatsDataRowHeightDelta: 8
-
-    /// Duration (ms) of the expand / collapse animation for the API stats
-    /// section.
-    readonly property int settingsStatsExpandAnimationDurationMs: 150
 
     /// Offset from Theme.fontSizeSmall for API stats table text.
     readonly property int settingsStatsFontSizeDelta: -2

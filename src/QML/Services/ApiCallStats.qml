@@ -17,11 +17,11 @@ QtObject {
 
         onTriggered: stats._prune()
     }
-    property int _refreshStartMs: 0
+    property real _refreshStartMs: 0
 
     // -- Private state -------------------------------------------------------
     property var _timestamps: []       // one entry per API call (ms)
-    property int _totalDurationMs: 0   // lifetime ms sum across completed refreshes
+    property real _totalDurationMs: 0   // lifetime ms sum across completed refreshes
 
     property real lastHourAvgDurationSecs: 0
 
@@ -100,7 +100,7 @@ QtObject {
 
     // Call once when a refresh cycle fully completes (success or error).
     function recordRefreshComplete() {
-        if (!GitHubConstants.apiCallStatsEnabled)
+        if (!GitHubConstants.apiCallStatsEnabled || _refreshStartMs <= 0)
             return;
         let durationMs = (_refreshStartMs > 0) ? Math.max(0, Date.now() - _refreshStartMs) : 0;
 

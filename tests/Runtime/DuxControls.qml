@@ -124,6 +124,12 @@ ShellRoot {
 
             onClearCacheRequested: checks.cacheActions++
         }
+        Views.SettingsContentView {
+            id: settingsGroups
+
+            visible: false
+            width: 520
+        }
         Views.InboxPopoutView {
             id: popout
 
@@ -147,6 +153,18 @@ ShellRoot {
             if (!checks.require(scroller && scroller.verticalScrollBar, "Missing native attached scrollbar"))
                 return;
             if (checks.phase === 0) {
+                for (let name of ["authenticationSettingsSection", "behaviourSettingsSection", "viewSettingsSection", "cacheSettingsSection", "apiCallStatsView"]) {
+                    let section = checks.find(settingsGroups, name);
+                    if (!checks.require(section && !section.expanded && section.implicitHeight > 0, "Settings group did not load collapsed: " + name))
+                        return;
+                    section.toggle();
+                    if (!checks.require(section.expanded, "Native settings group did not expand: " + name))
+                        return;
+                    section.toggle();
+                }
+                let viewControls = checks.find(settingsGroups, "viewSettingsControls");
+                if (!checks.require(viewControls.children[0].objectName === "titleLinesSetting", "Title rows must be first in View Settings"))
+                    return;
                 let selector = checks.find(panel, "readFilterControl");
                 let participation = checks.find(panel, "participationFilterControl");
                 if (!checks.require(selector.parent.x === 0 && Math.abs(participation.parent.x + participation.parent.width - panel.width) < 1, "Desktop filters lost their opposite-edge alignment"))

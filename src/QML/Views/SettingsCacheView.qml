@@ -12,7 +12,7 @@ DCollapsibleSection {
 
     description: "Inbox messages, author details, and avatars are cached locally for faster loading."
     objectName: "cacheSettingsSection"
-    title: "Cache"
+    title: "CleanUp"
     width: parent.width
 
     DButton {

@@ -80,6 +80,47 @@ TestCase {
         verify(dependencyStatus.text.indexOf("curl, jq") >= 0);
         page.destroy();
     }
+    function test_settingsSectionsAndViewControlOrder() {
+        fakePluginService.values = ({});
+        fakePluginService.writes = [];
+        let page = createSettings();
+        let authentication = findChild(page, "authenticationSettingsSection");
+        let behaviour = findChild(page, "behaviourSettingsSection");
+        let view = findChild(page, "viewSettingsSection");
+        let cleanup = findChild(page, "cacheSettingsSection");
+        let statistics = findChild(page, "apiCallStatsView");
+        for (let section of [authentication, behaviour, view, cleanup, statistics]) {
+            verify(section);
+            compare(section.expanded, false);
+            section.toggle();
+            compare(section.expanded, true);
+            section.toggle();
+            compare(section.expanded, false);
+        }
+        compare(authentication.title, "Authentication");
+        compare(behaviour.title, "Behaviour");
+        compare(view.title, "View Settings");
+        compare(cleanup.title, "CleanUp");
+        compare(statistics.title, "API Statistics");
+        verifyInSection(findChild(page, "githubTokenInput"), authentication);
+        verifyInSection(findChild(page, "pollIntervalSetting"), behaviour);
+        verifyInSection(findChild(page, "enableNotificationsSetting"), behaviour);
+        for (let name of ["titleLinesSetting", "loadAuthorInfoSetting", "groupItemLimitSetting", "popupHeightSetting"])
+            verifyInSection(findChild(page, name), view);
+        verifyInSection(findChild(page, "clearCacheButton"), cleanup);
+        let controls = findChild(page, "viewSettingsControls");
+        compare(controls.children[0].objectName, "titleLinesSetting");
+        compare(fakePluginService.writes.length, 0);
+        page.destroy();
+    }
+    // Controls must remain inside their requested section after native content reparenting.
+    function verifyInSection(control, section) {
+        verify(control);
+        let current = control.parent;
+        while (current && current !== section)
+            current = current.parent;
+        compare(current, section);
+    }
 
     name: "Settings"
 

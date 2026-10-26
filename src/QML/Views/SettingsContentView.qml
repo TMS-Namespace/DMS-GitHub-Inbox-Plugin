@@ -3,6 +3,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Layouts
 import ".."
 import qs.Common
 import qs.DCommon.Widgets
@@ -29,16 +30,24 @@ Column {
 
     SettingsIntroView {
     }
-    GitHubTokenSetting {
-        saveFailed: content.saveFailed
-        statusMessage: content.tokenStatusMessage
-        tokenValue: content.tokenValue
+    DCollapsibleSection {
+        description: "Use a GitHub classic personal access token with at least the 'notifications' scope."
+        objectName: "authenticationSettingsSection"
+        title: "Authentication"
+        width: parent.width
 
-        onTokenEdited: function (value) {
-            if (content.tokenEditedCallback)
-                content.tokenEditedCallback(value);
+        GitHubTokenSetting {
+            Layout.fillWidth: true
+            saveFailed: content.saveFailed
+            statusMessage: content.tokenStatusMessage
+            tokenValue: content.tokenValue
+
+            onTokenEdited: function (value) {
+                if (content.tokenEditedCallback)
+                    content.tokenEditedCallback(value);
+            }
+            onTokenHelpRequested: Qt.openUrlExternally(GitHubConstants.githubTokenSettingsUrl)
         }
-        onTokenHelpRequested: Qt.openUrlExternally(GitHubConstants.githubTokenSettingsUrl)
     }
     SettingsPreferencesView {
     }

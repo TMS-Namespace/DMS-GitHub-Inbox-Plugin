@@ -55,10 +55,12 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 ## Version History
 
 - v2.0.0 :
-  - Migrated popup scrolling, action buttons, selectors, tooltips, and cache controls to Dux's shared D* widgets.
+  - New: Added setting button in top bar.
+  - Improvement: Migration to `Dux API v2`.
   - Improvement: Structural refactoring for easier future maintenance.
   - Improvement: Better test coverage.
   - Fix: Bug with how grouping by date works.
+  - Fix: API statistics were showing wrong info.
   - Fix: Some security issues related to `curl`.
 - v1.0.1 :
   - Fixed `DMS` comments [published here](https://github.com/AvengeMedia/dms-plugin-registry/issues/554#issuecomment-5899485656).
