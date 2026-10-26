@@ -65,8 +65,15 @@ function checkArchitecture() {
             /\b(?:Process|WorkerScript)\s*\{|\.enqueueAuthorFetch\s*\(/.test(source)
         )
             failures.push(`${relativePath} performs background work; views must delegate it to services.`);
-        if (/\bimport\s+qs\.Widgets\b|\b(?:DankIcon|DankTextField)\s*\{/.test(source))
+        if (/\bimport\s+qs\.Widgets\b|\bDank[A-Z]\w*\s*\{/.test(source))
             failures.push(`${relativePath} must use the current DCommon widget module and D* names.`);
+        if (
+            relativePath.startsWith("Views/") &&
+            /\b(?:Flickable|ListView|GridView|ScrollBar|Button|TextField|Slider|Switch|ComboBox|ToolTip)\s*\{/.test(
+                source
+            )
+        )
+            failures.push(`${relativePath} must use shared Dux controls instead of raw Qt controls.`);
         if (/^(?:Contracts|Services|Tools|BackgroundWorkers)\//.test(relativePath)) {
             for (const typeName of viewTypes)
                 if (new RegExp(`\\b${typeName}\\s*\\{`).test(source))
@@ -85,7 +92,10 @@ function checkArchitecture() {
                 failures.push(`Host double ${relativePath} does not exist in the installed DMS module.`);
             else if (!relativePath.startsWith("Common/")) {
                 const errors = contractErrors(
-                    fs.readFileSync(path.join(hostRoot, relativePath), "utf8"),
+                    fs.readFileSync(path.join(hostRoot, relativePath), "utf8") +
+                        (relativePath === "DCommon/Widgets/DActionButton.qml"
+                            ? "\n" + fs.readFileSync(path.join(hostRoot, "DCommon/Widgets/StyledButton.qml"), "utf8")
+                            : ""),
                     fs.readFileSync(filename, "utf8")
                 );
                 for (const error of errors) failures.push(`${relativePath}: ${error}`);

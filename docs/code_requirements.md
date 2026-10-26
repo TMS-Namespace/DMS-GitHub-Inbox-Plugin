@@ -47,6 +47,9 @@ failed, not what any one plugin does.
   form actions and widget lifecycles. Controllers receive data and emit signals; they never reference visual controls.
 - Shared Dux widgets use `qs.DCommon.Widgets` and their current `D*` names. Keep shell-specific plugin types in
   `qs.Modules.Plugins`. Bar text and icons follow the host's `textSize` and `iconSize`.
+- Use shared `DActionButton`, `DButton`, `DButtonGroup`, `DFlickable` and `DScrollbar` instead of rebuilding
+  their behavior from Qt controls. Use `DTooltipHost` with `multiline: true` for error tooltips. Layout items,
+  message surfaces and hyperlink hit areas may use Qt primitives. Do not use deprecated Dank* wrappers.
 - One type per file; the file name equals the type name. Every QML folder has a `qmldir` listing exactly its files.
 
 ## 3. Contracts (shared data structures)
@@ -192,6 +195,11 @@ This is required on builds that statically link Quickshell's plugins into its ex
 desktop-notification commands remain deterministic substitutes, and generated cache/config directories are removed
 afterwards. The native checks compare main-thread and worker parsing, legacy-cache migration, typed error transport,
 and token store/lookup/removal through actual process stdin/stdout.
+
+The suite also opens an offscreen window using the installed Dux shared widgets, not the UI doubles.
+It verifies attached scrollbar synchronization and resizing, controlled selector events, disabled actions,
+group membership, cache-command routing, multiline tooltip text, and narrow filter layouts. No screenshots
+are captured or stored. Set `DMS_SOURCE_ROOT` if the installed shell sources are not in `/usr/share/quickshell/dms`.
 
 Some Qt builds emit `QObject::connect(QJSEngine, QtObject): invalid nullptr parameter` when starting multiple workers.
 The native test runner allows that exact engine diagnostic only if a separate pair of plain echo workers reproduces

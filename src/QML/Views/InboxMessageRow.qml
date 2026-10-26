@@ -437,7 +437,7 @@ Item {
 
             opacity: visible ? 1 : 0
             spacing: Theme.spacingXS + GitHubConstants.messageActionButtonsSpacingDelta
-            visible: rowArea.containsMouse || actionsHoverArea.containsMouse || readToggleArea.containsMouse || doneArea.containsMouse
+            visible: rowArea.containsMouse || actionsHoverArea.containsMouse || readToggleArea.hovered || doneArea.hovered
 
             Behavior on opacity {
                 NumberAnimation {
@@ -445,81 +445,40 @@ Item {
                 }
             }
 
-            Rectangle {
-                color: row.isBusy ? Theme.withAlpha(Theme.surfaceVariant, 0.55) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
-                height: GitHubConstants.messageActionButtonSizePx
-                radius: Math.max(0, Math.min(GitHubConstants.messageActionButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.messageActionButtonRadiusDelta))
-                width: GitHubConstants.messageActionButtonSizePx
+            DActionButton {
+                id: readToggleArea
 
-                MouseArea {
-                    id: readToggleArea
+                backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+                buttonSize: GitHubConstants.messageActionButtonSizePx
+                enabled: !row.isBusy && row.threadId !== ""
+                iconColor: readToggleArea.hovered ? Theme.primary : Theme.surfaceText
+                iconName: row.unread ? "mark_email_read" : "mark_email_unread"
+                iconSize: GitHubConstants.messageActionButtonIconSizePx
+                objectName: "messageReadButton"
+                radius: width / 2
+                tooltipText: row.unread ? "Mark as read" : "Mark as unread"
 
-                    anchors.fill: parent
-                    cursorShape: row.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    hoverEnabled: true
-
-                    onClicked: {
-                        if (row.isBusy || row.threadId === "")
-                            return;
-                        if (row.unread)
-                            row.markRead(row.threadId);
-                        else
-                            row.markUnread(row.threadId);
-                    }
-                }
-                DIcon {
-                    anchors.centerIn: parent
-                    color: row.isBusy ? Theme.withAlpha(Theme.surfaceVariantText, 0.55) : (readToggleArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
-                    name: row.unread ? "mark_email_read" : "mark_email_unread"
-                    size: GitHubConstants.messageActionButtonIconSizePx
+                onClicked: {
+                    if (row.unread)
+                        row.markRead(row.threadId);
+                    else
+                        row.markUnread(row.threadId);
                 }
             }
-            Rectangle {
-                color: row.isBusy ? Theme.withAlpha(Theme.surfaceVariant, 0.55) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.messageActionButtonBgOpacity)
-                height: GitHubConstants.messageActionButtonSizePx
-                radius: Math.max(0, Math.min(GitHubConstants.messageActionButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.messageActionButtonRadiusDelta))
-                width: GitHubConstants.messageActionButtonSizePx
+            DActionButton {
+                id: doneArea
 
-                MouseArea {
-                    id: doneArea
+                backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+                buttonSize: GitHubConstants.messageActionButtonSizePx
+                enabled: !row.isBusy && row.threadId !== ""
+                iconColor: doneArea.hovered ? Theme.primary : Theme.surfaceText
+                iconName: "done"
+                iconSize: GitHubConstants.messageActionButtonIconSizePx
+                objectName: "messageDoneButton"
+                radius: width / 2
+                tooltipText: "Mark as done"
 
-                    anchors.fill: parent
-                    cursorShape: row.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    hoverEnabled: true
-
-                    onClicked: {
-                        if (!row.isBusy && row.threadId !== "")
-                            row.markDone(row.threadId);
-                    }
-                }
-                DIcon {
-                    anchors.centerIn: parent
-                    color: row.isBusy ? Theme.withAlpha(Theme.surfaceVariantText, 0.55) : (doneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
-                    name: "done"
-                    size: GitHubConstants.messageActionButtonIconSizePx
-                }
-            }
-        }
-        Rectangle {
-            anchors.bottom: actionButtons.top
-            anchors.bottomMargin: Theme.spacingXS
-            anchors.left: actionButtons.left
-            border.color: Theme.outlineMedium
-            border.width: 1
-            color: Theme.surfaceContainerHighest
-            height: rowActionTooltipText.implicitHeight + Theme.spacingXS * 2
-            radius: Theme.cornerRadius
-            visible: row.isBusy && (readToggleArea.containsMouse || doneArea.containsMouse)
-            width: rowActionTooltipText.implicitWidth + Theme.spacingS * 2
-            z: 20
-
-            StyledText {
-                id: rowActionTooltipText
-
-                anchors.centerIn: parent
-                color: Theme.surfaceVariantText
-                font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
-                text: "Not available during refresh"
+                onClicked: row.markDone(row.threadId)
             }
         }
     }

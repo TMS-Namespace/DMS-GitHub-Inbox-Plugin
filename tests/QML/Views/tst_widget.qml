@@ -2,6 +2,8 @@
 
 import QtQuick
 import QtTest
+import qs.Common
+import qs.Services
 
 TestCase {
     id: testCase
@@ -10,6 +12,7 @@ TestCase {
     property var delegatedAuthorRequests: []
     property var delegatedPreferences: []
     property int refreshRequests: 0
+    property var settingsEvents: []
 
     function createWidget() {
         let component = Qt.createComponent("../../../src/QML/Widget.qml");
@@ -79,6 +82,42 @@ TestCase {
         popout.destroy();
         widget.destroy();
     }
+    // Check the expanded column against the host's padding, not against a screenshot.
+    function test_popoutUsesCompactHostInsets() {
+        let widget = createWidget();
+        let popout = widget.popoutContent.createObject(testCase, {
+            width: 480
+        });
+        let column = findChild(popout, "compactInboxPopout");
+        verify(column);
+        compare(PopoutMetrics.contentPadding + column.x, Theme.spacingS);
+        compare(PopoutMetrics.contentPadding + popout.width - column.x - column.width, Theme.spacingS);
+        compare(PopoutMetrics.contentPadding + column.y, Theme.spacingS);
+        compare(PopoutMetrics.contentPadding + popout.implicitHeight - column.y - column.implicitHeight, Theme.spacingS);
+        popout.width = 360;
+        compare(PopoutMetrics.contentPadding + popout.width - column.x - column.width, Theme.spacingS);
+        popout.destroy();
+        widget.destroy();
+    }
+    // The actual button must close the inbox before opening this plugin's settings tab.
+    function test_settingsButtonClosesPopupBeforeOpeningPluginSettings() {
+        settingsEvents = [];
+        PopoutService.settingsModal = settingsModal;
+        let widget = createWidget();
+        let popout = widget.popoutContent.createObject(testCase, {
+            width: 480
+        });
+        widget._popoutClosed.connect(function () {
+            testCase.settingsEvents.push("closed");
+        });
+        let button = findChild(popout, "openInboxSettingsButton");
+        verify(button);
+        button.click();
+        compare(settingsEvents, ["closed", "plugin:githubInbox"]);
+        PopoutService.settingsModal = null;
+        popout.destroy();
+        widget.destroy();
+    }
     function test_widgetPresentationComponentsInstantiate() {
         let widget = createWidget();
         let popout = widget.popoutContent.createObject(testCase);
@@ -120,6 +159,13 @@ TestCase {
 
     name: "Widget"
 
+    QtObject {
+        id: settingsModal
+
+        function showWithTabName(tabName) {
+            testCase.settingsEvents.push(tabName);
+        }
+    }
     QtObject {
         id: popupHost
 

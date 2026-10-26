@@ -1,0 +1,2 @@
+module qs.Services
+singleton PopoutService 1.0 PopoutService.qml

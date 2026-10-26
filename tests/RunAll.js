@@ -10,6 +10,7 @@ const { createTestEnvironment } = require("./TestEnvironment");
 const repositoryRoot = path.resolve(__dirname, "..");
 const javascriptTests = [
     "tests/HostContracts.test.js",
+    "tests/SetupSymlink.test.js",
     "tests/TestEnvironment.test.js",
     "tests/RunnerWarnings.test.js",
     "tests/JS/Contracts/ProviderContracts.test.js",
@@ -85,6 +86,7 @@ let qmlTest;
 let blockedRequests;
 let runtimeTest;
 let runtimeControl;
+let duxControls;
 try {
     qmlTest = childProcess.spawnSync(
         qmlTestRunner,
@@ -117,6 +119,13 @@ try {
             timeout: 15000,
             maxBuffer: 16 * 1024 * 1024
         });
+        duxControls = childProcess.spawnSync("qs", ["-p", testEnvironment.nativeDuxPath], {
+            cwd: repositoryRoot,
+            env: { ...testEnvironment.environment, WAYLAND_DISPLAY: undefined, DISPLAY: undefined },
+            encoding: "utf8",
+            timeout: 15000,
+            maxBuffer: 16 * 1024 * 1024
+        });
         blockedRequests = testEnvironment.blockedRequests();
     }
 } finally {
@@ -129,6 +138,14 @@ if (blockedRequests) {
 }
 
 if (qmlTest.error) throw qmlTest.error;
+if (duxControls) {
+    const output = (duxControls.stdout || "") + (duxControls.stderr || "");
+    process.stdout.write(output);
+    if (duxControls.status !== 0 || !output.includes("DUX_CONTROLS_PASSED") || nativeWarnings(output).length) {
+        console.error("Installed Dux control checks failed.");
+        process.exit(1);
+    }
+}
 if (runtimeTest) {
     process.stdout.write(runtimeTest.stdout || "");
     process.stderr.write(runtimeTest.stderr || "");

@@ -14,6 +14,8 @@ import QtQuick
 import "../Services"
 
 QtObject {
+    /// Keep native action buttons visible against translucent notification cards.
+    readonly property real actionButtonBackgroundOpacity: 0.9
 
     /// Enables lightweight API/refresh metric collection shown in settings.
     readonly property bool apiCallStatsEnabled: isDevMode
@@ -208,6 +210,9 @@ QtObject {
     /// the JSON itself.
     readonly property string fetchPayloadSplitToken: "__GH_PARTICIPATING_SPLIT__"
 
+    /// Retain the compact selector's subdued accent instead of the filled theme default.
+    readonly property real filterSelectionOpacity: 0.16
+
     /// Number of pages fetched on the first run, before there is a visible
     /// local inbox window to compare against.
     readonly property int firstRunFetchPageCount: GitHubManager.properties.firstRunPageLimit
@@ -328,14 +333,8 @@ QtObject {
     /// Maximum allowed value for the title lines setting.
     readonly property int maxTitleLines: 6
 
-    /// Background opacity of action button rectangles at rest.
-    readonly property real messageActionButtonBgOpacity: 0.9
-
     /// Pixel size of the icon glyph inside each action button.
     readonly property int messageActionButtonIconSizePx: 13
-
-    /// Offset from Theme.cornerRadius for message action buttons.
-    readonly property int messageActionButtonRadiusDelta: -1
 
     /// Width and height (square) of each individual action button.
     readonly property int messageActionButtonSizePx: 22
@@ -486,12 +485,6 @@ QtObject {
     /// Offset from Theme.fontSizeSmall for the refresh-error symbol.
     readonly property int popoutErrorBadgeFontSizeDelta: -3
 
-    /// Offset from Theme.cornerRadius for the refresh-error badge.
-    readonly property int popoutErrorBadgeRadiusDelta: -6
-
-    /// Fill opacity of the tint shown on the currently active filter segment.
-    readonly property real popoutFilterActiveTintOpacity: 0.22
-
     /// Background fill opacity of the filter bar container rectangle.
     readonly property real popoutFilterBackgroundOpacity: 0.80
 
@@ -511,15 +504,6 @@ QtObject {
     /// Height of each segmented filter control (Read / Participation).
     readonly property int popoutFilterSegmentHeightPx: 24
 
-    /// Maximum pixel width of each segmented filter control.
-    readonly property int popoutFilterSegmentMaxWidthPx: 132
-
-    /// Minimum pixel width of each segmented filter control.
-    readonly property int popoutFilterSegmentMinWidthPx: 96
-
-    /// Offset from Theme.spacingXXS between filter segments.
-    readonly property int popoutFilterSegmentSpacingDelta: -1
-
     /// Offset from Theme.spacingS between a group edge and its messages.
     readonly property int popoutGroupContentHorizontalInsetDelta: 0
 
@@ -529,12 +513,6 @@ QtObject {
 
     /// Offset from Theme.spacingXS for group-header leading content.
     readonly property int popoutGroupHeaderLeadingInsetDelta: 0
-
-    /// Background opacity of header action buttons at rest (not hovered).
-    readonly property real popoutHeaderButtonBackgroundOpacity: 0.85
-
-    /// Opacity of the primary-colour hover tint on header action buttons.
-    readonly property real popoutHeaderButtonHoverTintOpacity: 0.15
 
     /// Pixel size of the icon glyph placed inside each header action button.
     readonly property int popoutHeaderButtonIconSizePx: 18
@@ -563,10 +541,6 @@ QtObject {
     /// Minimum permitted popout window height in pixels.
     readonly property int popoutMinHeightPx: 260
 
-    /// Duration (ms) of one complete rotation of the refresh-spinner icon
-    /// while a fetch or operation is in progress.
-    readonly property int popoutRefreshIconSpinDurationMs: 800
-
     /// Size of the fallback "folder" icon shown when the repo avatar has not
     /// loaded yet.
     readonly property int popoutRepoAvatarFallbackIconSizePx: 18
@@ -590,9 +564,6 @@ QtObject {
     /// Offset from Theme.fontSizeSmall for notification-count badges.
     readonly property int popoutRepoCountFontSizeDelta: -2
 
-    /// Offset from Theme.cornerRadius for group-done buttons.
-    readonly property int popoutRepoDoneButtonRadiusDelta: -2
-
     /// Width and height (square) of the "mark repo done" button in the group
     /// header.
     readonly property int popoutRepoDoneButtonSizePx: 20
@@ -612,37 +583,6 @@ QtObject {
 
     /// Offset from Theme.fontSizeMedium for the repository-group header height.
     readonly property int popoutRepoHeaderHeightDelta: 14
-
-    /// Interactive gutter width around the scroll indicator.  The thumb stays
-    /// visually thin, but this gives the mouse a usable target.
-    readonly property int popoutScrollGutterWidthPx: 10
-
-    /// Opacity of the scroll thumb while the list is actively being scrolled.
-    readonly property real popoutScrollIndicatorActiveOpacity: 0.8
-
-    /// Duration (ms) of the scroll thumb opacity fade transition.
-    readonly property int popoutScrollIndicatorFadeDurationMs: 200
-
-    /// Opacity of the scroll thumb when the list is at rest.
-    readonly property real popoutScrollIndicatorIdleOpacity: 0.4
-
-    /// Minimum pixel height of the scroll thumb so it stays visible even when
-    /// content is very long.
-    readonly property int popoutScrollIndicatorMinHeightPx: 20
-
-    /// Offset from Theme.cornerRadius for the scroll thumb.
-    readonly property int popoutScrollIndicatorRadiusDelta: -10
-
-    // =========================================================================
-    // Popout Scroll Indicator
-    // =========================================================================
-
-    /// Width of the thin scroll-position indicator strip on the right edge of
-    /// the notification list.
-    readonly property int popoutScrollIndicatorWidthPx: 4
-
-    /// Offset from Theme.spacingS between scrollbar and popup edges.
-    readonly property int popoutScrollRightEdgeInsetDelta: -2
 
     /// Pixel height added per notification-title line in the popout height
     /// estimate, allowing taller rows to inflate the window proportionally.

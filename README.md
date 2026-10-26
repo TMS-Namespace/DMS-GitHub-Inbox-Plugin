@@ -1,6 +1,6 @@
-# GitHub Inbox Plugin for DMS
+# GitHub Inbox Plugin for Dux Shell
 
-A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) widget plugin that shows your `GitHub` notifications (or the so called `Inbox`) in a popup and lets you mark them as read or done.
+A [Dux Shell (DMS)](https://github.com/duxlabs-dev/dux-shell) widget plugin that shows your `GitHub` notifications (or the so called `Inbox`) in a popup and lets you mark them as read or done.
 
 <div align="center">
 
@@ -42,7 +42,7 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 
 ## Requirements
 
-- DMS >= 2.0.0.
+- Dux Shell (DMS) >= 2.0.0.
 - `GNU coreutils` (or compatible: `sh`, `ls`, `mkdir`, `rm`, `mktemp`, `cat`, `tail`) in `$PATH`, used to fetch data and manage cache.
 - Unlocked Freedesktop Secret Service keyring to store the token.
 - Internet access to GitHub's API and avatar hosts.
@@ -55,6 +55,7 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 ## Version History
 
 - v2.0.0 :
+  - Migrated popup scrolling, action buttons, selectors, tooltips, and cache controls to Dux's shared D* widgets.
   - Improvement: Structural refactoring for easier future maintenance.
   - Improvement: Better test coverage.
   - Fix: Bug with how grouping by date works.

@@ -2,3 +2,11 @@ module qs.DCommon.Widgets
 StyledText 1.0 StyledText.qml
 DIcon 1.0 DIcon.qml
 DTextField 1.0 DTextField.qml
+DActionButton 1.0 DActionButton.qml
+DButton 1.0 DButton.qml
+DButtonGroup 1.0 DButtonGroup.qml
+DFlickable 1.0 DFlickable.qml
+DScrollbar 1.0 DScrollbar.qml
+DSpinner 1.0 DSpinner.qml
+DTooltipHost 1.0 DTooltipHost.qml
+DCollapsibleSection 1.0 DCollapsibleSection.qml
