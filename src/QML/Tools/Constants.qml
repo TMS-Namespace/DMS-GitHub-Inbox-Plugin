@@ -282,7 +282,7 @@ QtObject {
     /// Developer mode enables opt-in performance instrumentation. Keep this
     /// false for normal shell use so metrics/logging do not add UI-thread work.
     /// Public flag used by the plugin to enable profiling and development UI.
-    readonly property bool isDevMode: true
+    readonly property bool isDevMode: false
 
     /// Maximum downloaded avatars propagated to live models in one UI tick.
     readonly property int localAvatarPropagationBatchSize: 16
