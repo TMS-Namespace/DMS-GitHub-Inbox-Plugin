@@ -1,0 +1,60 @@
+singleton ApiCallStats 1.0 Services/ApiCallStats.qml
+singleton AuthorUtils 1.0 Tools/AuthorUtils.qml
+singleton GitHubConstants 1.0 Tools/Constants.qml
+singleton PluginLogger 1.0 Tools/PluginLogger.qml
+singleton InboxMessageDetails 1.0 Tools/InboxMessageDetails.qml
+singleton GitHubManager 1.0 Services/GitHubManager.qml
+ErrorService 1.0 Services/ErrorService.qml
+DesktopNotificationService 1.0 Services/DesktopNotificationService.qml
+AvatarPropagationService 1.0 Services/AvatarPropagationService.qml
+SettingsService 1.0 Services/SettingsService.qml
+InboxViewState 1.0 Services/InboxViewState.qml
+InboxEnrichmentService 1.0 Services/InboxEnrichmentService.qml
+InboxPreferencesService 1.0 Services/InboxPreferencesService.qml
+InboxFetchService 1.0 Services/InboxFetchService.qml
+InboxRefreshCoordinator 1.0 Services/InboxRefreshCoordinator.qml
+Widget 1.0 Widget.qml
+Settings 1.0 Settings.qml
+
+AuthorBackgroundWorker 1.0 BackgroundWorkers/AuthorBackgroundWorker.qml
+AvatarBackgroundWorker 1.0 BackgroundWorkers/AvatarBackgroundWorker.qml
+InboxBackgroundWorker 1.0 BackgroundWorkers/InboxBackgroundWorker.qml
+
+Author 1.0 Contracts/Author.qml
+AvatarCacheEntry 1.0 Contracts/AvatarCacheEntry.qml
+CachedState 1.0 Contracts/CachedState.qml
+CachePayload 1.0 Contracts/CachePayload.qml
+DoneThreadState 1.0 Contracts/DoneThreadState.qml
+DateGroupingGroup 1.0 Contracts/DateGroupingGroup.qml
+InboxMessage 1.0 Contracts/InboxMessage.qml
+RepoGroupingGroup 1.0 Contracts/RepoGroupingGroup.qml
+ThreadAuthors 1.0 Contracts/ThreadAuthors.qml
+
+AvatarPreloader 1.0 Services/AvatarPreloader.qml
+AvatarState 1.0 Tools/AvatarState.qml
+CacheCoordinator 1.0 Services/CacheCoordinator.qml
+DateGroupingModel 1.0 Tools/DateGroupingModel.qml
+InboxOperations 1.0 Services/InboxOperations.qml
+InboxMessageState 1.0 Tools/InboxMessageState.qml
+PluginCache 1.0 Services/PluginCache.qml
+RepoGroupingModel 1.0 Tools/RepoGroupingModel.qml
+ResourceRepository 1.0 Services/ResourceRepository.qml
+SecretStore 1.0 Services/SecretStore.qml
+
+DateGroupingGroupView 1.0 Views/DateGroupingGroupView.qml
+DateGroupingView 1.0 Views/DateGroupingView.qml
+InboxBarPill 1.0 Views/InboxBarPill.qml
+InboxPopoutView 1.0 Views/InboxPopoutView.qml
+InboxPopoutContent 1.0 Views/InboxPopoutContent.qml
+GitHubTokenSetting 1.0 Views/GitHubTokenSetting.qml
+SettingsCacheView 1.0 Views/SettingsCacheView.qml
+SettingsApiStatsView 1.0 Views/SettingsApiStatsView.qml
+SettingsIntroView 1.0 Views/SettingsIntroView.qml
+SettingsContentView 1.0 Views/SettingsContentView.qml
+SettingsPreferencesView 1.0 Views/SettingsPreferencesView.qml
+GitHubIcon 1.0 Views/GitHubIcon.qml
+InboxMessageRow 1.0 Views/InboxMessageRow.qml
+PopoutPanel 1.0 Views/PopoutPanel.qml
+RepoGroupingGroupView 1.0 Views/RepoGroupingGroupView.qml
+RepoGroupingView 1.0 Views/RepoGroupingView.qml
+RoundedAvatar 1.0 Views/RoundedAvatar.qml

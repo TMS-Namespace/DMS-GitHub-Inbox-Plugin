@@ -1,0 +1,17 @@
+DateGroupingGroupView 1.0 DateGroupingGroupView.qml
+DateGroupingView 1.0 DateGroupingView.qml
+GitHubIcon 1.0 GitHubIcon.qml
+InboxMessageRow 1.0 InboxMessageRow.qml
+InboxBarPill 1.0 InboxBarPill.qml
+InboxPopoutView 1.0 InboxPopoutView.qml
+InboxPopoutContent 1.0 InboxPopoutContent.qml
+PopoutPanel 1.0 PopoutPanel.qml
+RepoGroupingGroupView 1.0 RepoGroupingGroupView.qml
+RepoGroupingView 1.0 RepoGroupingView.qml
+RoundedAvatar 1.0 RoundedAvatar.qml
+GitHubTokenSetting 1.0 GitHubTokenSetting.qml
+SettingsApiStatsView 1.0 SettingsApiStatsView.qml
+SettingsCacheView 1.0 SettingsCacheView.qml
+SettingsIntroView 1.0 SettingsIntroView.qml
+SettingsContentView 1.0 SettingsContentView.qml
+SettingsPreferencesView 1.0 SettingsPreferencesView.qml

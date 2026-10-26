@@ -1,0 +1,9 @@
+Author 1.0 Author.qml
+AvatarCacheEntry 1.0 AvatarCacheEntry.qml
+CachePayload 1.0 CachePayload.qml
+CachedState 1.0 CachedState.qml
+DoneThreadState 1.0 DoneThreadState.qml
+DateGroupingGroup 1.0 DateGroupingGroup.qml
+InboxMessage 1.0 InboxMessage.qml
+RepoGroupingGroup 1.0 RepoGroupingGroup.qml
+ThreadAuthors 1.0 ThreadAuthors.qml
