@@ -13,7 +13,7 @@ import qs.DCommon.Widgets
 Item {
     id: panel
 
-    property bool _headerHovered: headerHoverArea.containsMouse || expandAllArea.containsMouse || collapseAllArea.containsMouse || refreshAllArea.containsMouse || markAllArea.containsMouse || closeArea.containsMouse
+    property bool _headerHovered: headerHoverArea.containsMouse || expandAllArea.hovered || collapseAllArea.hovered || refreshAllArea.hovered || markAllArea.hovered || closeArea.hovered || settingsArea.hovered
     property real _relativeTimeReferenceMs: Date.now()
     property bool anyBusy: isRefreshBusy
     property var authorsByThread: ({})
@@ -66,6 +66,7 @@ Item {
     signal markThreadRead(string threadId)
     signal markThreadReadAfterOpen(string threadId)
     signal markThreadUnread(string threadId)
+    signal openSettings
     signal participationFilterChangedByUser(string value)
     signal persistExpandedDateGroups(var state)
     signal persistExpandedRepos(var state)
@@ -176,195 +177,180 @@ Item {
             }
         }
 
-        Rectangle {
-            color: expandAllArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
-            height: GitHubConstants.popoutHeaderButtonSizePx
+        DActionButton {
+            id: expandAllArea
+
+            backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+            buttonSize: GitHubConstants.popoutHeaderButtonSizePx
+            color: backgroundColor
+            enabled: panel.tokenConfigured
+            iconColor: expandAllArea.hovered ? Theme.primary : Theme.surfaceText
+            iconName: enabled ? "unfold_more" : ""
+            iconSize: GitHubConstants.popoutHeaderButtonIconSizePx
+            objectName: "expandAllButton"
             radius: width / 2
+            tooltipText: "Expand all groups"
             visible: panel._headerHovered
-            width: GitHubConstants.popoutHeaderButtonSizePx
 
-            MouseArea {
-                id: expandAllArea
+            onClicked: panel.activeGroupingModel().expandAllGroups()
 
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                enabled: panel.tokenConfigured
-                hoverEnabled: true
-
-                onClicked: panel.activeGroupingModel().expandAllGroups()
-            }
+            // Keep the legacy glyph color without enabling the disabled native control.
             DIcon {
                 anchors.centerIn: parent
-                color: Theme.surfaceText
+                color: expandAllArea.iconColor
                 name: "unfold_more"
-                size: GitHubConstants.popoutHeaderButtonIconSizePx
+                objectName: "disabledToolbarIcon"
+                size: expandAllArea.iconSize
+                visible: !expandAllArea.enabled
             }
         }
-        Rectangle {
-            color: collapseAllArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
-            height: GitHubConstants.popoutHeaderButtonSizePx
+        DActionButton {
+            id: collapseAllArea
+
+            backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+            buttonSize: GitHubConstants.popoutHeaderButtonSizePx
+            color: backgroundColor
+            enabled: panel.tokenConfigured
+            iconColor: collapseAllArea.hovered ? Theme.primary : Theme.surfaceText
+            iconName: enabled ? "unfold_less" : ""
+            iconSize: GitHubConstants.popoutHeaderButtonIconSizePx
+            objectName: "collapseAllButton"
             radius: width / 2
+            tooltipText: "Collapse all groups"
             visible: panel._headerHovered
-            width: GitHubConstants.popoutHeaderButtonSizePx
 
-            MouseArea {
-                id: collapseAllArea
+            onClicked: panel.activeGroupingModel().collapseAllGroups()
 
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                enabled: panel.tokenConfigured
-                hoverEnabled: true
-
-                onClicked: panel.activeGroupingModel().collapseAllGroups()
-            }
+            // Keep the legacy glyph color without enabling the disabled native control.
             DIcon {
                 anchors.centerIn: parent
-                color: Theme.surfaceText
+                color: collapseAllArea.iconColor
                 name: "unfold_less"
-                size: GitHubConstants.popoutHeaderButtonIconSizePx
+                objectName: "disabledToolbarIcon"
+                size: collapseAllArea.iconSize
+                visible: !collapseAllArea.enabled
             }
         }
+        DActionButton {
+            id: refreshAllArea
 
-        // -- Refresh ---------------------------------------------------
-        Rectangle {
-            color: refreshAllArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
-            height: GitHubConstants.popoutHeaderButtonSizePx
+            backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+            buttonSize: GitHubConstants.popoutHeaderButtonSizePx
+            color: backgroundColor
+            enabled: !panel.anyBusy && panel.tokenConfigured
+            iconColor: panel.hasError ? Theme.error : Theme.surfaceText
+            iconName: enabled && !panel.anyBusy ? "refresh" : ""
+            iconSize: GitHubConstants.popoutHeaderButtonIconSizePx
+            objectName: "refreshInboxButton"
             radius: width / 2
-            width: GitHubConstants.popoutHeaderButtonSizePx
 
-            MouseArea {
-                id: refreshAllArea
+            onClicked: panel.refreshNow()
 
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                enabled: !panel.anyBusy && panel.tokenConfigured
-                hoverEnabled: true
-
-                onClicked: panel.refreshNow()
-            }
+            // Keep the legacy glyph color without enabling the disabled native control.
             DIcon {
-                id: refreshIcon
-
                 anchors.centerIn: parent
-                color: panel.hasError ? Theme.error : (panel.anyBusy ? Theme.primary : Theme.surfaceText)
+                color: refreshAllArea.iconColor
                 name: "refresh"
+                objectName: "disabledToolbarIcon"
+                size: refreshAllArea.iconSize
+                visible: !refreshAllArea.enabled && !panel.anyBusy
+            }
+            DSpinner {
+                anchors.centerIn: parent
+                color: Theme.primary
+                running: panel.popupOpen && panel.anyBusy
                 size: GitHubConstants.popoutHeaderButtonIconSizePx
+                visible: panel.anyBusy
+            }
+            MouseArea {
+                id: refreshTooltipHover
 
-                RotationAnimation {
-                    duration: GitHubConstants.popoutRefreshIconSpinDurationMs
-                    from: 0
-                    loops: Animation.Infinite
-                    property: "rotation"
-                    running: panel.anyBusy
-                    target: refreshIcon
-                    to: 360
-                }
-                Connections {
-                    // Handle this workflow result at the ownership boundary and preserve failure visibility.
-                    function onAnyBusyChanged() {
-                        if (!panel.anyBusy)
-                            refreshIcon.rotation = 0;
-                    }
-
-                    target: panel
-                }
+                acceptedButtons: Qt.NoButton
+                anchors.fill: parent
+                hoverEnabled: true
+            }
+            DTooltipHost {
+                hoverArea: refreshTooltipHover
+                multiline: true
+                objectName: "refreshErrorTooltip"
+                target: refreshAllArea
+                text: panel.refreshTooltipText
             }
             Rectangle {
                 anchors.right: parent.right
                 anchors.top: parent.top
-                border.color: Theme.nestedSurface
-                border.width: 1
                 color: Theme.error
-                height: 12
-                radius: Math.max(0, Math.min(width / 2, Theme.cornerRadius + GitHubConstants.popoutErrorBadgeRadiusDelta))
+                height: width
+                radius: width / 2
                 visible: panel.hasError && !panel.anyBusy
-                width: 12
+                width: Theme.fontSizeSmall
 
                 StyledText {
                     anchors.centerIn: parent
                     color: Theme.surfaceText
                     font.pixelSize: Theme.fontSizeSmall + GitHubConstants.popoutErrorBadgeFontSizeDelta
-                    font.weight: Font.Bold
                     text: "!"
                 }
             }
-            Rectangle {
-                anchors.right: parent.right
-                anchors.top: parent.bottom
-                anchors.topMargin: Theme.spacingXS
-                border.color: Theme.outlineMedium
-                border.width: 1
-                color: Theme.surfaceContainerHighest
-                height: refreshTooltipTextItem.implicitHeight + Theme.spacingXS * 2
-                radius: Theme.cornerRadius
-                visible: refreshAllArea.containsMouse && panel.refreshTooltipText !== ""
-                width: Math.min(360, refreshTooltipTextItem.implicitWidth + Theme.spacingS * 2)
-                z: 120
-
-                StyledText {
-                    id: refreshTooltipTextItem
-
-                    anchors.centerIn: parent
-                    color: panel.hasError ? Theme.error : Theme.surfaceVariantText
-                    elide: Text.ElideRight
-                    font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
-                    maximumLineCount: 3
-                    text: panel.refreshTooltipText
-                    width: parent.width - Theme.spacingS * 2
-                    wrapMode: Text.WordWrap
-                }
-            }
         }
+        DActionButton {
+            id: markAllArea
 
-        // -- Mark all as read -----------------------------------------
-        Rectangle {
-            color: markAllArea.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
-            height: GitHubConstants.popoutHeaderButtonSizePx
+            backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+            buttonSize: GitHubConstants.popoutHeaderButtonSizePx
+            color: backgroundColor
+            enabled: !panel.anyBusy
+            iconColor: markAllArea.hovered ? Theme.primary : Theme.surfaceText
+            iconName: enabled ? "done_all" : ""
+            iconSize: GitHubConstants.popoutHeaderButtonIconSizePx
+            objectName: "markAllReadButton"
             radius: width / 2
+            tooltipText: "Mark all as read"
             visible: panel._headerHovered && panel.tokenConfigured && panel.unreadCount > 0
-            width: GitHubConstants.popoutHeaderButtonSizePx
 
-            MouseArea {
-                id: markAllArea
+            onClicked: panel.markAllRead()
 
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                enabled: !panel.anyBusy
-                hoverEnabled: true
-
-                onClicked: panel.markAllRead()
-            }
+            // Keep the legacy glyph color without enabling the disabled native control.
             DIcon {
                 anchors.centerIn: parent
-                color: Theme.surfaceText
+                color: markAllArea.iconColor
                 name: "done_all"
-                size: GitHubConstants.popoutHeaderButtonIconSizePx
+                objectName: "disabledToolbarIcon"
+                size: markAllArea.iconSize
+                visible: !markAllArea.enabled
             }
         }
+        DActionButton {
+            id: settingsArea
 
-        // -- Close ----------------------------------------------------
-        Rectangle {
-            color: closeArea.containsMouse ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, GitHubConstants.popoutHeaderButtonHoverTintOpacity) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, GitHubConstants.popoutHeaderButtonBackgroundOpacity)
-            height: GitHubConstants.popoutHeaderButtonSizePx
+            backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+            buttonSize: GitHubConstants.popoutHeaderButtonSizePx
+            color: backgroundColor
+            iconColor: settingsArea.hovered ? Theme.primary : Theme.surfaceText
+            iconName: "settings"
+            iconSize: GitHubConstants.popoutHeaderButtonIconSizePx
+            objectName: "openInboxSettingsButton"
             radius: width / 2
+            tooltipText: "Open GitHub Inbox settings"
             visible: panel._headerHovered
-            width: GitHubConstants.popoutHeaderButtonSizePx
 
-            MouseArea {
-                id: closeArea
+            onClicked: panel.openSettings()
+        }
+        DActionButton {
+            id: closeArea
 
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                hoverEnabled: true
+            backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+            buttonSize: GitHubConstants.popoutHeaderButtonSizePx
+            color: backgroundColor
+            iconColor: closeArea.hovered ? Theme.primary : Theme.surfaceText
+            iconName: "close"
+            iconSize: GitHubConstants.popoutHeaderButtonIconSizePx
+            objectName: "closeInboxButton"
+            radius: width / 2
+            tooltipText: "Close inbox"
+            visible: panel._headerHovered
 
-                onClicked: panel.closePopout()
-            }
-            DIcon {
-                anchors.centerIn: parent
-                color: closeArea.containsMouse ? Theme.error : Theme.surfaceText
-                name: "close"
-                size: GitHubConstants.popoutHeaderButtonIconSizePx
-            }
+            onClicked: panel.closePopout()
         }
     }
 
@@ -372,18 +358,19 @@ Item {
     //  GROUPED INBOX MESSAGE LIST
     // =========================================================================
 
-    Flickable {
+    DFlickable {
         id: groupedFlick
 
         anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.rightMargin: scrollGutter.visible ? GitHubConstants.popoutScrollIndicatorWidthPx + Theme.spacingS + GitHubConstants.popoutScrollRightEdgeInsetDelta : 0
         anchors.top: parent.top
         boundsBehavior: Flickable.StopAtBounds
         clip: true
         contentHeight: groupsColumn.implicitHeight
         contentWidth: width
+        fadeEdges: false
+        objectName: "inboxMessageScroller"
         visible: panel.tokenConfigured && !panel.hasBlockingError && (panel.hasDisplayedMessages || panel.isLoading)
 
         Column {
@@ -475,238 +462,83 @@ Item {
         Item {
             id: filterRow
 
-            property int segmentWidth: {
-                let available = (width - readLabel.implicitWidth - participatedLabel.implicitWidth - Theme.spacingXS * 4) / 2;
-                return Math.max(GitHubConstants.popoutFilterSegmentMinWidthPx, Math.min(GitHubConstants.popoutFilterSegmentMaxWidthPx, Math.floor(available)));
-            }
+            readonly property bool stacked: readGroup.implicitWidth + participatedGroup.implicitWidth + Theme.spacingS > width
 
             anchors.left: parent.left
-            anchors.leftMargin: Theme.spacingXS
             anchors.right: parent.right
-            anchors.rightMargin: Theme.spacingXS
             anchors.top: parent.top
-            anchors.topMargin: Theme.spacingS + GitHubConstants.popoutFilterBarVerticalPaddingDelta
-            implicitHeight: GitHubConstants.popoutFilterSegmentHeightPx
+            anchors.topMargin: Theme.spacingS
+            implicitHeight: stacked ? readGroup.implicitHeight + participatedGroup.implicitHeight + Theme.spacingS : Math.max(readGroup.implicitHeight, participatedGroup.implicitHeight)
 
-            // -- Read filter (left-aligned) -----------------------------------
             Row {
                 id: readGroup
 
                 anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
+                anchors.top: parent.top
                 spacing: Theme.spacingXS
 
                 StyledText {
-                    id: readLabel
-
                     anchors.verticalCenter: parent.verticalCenter
                     color: Theme.surfaceVariantText
                     font.pixelSize: Theme.fontSizeSmall
                     text: "Read"
                 }
-                Rectangle {
-                    border.color: Theme.outlineMedium
-                    border.width: 1
-                    color: Theme.nestedSurface
-                    height: GitHubConstants.popoutFilterSegmentHeightPx
-                    radius: Theme.cornerRadius
-                    width: filterRow.segmentWidth
+                DButtonGroup {
+                    id: readFilterSegments
 
-                    Row {
-                        id: readFilterSegments
+                    buttonHeight: GitHubConstants.popoutFilterSegmentHeightPx
+                    buttonPadding: Theme.spacingXS
+                    checkEnabled: false
+                    currentIndex: ["yes", "no", "both"].indexOf(panel.readFilter)
+                    minButtonWidth: Theme.fontSizeSmall * 3
+                    model: ["Yes", "No", "Both"]
+                    objectName: "readFilterControl"
+                    selectedColor: Theme.withAlpha(Theme.primary, GitHubConstants.filterSelectionOpacity)
+                    selectedContentColor: Theme.primary
+                    size: "small"
+                    unselectedColor: Theme.nestedSurface
+                    unselectedContentColor: Theme.surfaceVariantText
 
-                        anchors.fill: parent
-                        anchors.margins: 0
-                        spacing: Math.max(1, (Theme.spacingXXS || 0) + GitHubConstants.popoutFilterSegmentSpacingDelta)
-
-                        Repeater {
-                            model: [
-                                {
-                                    label: "Yes",
-                                    value: "yes"
-                                },
-                                {
-                                    label: "No",
-                                    value: "no"
-                                },
-                                {
-                                    label: "Both",
-                                    value: "both"
-                                }
-                            ]
-
-                            delegate: Rectangle {
-                                id: readFilterOption
-
-                                required property var modelData
-
-                                color: panel.readFilter === readFilterOption.modelData.value ? Theme.withAlpha(Theme.primary, GitHubConstants.popoutFilterActiveTintOpacity) : "transparent"
-                                height: parent.height
-                                radius: Theme.cornerRadius
-                                width: (readFilterSegments.width - readFilterSegments.spacing * 2) / 3
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-
-                                    onClicked: panel.readFilterChangedByUser(readFilterOption.modelData.value)
-                                }
-                                StyledText {
-                                    anchors.centerIn: parent
-                                    color: panel.readFilter === readFilterOption.modelData.value ? Theme.primary : Theme.surfaceVariantText
-                                    font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: panel.readFilter === readFilterOption.modelData.value ? Font.DemiBold : Font.Normal
-                                    text: readFilterOption.modelData.label
-                                }
-                            }
-                        }
+                    onSelectionChanged: function (index, selected) {
+                        if (selected)
+                            panel.readFilterChangedByUser(["yes", "no", "both"][index]);
                     }
                 }
             }
-
-            // -- Participated filter (right-aligned) --------------------------
             Row {
                 id: participatedGroup
 
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spacingXS
+                y: filterRow.stacked ? readGroup.implicitHeight + Theme.spacingS : 0
 
                 StyledText {
-                    id: participatedLabel
-
                     anchors.verticalCenter: parent.verticalCenter
                     color: Theme.surfaceVariantText
                     font.pixelSize: Theme.fontSizeSmall
                     text: "Participated"
                 }
-                Rectangle {
-                    border.color: Theme.outlineMedium
-                    border.width: 1
-                    color: Theme.nestedSurface
-                    height: GitHubConstants.popoutFilterSegmentHeightPx
-                    radius: Theme.cornerRadius
-                    width: filterRow.segmentWidth
+                DButtonGroup {
+                    id: participationFilterSegments
 
-                    Row {
-                        id: participationFilterSegments
+                    buttonHeight: GitHubConstants.popoutFilterSegmentHeightPx
+                    buttonPadding: Theme.spacingXS
+                    checkEnabled: false
+                    currentIndex: ["yes", "no", "both"].indexOf(panel.participationFilter)
+                    minButtonWidth: Theme.fontSizeSmall * 3
+                    model: ["Yes", "No", "Both"]
+                    objectName: "participationFilterControl"
+                    selectedColor: Theme.withAlpha(Theme.primary, GitHubConstants.filterSelectionOpacity)
+                    selectedContentColor: Theme.primary
+                    size: "small"
+                    unselectedColor: Theme.nestedSurface
+                    unselectedContentColor: Theme.surfaceVariantText
 
-                        anchors.fill: parent
-                        anchors.margins: 0
-                        spacing: Math.max(1, (Theme.spacingXXS || 0) + GitHubConstants.popoutFilterSegmentSpacingDelta)
-
-                        Repeater {
-                            model: [
-                                {
-                                    label: "Yes",
-                                    value: "yes"
-                                },
-                                {
-                                    label: "No",
-                                    value: "no"
-                                },
-                                {
-                                    label: "Both",
-                                    value: "both"
-                                }
-                            ]
-
-                            delegate: Rectangle {
-                                id: participationFilterOption
-
-                                required property var modelData
-
-                                color: panel.participationFilter === participationFilterOption.modelData.value ? Theme.withAlpha(Theme.primary, GitHubConstants.popoutFilterActiveTintOpacity) : "transparent"
-                                height: parent.height
-                                radius: Theme.cornerRadius
-                                width: (participationFilterSegments.width - participationFilterSegments.spacing * 2) / 3
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-
-                                    onClicked: panel.participationFilterChangedByUser(participationFilterOption.modelData.value)
-                                }
-                                StyledText {
-                                    anchors.centerIn: parent
-                                    color: panel.participationFilter === participationFilterOption.modelData.value ? Theme.primary : Theme.surfaceVariantText
-                                    font.pixelSize: Theme.fontSizeSmall
-                                    font.weight: panel.participationFilter === participationFilterOption.modelData.value ? Font.DemiBold : Font.Normal
-                                    text: participationFilterOption.modelData.label
-                                }
-                            }
-                        }
+                    onSelectionChanged: function (index, selected) {
+                        if (selected)
+                            panel.participationFilterChangedByUser(["yes", "no", "both"][index]);
                     }
                 }
-            }
-        }
-    }
-    Item {
-        id: scrollGutter
-
-        anchors.bottom: filterBar.visible ? filterBar.top : parent.bottom
-        anchors.right: parent.right
-        // PluginPopout adds Theme.spacingS around its content. Move the track
-        // into that shell inset, leaving the requested gap at the popup edge.
-        // Accounting for the indicator width above preserves equal outer gaps.
-        anchors.rightMargin: Theme.spacingS + GitHubConstants.popoutScrollRightEdgeInsetDelta - Theme.spacingS
-        anchors.top: groupedFlick.top
-        visible: groupedFlick.visible && groupedFlick.contentHeight > groupedFlick.height
-        width: GitHubConstants.popoutScrollGutterWidthPx
-        z: 10
-
-        Rectangle {
-            id: scrollThumb
-
-            property real ratio: groupedFlick.height / groupedFlick.contentHeight
-
-            anchors.right: parent.right
-            color: Theme.outlineVariant
-            height: Math.max(GitHubConstants.popoutScrollIndicatorMinHeightPx, parent.height * ratio)
-            opacity: groupedFlick.moving || scrollDragArea.pressed || scrollDragArea.containsMouse ? GitHubConstants.popoutScrollIndicatorActiveOpacity : GitHubConstants.popoutScrollIndicatorIdleOpacity
-            radius: Math.max(0, Math.min(GitHubConstants.popoutScrollIndicatorWidthPx / 2, Theme.cornerRadius + GitHubConstants.popoutScrollIndicatorRadiusDelta))
-            width: GitHubConstants.popoutScrollIndicatorWidthPx
-            y: groupedFlick.contentHeight > groupedFlick.height ? (groupedFlick.contentY / (groupedFlick.contentHeight - groupedFlick.height)) * (parent.height - height) : 0
-
-            Behavior on opacity {
-                NumberAnimation {
-                    duration: GitHubConstants.popoutScrollIndicatorFadeDurationMs
-                }
-            }
-        }
-        MouseArea {
-            id: scrollDragArea
-
-            property real pressOffsetY: 0
-
-            // Map scrollbar dragging into the available scroll range without exceeding its bounds.
-            function scrollToMouse(mouseY) {
-                let trackHeight = scrollGutter.height - scrollThumb.height;
-                let maxContentY = groupedFlick.contentHeight - groupedFlick.height;
-                if (trackHeight <= 0 || maxContentY <= 0) {
-                    groupedFlick.contentY = 0;
-                    return;
-                }
-
-                let thumbY = Math.max(0, Math.min(trackHeight, mouseY - pressOffsetY));
-                groupedFlick.contentY = Math.max(0, Math.min(maxContentY, (thumbY / trackHeight) * maxContentY));
-            }
-
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            hoverEnabled: true
-
-            onPositionChanged: function (mouse) {
-                if (pressed)
-                    scrollToMouse(mouse.y);
-            }
-            onPressed: function (mouse) {
-                if (mouse.y >= scrollThumb.y && mouse.y <= scrollThumb.y + scrollThumb.height)
-                    pressOffsetY = mouse.y - scrollThumb.y;
-                else
-                    pressOffsetY = scrollThumb.height / 2;
-
-                scrollToMouse(mouse.y);
             }
         }
     }

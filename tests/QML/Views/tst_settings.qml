@@ -67,6 +67,36 @@ TestCase {
         compare(fakePluginService.writes[0].value, 8);
         page.destroy();
     }
+    // Feedback follows each keystroke while text remains untouched, even after an idle pause.
+    function test_liveTokenFeedbackDoesNotModifyDraft() {
+        for (let width of [520, 320]) {
+            let page = createSettings();
+            page.width = width;
+            page.dependenciesChecked = true;
+            page.missingDependencies = [];
+            let authentication = findChild(page, "authenticationSettingsSection");
+            authentication.expanded = true;
+            let input = findChild(page, "githubTokenInput");
+            let status = findChild(page, "githubTokenStatus");
+            for (let value of ["g", "ghp_", "ghp_short", "  ghp_" + "a".repeat(36) + "  "]) {
+                input.text = value;
+                input.textEdited();
+                wait(50);
+                compare(input.isError, page.tokenValidationError !== "");
+                compare(status.text, page.tokenValidationError);
+                compare(status.visible, page.tokenValidationError !== "");
+                compare(input.text, value);
+            }
+            wait(650);
+            compare(input.text, "  ghp_" + "a".repeat(36) + "  ");
+            compare(status.text, "");
+            input.editingFinished();
+            compare(input.text, "ghp_" + "a".repeat(36));
+            compare(page.displayedTokenValidationError, "");
+            compare(input.isError, false);
+            page.destroy();
+        }
+    }
     function test_pageWaitsForDependenciesAndExplainsMissingCommands() {
         let page = createSettings();
         verify(!page.dependenciesReady);
@@ -80,8 +110,74 @@ TestCase {
         verify(dependencyStatus.text.indexOf("curl, jq") >= 0);
         page.destroy();
     }
+    function test_settingsSectionsAndViewControlOrder() {
+        fakePluginService.values = ({});
+        fakePluginService.writes = [];
+        let page = createSettings();
+        let authentication = findChild(page, "authenticationSettingsSection");
+        let behaviour = findChild(page, "behaviourSettingsSection");
+        let view = findChild(page, "viewSettingsSection");
+        let cleanup = findChild(page, "cacheSettingsSection");
+        let statistics = findChild(page, "apiCallStatsView");
+        for (let section of [authentication, behaviour, view, cleanup, statistics]) {
+            verify(section);
+            compare(section.expanded, false);
+            section.toggle();
+            compare(section.expanded, true);
+            section.toggle();
+            compare(section.expanded, false);
+        }
+        compare(authentication.title, "Authentication");
+        compare(behaviour.title, "Behaviour");
+        compare(view.title, "View Settings");
+        compare(cleanup.title, "CleanUp");
+        compare(statistics.title, "API Statistics");
+        verifyInSection(findChild(page, "githubTokenInput"), authentication);
+        verifyInSection(findChild(page, "pollIntervalSetting"), behaviour);
+        verifyInSection(findChild(page, "enableNotificationsSetting"), behaviour);
+        for (let name of ["titleLinesSetting", "loadAuthorInfoSetting", "groupItemLimitSetting", "popupHeightSetting"])
+            verifyInSection(findChild(page, name), view);
+        verifyInSection(findChild(page, "clearCacheButton"), cleanup);
+        let controls = findChild(page, "viewSettingsControls");
+        compare(controls.children[0].objectName, "titleLinesSetting");
+        compare(fakePluginService.writes.length, 0);
+        page.destroy();
+    }
+    // Invalid edits use the native field error state and a non-secret inline explanation.
+    function test_tokenValidationErrorIsShownInline() {
+        let page = createSettings();
+        page.dependenciesChecked = true;
+        page.missingDependencies = [];
+        findChild(page, "authenticationSettingsSection").expanded = true;
+        let input = findChild(page, "githubTokenInput");
+        let status = findChild(page, "githubTokenStatus");
+        input.text = "ghp_incomplete";
+        input.textEdited();
+        compare(input.isError, true);
+        input.editingFinished();
+        compare(input.isError, true);
+        verify(status.visible);
+        verify(status.text.indexOf("between 40 and 255") >= 0);
+        verify(status.text.indexOf(input.text) < 0);
+        input.text = "ghp_" + "a".repeat(36);
+        input.textEdited();
+        compare(page.tokenValidationError, "");
+        compare(input.isError, false);
+        input.editingFinished();
+        compare(input.isError, false);
+        page.destroy();
+    }
+    // Controls must remain inside their requested section after native content reparenting.
+    function verifyInSection(control, section) {
+        verify(control);
+        let current = control.parent;
+        while (current && current !== section)
+            current = current.parent;
+        compare(current, section);
+    }
 
     name: "Settings"
+    visible: true
 
     QtObject {
         id: fakePluginService

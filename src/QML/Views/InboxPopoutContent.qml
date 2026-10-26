@@ -10,6 +10,7 @@ InboxPopoutView {
 
     property var authorRequestCallback: null
     property var closePopoutCallback: null
+    property var openSettingsCallback: null
     property var operationService: null
     property var persistExpandedDateGroupsCallback: null
     property var persistExpandedReposCallback: null
@@ -48,6 +49,10 @@ InboxPopoutView {
     }
     onMarkThreadUnread: function (threadId) {
         operationService.markThreadAsUnread(threadId);
+    }
+    onOpenSettingsRequested: {
+        if (openSettingsCallback)
+            openSettingsCallback();
     }
     onParticipationFilterChangedByUser: function (value) {
         preferencesService.setParticipationFilter(value);

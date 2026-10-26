@@ -1,11 +1,11 @@
-// PopoutComponent.qml - stand-in for the host's popup content contract.
+// PopoutComponent.qml - current popup contract, excluding compatibility-only properties.
 
 import QtQuick
 
-Item {
+Column {
+    property var closePopout: null
     property string detailsText: ""
     property int headerHeight: 0
     property string headerText: ""
     property var parentPopout: null
-    property bool showCloseButton: true
 }

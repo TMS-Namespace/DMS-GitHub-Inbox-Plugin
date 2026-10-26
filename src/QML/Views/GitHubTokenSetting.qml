@@ -14,6 +14,7 @@ Column {
     property string tokenValue: ""
 
     signal tokenEdited(string value)
+    signal tokenEditingFinished(string value)
     signal tokenHelpRequested
 
     spacing: Theme.spacingM
@@ -64,19 +65,39 @@ Column {
             text: "GitHub Classic Token"
         }
         DTextField {
+            id: tokenInput
+
             echoMode: passwordVisible ? TextInput.Normal : TextInput.Password
             height: Math.round(Theme.fontSizeMedium * 3)
+            isError: tokenSetting.saveFailed
             objectName: "githubTokenInput"
             placeholderText: "ghp_..."
             showPasswordToggle: true
-            text: tokenSetting.tokenValue
             width: parent.width
 
-            onTextEdited: tokenSetting.tokenEdited(text)
+            Component.onCompleted: text = tokenSetting.tokenValue
+            onEditingFinished: tokenSetting.tokenEditingFinished(text)
+            onTextEdited: {
+                // Dux also emits this signal when a binding loads the saved token.
+                if (text !== tokenSetting.tokenValue)
+                    tokenSetting.tokenEdited(text);
+            }
+
+            Connections {
+
+                // Synchronize committed values without rewriting identical drafts or moving the cursor.
+                function onTokenValueChanged() {
+                    if (tokenInput.text !== tokenSetting.tokenValue)
+                        tokenInput.text = tokenSetting.tokenValue;
+                }
+
+                target: tokenSetting
+            }
         }
         StyledText {
             color: tokenSetting.saveFailed ? Theme.error : Theme.surfaceVariantText
             font.pixelSize: Theme.fontSizeSmall
+            objectName: "githubTokenStatus"
             text: tokenSetting.statusMessage
             visible: tokenSetting.statusMessage.length > 0
             width: parent.width

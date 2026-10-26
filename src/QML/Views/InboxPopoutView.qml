@@ -8,16 +8,19 @@ import qs.Common
 import qs.DCommon.Widgets
 import qs.Modules.Plugins
 
-PopoutComponent {
+Item {
     id: view
 
     property var authorsByThread: ({})
+    property alias closePopout: popout.closePopout
     property string details: ""
     property string errorMessage: ""
     property var expandedDateGroupsState: ({})
     property var expandedReposState: ({})
     property int groupItemLimit: GitHubConstants.defaultGroupItemLimit
     property string groupingMode: "repo"
+    readonly property real headerHeight: popout.headerHeight
+    property alias headerText: popout.headerText
     property real inboxHeight: 600
     property bool isAuthorFetching: false
     property bool isDownloadingAvatars: false
@@ -25,6 +28,8 @@ PopoutComponent {
     property bool isOperating: false
     property real lastUpdated: 0
     property var messages: []
+    readonly property real paddingAdjustment: Math.max(0, PopoutMetrics.contentPadding - Theme.spacingS)
+    property alias parentPopout: popout.parentPopout
     property string participationFilter: "both"
     property bool popupOpen: false
     property string readFilter: "both"
@@ -44,6 +49,7 @@ PopoutComponent {
     signal markThreadRead(string threadId)
     signal markThreadReadAfterOpen(string threadId)
     signal markThreadUnread(string threadId)
+    signal openSettingsRequested
     signal participationFilterChangedByUser(string value)
     signal persistExpandedDateGroups(var state)
     signal persistExpandedRepos(var state)
@@ -57,9 +63,8 @@ PopoutComponent {
         popoutVisibilityChanged(!!(parentPopout && parentPopout.shouldBeVisible));
     }
 
-    detailsText: ""
-    headerText: "GitHub Inbox"
-    showCloseButton: false
+    // Expand into the host padding so all popup edges retain only Theme.spacingS.
+    implicitHeight: Math.max(0, popout.implicitHeight - 2 * paddingAdjustment)
 
     Component.onCompleted: Qt.callLater(syncPopoutVisibility)
     Component.onDestruction: popoutVisibilityChanged(false)
@@ -73,168 +78,141 @@ PopoutComponent {
 
         target: view.parentPopout
     }
-    Item {
-        id: detailsRow
+    PopoutComponent {
+        id: popout
 
-        height: GitHubConstants.popoutFilterSegmentHeightPx + Theme.spacingS
-        width: parent.width
+        detailsText: ""
+        headerText: "GitHub Inbox"
+        objectName: "compactInboxPopout"
+        width: view.width + 2 * view.paddingAdjustment
+        x: -view.paddingAdjustment
+        y: -view.paddingAdjustment
 
-        StyledText {
-            anchors.left: parent.left
-            anchors.leftMargin: Theme.spacingS
-            anchors.right: groupingControl.visible ? groupingControl.left : parent.right
-            anchors.rightMargin: Theme.spacingS
-            anchors.verticalCenter: groupingControl.visible ? groupingControl.verticalCenter : parent.verticalCenter
-            color: Theme.surfaceVariantText
-            elide: Text.ElideRight
-            font.pixelSize: Theme.fontSizeSmall
-            maximumLineCount: 1
-            text: view.details
-            wrapMode: Text.NoWrap
-        }
-        Row {
-            id: groupingControl
+        Item {
+            id: detailsRow
 
-            anchors.right: parent.right
-            anchors.rightMargin: Theme.spacingS
-            anchors.top: parent.top
-            height: GitHubConstants.popoutFilterSegmentHeightPx
-            spacing: Theme.spacingXS
-            visible: view.tokenConfigured
+            height: GitHubConstants.popoutFilterSegmentHeightPx + Theme.spacingS
+            width: parent.width
 
             StyledText {
-                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.spacingS
+                anchors.right: groupingControl.visible ? groupingControl.left : parent.right
+                anchors.rightMargin: Theme.spacingS
+                anchors.verticalCenter: groupingControl.visible ? groupingControl.verticalCenter : parent.verticalCenter
                 color: Theme.surfaceVariantText
+                elide: Text.ElideRight
                 font.pixelSize: Theme.fontSizeSmall
-                text: "Group By"
+                maximumLineCount: 1
+                text: view.details
+                wrapMode: Text.NoWrap
             }
-            Rectangle {
-                border.color: Theme.outlineMedium
-                border.width: 1
-                color: Theme.nestedSurface
+            Row {
+                id: groupingControl
+
+                anchors.right: parent.right
+                anchors.rightMargin: Theme.spacingS
+                anchors.top: parent.top
                 height: GitHubConstants.popoutFilterSegmentHeightPx
-                radius: Theme.cornerRadius
-                width: GitHubConstants.popoutFilterSegmentMinWidthPx
+                spacing: Theme.spacingXS
+                visible: view.tokenConfigured
 
-                Row {
-                    id: groupingModeSegments
+                StyledText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.surfaceVariantText
+                    font.pixelSize: Theme.fontSizeSmall
+                    text: "Group By"
+                }
+                DButtonGroup {
+                    buttonHeight: GitHubConstants.popoutFilterSegmentHeightPx
+                    buttonPadding: Theme.spacingXS
+                    checkEnabled: false
+                    currentIndex: view.groupingMode === "date" ? 1 : 0
+                    minButtonWidth: Theme.fontSizeSmall * 3
+                    model: ["Repo", "Date"]
+                    objectName: "groupingModeControl"
+                    selectedColor: Theme.withAlpha(Theme.primary, GitHubConstants.filterSelectionOpacity)
+                    selectedContentColor: Theme.primary
+                    size: "small"
+                    unselectedColor: Theme.nestedSurface
+                    unselectedContentColor: Theme.surfaceVariantText
 
-                    anchors.fill: parent
-                    spacing: Math.max(1, (Theme.spacingXXS || 0) + GitHubConstants.popoutFilterSegmentSpacingDelta)
-
-                    Repeater {
-                        model: [
-                            {
-                                label: "Repo",
-                                value: "repo"
-                            },
-                            {
-                                label: "Date",
-                                value: "date"
-                            }
-                        ]
-
-                        delegate: Rectangle {
-                            id: groupingModeOption
-
-                            required property var modelData
-
-                            color: view.groupingMode === modelData.value ? Theme.withAlpha(Theme.primary, GitHubConstants.popoutFilterActiveTintOpacity) : "transparent"
-                            height: parent.height
-                            radius: Theme.cornerRadius
-                            width: (groupingModeSegments.width - groupingModeSegments.spacing) / 2
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-
-                                onClicked: view.groupingModeChangedByUser(groupingModeOption.modelData.value)
-                            }
-                            StyledText {
-                                anchors.fill: parent
-                                anchors.leftMargin: 2
-                                anchors.rightMargin: 2
-                                color: view.groupingMode === groupingModeOption.modelData.value ? Theme.primary : Theme.surfaceVariantText
-                                elide: Text.ElideRight
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.weight: view.groupingMode === groupingModeOption.modelData.value ? Font.DemiBold : Font.Normal
-                                horizontalAlignment: Text.AlignHCenter
-                                text: groupingModeOption.modelData.label
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
+                    onSelectionChanged: function (index, selected) {
+                        if (selected)
+                            view.groupingModeChangedByUser(index === 1 ? "date" : "repo");
                     }
                 }
             }
         }
-    }
-    PopoutPanel {
-        authorsByThread: view.authorsByThread
-        errorMessage: view.errorMessage
-        expandedDateGroupsState: view.expandedDateGroupsState
-        expandedReposState: view.expandedReposState
-        groupItemLimit: view.groupItemLimit
-        groupingMode: view.groupingMode
-        headerHoverBottomInset: detailsRow.height
-        headerHoverHeight: view.headerHeight
-        headerOffset: view.headerHeight + detailsRow.height
-        implicitHeight: view.inboxHeight - view.headerHeight - detailsRow.height - Theme.spacingXL
-        isAuthorFetching: view.isAuthorFetching
-        isDownloadingAvatars: view.isDownloadingAvatars
-        isLoading: view.isLoading
-        isOperating: view.isOperating
-        lastUpdated: view.lastUpdated
-        messages: view.messages
-        participationFilter: view.participationFilter
-        popupOpen: view.popupOpen
-        readFilter: view.readFilter
-        showAuthorInfo: view.showAuthorInfo
-        titleLines: view.titleLines
-        tokenConfigured: view.tokenConfigured
-        unreadCount: view.unreadCount
-        width: parent.width
+        PopoutPanel {
+            authorsByThread: view.authorsByThread
+            errorMessage: view.errorMessage
+            expandedDateGroupsState: view.expandedDateGroupsState
+            expandedReposState: view.expandedReposState
+            groupItemLimit: view.groupItemLimit
+            groupingMode: view.groupingMode
+            headerHoverBottomInset: detailsRow.height
+            headerHoverHeight: view.headerHeight
+            headerOffset: view.headerHeight + detailsRow.height
+            implicitHeight: view.inboxHeight - view.headerHeight - detailsRow.height - Theme.spacingXL
+            isAuthorFetching: view.isAuthorFetching
+            isDownloadingAvatars: view.isDownloadingAvatars
+            isLoading: view.isLoading
+            isOperating: view.isOperating
+            lastUpdated: view.lastUpdated
+            messages: view.messages
+            participationFilter: view.participationFilter
+            popupOpen: view.popupOpen
+            readFilter: view.readFilter
+            showAuthorInfo: view.showAuthorInfo
+            titleLines: view.titleLines
+            tokenConfigured: view.tokenConfigured
+            unreadCount: view.unreadCount
+            width: parent.width
 
-        onClosePopout: view.closeRequested()
-        onMarkAllRead: view.markAllRead()
-        onMarkDateGroupDone: function (items) {
-            view.markDateGroupDone(items);
-        }
-        onMarkDateGroupRead: function (items) {
-            view.markDateGroupRead(items);
-        }
-        onMarkRepoDone: function (items) {
-            view.markRepoDone(items);
-        }
-        onMarkRepoRead: function (items) {
-            view.markRepoRead(items);
-        }
-        onMarkThreadDone: function (threadId) {
-            view.markThreadDone(threadId);
-        }
-        onMarkThreadRead: function (threadId) {
-            view.markThreadRead(threadId);
-        }
-        onMarkThreadReadAfterOpen: function (threadId) {
-            view.markThreadReadAfterOpen(threadId);
-        }
-        onMarkThreadUnread: function (threadId) {
-            view.markThreadUnread(threadId);
-        }
-        onParticipationFilterChangedByUser: function (value) {
-            view.participationFilterChangedByUser(value);
-        }
-        onPersistExpandedDateGroups: function (state) {
-            view.persistExpandedDateGroups(state);
-        }
-        onPersistExpandedRepos: function (state) {
-            view.persistExpandedRepos(state);
-        }
-        onReadFilterChangedByUser: function (value) {
-            view.readFilterChangedByUser(value);
-        }
-        onRefreshNow: view.refreshNow()
-        onRequestThreadAuthors: function (threadId, subjectApiUrl, subjectType) {
-            view.requestThreadAuthors(threadId, subjectApiUrl, subjectType);
+            onClosePopout: view.closeRequested()
+            onMarkAllRead: view.markAllRead()
+            onMarkDateGroupDone: function (items) {
+                view.markDateGroupDone(items);
+            }
+            onMarkDateGroupRead: function (items) {
+                view.markDateGroupRead(items);
+            }
+            onMarkRepoDone: function (items) {
+                view.markRepoDone(items);
+            }
+            onMarkRepoRead: function (items) {
+                view.markRepoRead(items);
+            }
+            onMarkThreadDone: function (threadId) {
+                view.markThreadDone(threadId);
+            }
+            onMarkThreadRead: function (threadId) {
+                view.markThreadRead(threadId);
+            }
+            onMarkThreadReadAfterOpen: function (threadId) {
+                view.markThreadReadAfterOpen(threadId);
+            }
+            onMarkThreadUnread: function (threadId) {
+                view.markThreadUnread(threadId);
+            }
+            onOpenSettings: view.openSettingsRequested()
+            onParticipationFilterChangedByUser: function (value) {
+                view.participationFilterChangedByUser(value);
+            }
+            onPersistExpandedDateGroups: function (state) {
+                view.persistExpandedDateGroups(state);
+            }
+            onPersistExpandedRepos: function (state) {
+                view.persistExpandedRepos(state);
+            }
+            onReadFilterChangedByUser: function (value) {
+                view.readFilterChangedByUser(value);
+            }
+            onRefreshNow: view.refreshNow()
+            onRequestThreadAuthors: function (threadId, subjectApiUrl, subjectType) {
+                view.requestThreadAuthors(threadId, subjectApiUrl, subjectType);
+            }
         }
     }
 }

@@ -15,7 +15,7 @@ Rectangle {
     property var groupData: ({})
     readonly property bool hasActionItems: actionItems().length > 0
     readonly property bool hasUnreadActionItems: visibleUnreadCount() > 0
-    property bool headerActionsHovered: dateHeaderArea.containsMouse || dateReadArea.containsMouse || dateDoneArea.containsMouse
+    property bool headerActionsHovered: dateHeaderArea.containsMouse || dateReadArea.hovered || dateDoneArea.hovered
     property bool isBusy: false
     property bool showAuthorInfo: true
     property int titleLines: GitHubConstants.defaultTitleLines
@@ -100,61 +100,39 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spacingXS
 
-                Rectangle {
-                    color: groupCard.isBusy ? Theme.withAlpha(Theme.surfaceVariant, 0.55) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
-                    height: GitHubConstants.popoutRepoDoneButtonSizePx
+                DActionButton {
+                    id: dateReadArea
+
+                    backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+                    buttonSize: GitHubConstants.popoutRepoDoneButtonSizePx
+                    enabled: !groupCard.isBusy && groupCard.hasUnreadActionItems
+                    iconColor: dateReadArea.hovered ? Theme.primary : Theme.surfaceText
+                    iconName: "mark_email_read"
+                    iconSize: GitHubConstants.popoutRepoDoneIconSizePx
+                    objectName: "groupReadButton"
                     opacity: groupCard.hasUnreadActionItems && groupCard.headerActionsHovered ? 1 : 0
-                    radius: Math.max(0, Math.min(GitHubConstants.popoutRepoDoneButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutRepoDoneButtonRadiusDelta))
+                    radius: width / 2
+                    tooltipText: groupCard.isBusy ? "Not available during refresh" : "Mark group as read"
                     visible: groupCard.expanded && groupCard.hasActionItems
-                    width: GitHubConstants.popoutRepoDoneButtonSizePx
-                    z: 2
 
-                    MouseArea {
-                        id: dateReadArea
-
-                        anchors.fill: parent
-                        cursorShape: groupCard.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                        hoverEnabled: true
-
-                        onClicked: {
-                            if (!groupCard.isBusy)
-                                groupCard.markGroupRead(groupCard.actionItems());
-                        }
-                    }
-                    DIcon {
-                        anchors.centerIn: parent
-                        color: groupCard.isBusy ? Theme.withAlpha(Theme.surfaceVariantText, 0.55) : (dateReadArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
-                        name: "mark_email_read"
-                        size: GitHubConstants.popoutRepoDoneIconSizePx
-                    }
+                    onClicked: groupCard.markGroupRead(groupCard.actionItems())
                 }
-                Rectangle {
-                    color: groupCard.isBusy ? Theme.withAlpha(Theme.surfaceVariant, 0.55) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.9)
-                    height: GitHubConstants.popoutRepoDoneButtonSizePx
+                DActionButton {
+                    id: dateDoneArea
+
+                    backgroundColor: Theme.withAlpha(Theme.surfaceContainer, GitHubConstants.actionButtonBackgroundOpacity)
+                    buttonSize: GitHubConstants.popoutRepoDoneButtonSizePx
+                    enabled: !groupCard.isBusy
+                    iconColor: dateDoneArea.hovered ? Theme.primary : Theme.surfaceText
+                    iconName: "done"
+                    iconSize: GitHubConstants.popoutRepoDoneIconSizePx
+                    objectName: "groupDoneButton"
                     opacity: groupCard.headerActionsHovered ? 1 : 0
-                    radius: Math.max(0, Math.min(GitHubConstants.popoutRepoDoneButtonSizePx / 2, Theme.cornerRadius + GitHubConstants.popoutRepoDoneButtonRadiusDelta))
+                    radius: width / 2
+                    tooltipText: groupCard.isBusy ? "Not available during refresh" : "Mark group as done"
                     visible: groupCard.expanded && groupCard.hasActionItems
-                    width: GitHubConstants.popoutRepoDoneButtonSizePx
-                    z: 2
 
-                    MouseArea {
-                        id: dateDoneArea
-
-                        anchors.fill: parent
-                        cursorShape: groupCard.isBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                        hoverEnabled: true
-
-                        onClicked: {
-                            if (!groupCard.isBusy)
-                                groupCard.markGroupDone(groupCard.actionItems());
-                        }
-                    }
-                    DIcon {
-                        anchors.centerIn: parent
-                        color: groupCard.isBusy ? Theme.withAlpha(Theme.surfaceVariantText, 0.55) : (dateDoneArea.containsMouse ? Theme.primary : Theme.surfaceVariantText)
-                        name: "done"
-                        size: GitHubConstants.popoutRepoDoneIconSizePx
-                    }
+                    onClicked: groupCard.markGroupDone(groupCard.actionItems())
                 }
                 Rectangle {
                     color: (groupCard.groupData.unreadCount || 0) > 0 ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, GitHubConstants.popoutRepoCountBadgeUnreadOpacity) : Qt.rgba(Theme.surfaceVariant.r, Theme.surfaceVariant.g, Theme.surfaceVariant.b, GitHubConstants.popoutRepoCountBadgeReadOpacity)
@@ -188,28 +166,6 @@ Rectangle {
                             duration: GitHubConstants.popoutRepoExpandRotationDurationMs
                         }
                     }
-                }
-            }
-            Rectangle {
-                anchors.bottom: dateMeta.top
-                anchors.bottomMargin: Theme.spacingXS
-                anchors.right: dateMeta.right
-                border.color: Theme.outlineMedium
-                border.width: 1
-                color: Theme.surfaceContainerHighest
-                height: dateActionTooltipText.implicitHeight + Theme.spacingXS * 2
-                radius: Theme.cornerRadius
-                visible: groupCard.isBusy && groupCard.expanded && (dateReadArea.containsMouse || dateDoneArea.containsMouse)
-                width: dateActionTooltipText.implicitWidth + Theme.spacingS * 2
-                z: 20
-
-                StyledText {
-                    id: dateActionTooltipText
-
-                    anchors.centerIn: parent
-                    color: Theme.surfaceVariantText
-                    font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
-                    text: "Not available during refresh"
                 }
             }
         }

@@ -10,6 +10,10 @@ function create(providerApi, properties, helpers) {
     api.providerId = properties.providerId;
     api.properties = properties;
 
+    api.validateTokenFormat = function (value) {
+        return helpers.validateTokenFormat(value);
+    };
+
     api.createAuthorTools = function (perPageQuery) {
         return AuthorTools.create(api, properties, perPageQuery);
     };

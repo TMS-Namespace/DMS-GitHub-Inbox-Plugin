@@ -14,7 +14,9 @@ import QtQml
 
 import QtQuick
 import "."
+import qs.Common
 import qs.Modules.Plugins
+import qs.Services
 
 PluginComponent {
     id: root
@@ -343,6 +345,10 @@ PluginComponent {
             isOperating: operations.isBusy
             lastUpdated: root.lastUpdated
             messages: root.messagesForView
+            openSettingsCallback: function () {
+                root.closePopout();
+                PopoutService.openSettingsWithTab(SettingsTabs.pluginPrefix + GitHubConstants.pluginNamespaceId);
+            }
             operationService: operations
             participationFilter: root.participationFilter
             persistExpandedDateGroupsCallback: function (state) {

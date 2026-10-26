@@ -14,6 +14,9 @@ Item {
     property int textSize: 14
     property var verticalBarPill: null
 
+    signal _popoutClosed
+
     function closePopout() {
+        _popoutClosed();
     }
 }

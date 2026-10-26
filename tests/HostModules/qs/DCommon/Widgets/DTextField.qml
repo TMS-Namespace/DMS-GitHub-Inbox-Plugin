@@ -3,6 +3,7 @@
 import QtQuick
 
 TextInput {
+    property bool isError: false
     property bool passwordVisible: false
     property string placeholderText: ""
     property bool showPasswordToggle: false

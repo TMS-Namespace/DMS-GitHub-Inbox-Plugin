@@ -12,6 +12,27 @@ var _notifications = Notifications.createParser(PluginError);
 
 // Provider values are passed by QML so this pure module has no duplicate limits.
 var _UNREAD_COUNT_DISPLAY_MAX = 999;
+var _CLASSIC_TOKEN_MIN_LENGTH = 40;
+var _TOKEN_MAX_LENGTH = 255;
+
+// Validate syntax only; GitHub still determines validity, expiry and granted permissions.
+function validateTokenFormat(value) {
+    var token = String(value || "").trim();
+    if (!token) return "";
+    if (!/^[A-Za-z0-9_]+$/.test(token))
+        return "Token must contain only ASCII letters, digits and underscores, with no internal whitespace.";
+    if (/^[a-fA-F0-9]{40}$/.test(token)) return "";
+    if (token.indexOf("ghp_") !== 0) return "Use a classic personal access token beginning with ghp_.";
+    if (token.length < _CLASSIC_TOKEN_MIN_LENGTH || token.length > _TOKEN_MAX_LENGTH)
+        return (
+            "Classic tokens must be between " +
+            _CLASSIC_TOKEN_MIN_LENGTH +
+            " and " +
+            _TOKEN_MAX_LENGTH +
+            " characters, including ghp_."
+        );
+    return "";
+}
 
 // Check the relevant invariants before dependent work can proceed.
 function isSafeGitHubLogin(value) {
