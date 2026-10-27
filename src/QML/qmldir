@@ -36,8 +36,15 @@ AvatarState 1.0 Tools/AvatarState.qml
 CacheCoordinator 1.0 Services/CacheCoordinator.qml
 DateGroupingModel 1.0 Tools/DateGroupingModel.qml
 InboxOperations 1.0 Services/InboxOperations.qml
+InboxOperationState 1.0 Services/InboxOperationState.qml
+InboxMutationQueue 1.0 Services/InboxMutationQueue.qml
+InboxMutationService 1.0 Services/InboxMutationService.qml
+AuthorMergeService 1.0 Services/AuthorMergeService.qml
+AuthorRequestService 1.0 Services/AuthorRequestService.qml
+AuthorPrefetchService 1.0 Services/AuthorPrefetchService.qml
 InboxMessageState 1.0 Tools/InboxMessageState.qml
 PluginCache 1.0 Services/PluginCache.qml
+CacheStorageService 1.0 Services/CacheStorageService.qml
 RepoGroupingModel 1.0 Tools/RepoGroupingModel.qml
 ResourceRepository 1.0 Services/ResourceRepository.qml
 SecretStore 1.0 Services/SecretStore.qml

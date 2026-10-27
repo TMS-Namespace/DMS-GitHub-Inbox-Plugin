@@ -12,6 +12,13 @@ InboxPreferencesService 1.0 InboxPreferencesService.qml
 InboxFetchService 1.0 InboxFetchService.qml
 InboxRefreshCoordinator 1.0 InboxRefreshCoordinator.qml
 InboxOperations 1.0 InboxOperations.qml
+InboxOperationState 1.0 InboxOperationState.qml
+InboxMutationQueue 1.0 InboxMutationQueue.qml
+InboxMutationService 1.0 InboxMutationService.qml
+AuthorMergeService 1.0 AuthorMergeService.qml
+AuthorRequestService 1.0 AuthorRequestService.qml
+AuthorPrefetchService 1.0 AuthorPrefetchService.qml
 PluginCache 1.0 PluginCache.qml
+CacheStorageService 1.0 CacheStorageService.qml
 ResourceRepository 1.0 ResourceRepository.qml
 SecretStore 1.0 SecretStore.qml

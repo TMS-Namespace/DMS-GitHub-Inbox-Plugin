@@ -177,10 +177,35 @@ TestCase {
         compare(rolledBack.items[1].unread, true);
         compare(operations.pendingReadMessagesByThread["thread-a"], undefined);
     }
+    function test_unchangedDoneReconciliationDoesNotPublishUpdates() {
+        operations.setDoneThreadState({
+            "thread-a": {
+                source: "local",
+                updatedAt: "2026-06-01T12:00:00Z",
+                savedAt: 1
+            }
+        });
+        doneStateChanges.clear();
+        operations.clearReturnedDoneThreadState([
+            {
+                threadId: "thread-a",
+                updatedAt: "2026-06-01T12:00:00Z"
+            }
+        ]);
+        operations.pruneDoneThreadState(100000000000);
+        compare(doneStateChanges.count, 0);
+        verify(operations.doneThreadState["thread-a"]);
+    }
 
     name: "InboxOperations"
 
     InboxOperations {
         id: operations
+    }
+    SignalSpy {
+        id: doneStateChanges
+
+        signalName: "doneThreadStateChanged"
+        target: operations
     }
 }

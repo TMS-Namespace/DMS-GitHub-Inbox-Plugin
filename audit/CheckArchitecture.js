@@ -183,9 +183,9 @@ function checkArchitecture() {
     const serialization = fs.readFileSync(serializationPath, "utf8");
     if ((serialization.match(/function normalizeDoneThreadState\s*\(/g) || []).length !== 1)
         failures.push("Cache legacy done-state migration must have one canonical implementation.");
-    const operations = fs.readFileSync(path.join(root, "src/QML/Services/InboxOperations.qml"), "utf8");
+    const operations = fs.readFileSync(path.join(root, "src/QML/Services/InboxOperationState.qml"), "utf8");
     if (!/return CacheSerialization\.normalizeDoneThreadState\(source\)/.test(operations))
-        failures.push("InboxOperations must use the canonical cache done-state migration helper.");
+        failures.push("InboxOperationState must use the canonical cache done-state migration helper.");
 
     const directIntegrationImports = qmlFiles.filter((filename) => {
         const source = stripComments(fs.readFileSync(filename, "utf8"));

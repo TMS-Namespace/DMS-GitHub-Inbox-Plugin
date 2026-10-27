@@ -8,20 +8,11 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell.Io
 import ".."
 
 Item {
     id: authorFetcher
 
-    property bool _mergeFlushQueued: false
-    property var _pendingAvatarPreloadAuthors: []
-
-    // Deferred merge batching
-    property var _pendingMerges: ({})
-    property int _prefetchAcceptedCount: 0
-    property var _prefetchQueue: []
-    property var _prefetchQueuedThreadIds: ({})
     property var activeUrlsByThread: ({})
     property string authorSplitToken: GitHubConstants.authorPayloadSplitToken
 
@@ -29,7 +20,7 @@ Item {
     property var authorsByThreadRef: ({})
     property var fetchedAtUpdatedAt: ({})
     property var fetchedUrlsByThread: ({})
-    readonly property bool isBusy: requestsInFlight > 0 || requestQueue.length > 0 || _prefetchQueue.length > 0 || prefetchTimer.running || _mergeFlushQueued || mergeFlushTimer.running
+    readonly property bool isBusy: requestsInFlight > 0 || requestQueue.length > 0 || authorPrefetch.isBusy || authorMerges.isBusy
     property bool loadAuthorInfo: true
     property bool prefetchPending: false
     readonly property var providerApi: GitHubManager.getProviderApi(GitHubManager.providerTypes[0])
@@ -71,65 +62,6 @@ Item {
             copy[url] = source[url];
         return copy;
     }
-    // Publish one batch of pending author merges and defer any remaining threads.
-    function _flushMerges() {
-        let profileStart = Date.now();
-        _mergeFlushQueued = false;
-
-        let pending = _pendingMerges;
-        let remainingPending = {};
-        let pendingAvatars = _pendingAvatarPreloadAuthors;
-
-        let changedIds = [];
-        let processed = 0;
-        let remainingCount = 0;
-        for (let changedId in pending) {
-            if (processed >= GitHubConstants.authorMergeFlushBatchSize) {
-                remainingPending[changedId] = pending[changedId];
-                remainingCount++;
-                continue;
-            }
-            changedIds.push(changedId);
-            processed++;
-        }
-
-        if (changedIds.length === 0) {
-            _pendingMerges = remainingPending;
-            _pendingAvatarPreloadAuthors = pendingAvatars;
-            if (remainingCount > 0) {
-                _mergeFlushQueued = true;
-                mergeFlushTimer.restart();
-            }
-            profileOperation("_flushMerges", profileStart, "changed=0");
-            return;
-        }
-
-        let changedSet = {};
-        for (let setIndex = 0; setIndex < changedIds.length; setIndex++)
-            changedSet[changedIds[setIndex]] = true;
-
-        let currentAuthors = authorsByThreadRef || ({});
-        let next = {};
-        for (let existingId in currentAuthors)
-            next[existingId] = currentAuthors[existingId];
-        for (let pendingId in pending) {
-            if (!changedSet[pendingId])
-                continue;
-            next[pendingId] = pending[pendingId];
-        }
-
-        _pendingMerges = remainingPending;
-        _pendingAvatarPreloadAuthors = [];
-
-        authorsMerged(next, pendingAvatars, changedIds);
-
-        if (remainingCount > 0) {
-            _mergeFlushQueued = true;
-            mergeFlushTimer.restart();
-        }
-        profileOperation("_flushMerges", profileStart, "changed=" + changedIds.length + " remaining=" + remainingCount);
-    }
-
     // =========================================================================
     //  PUBLIC API
     // =========================================================================
@@ -138,86 +70,17 @@ Item {
     function _perfLog(label) {
         PluginLogger.debug("AuthorBackgroundWorker", label);
     }
-    // Turn one prefetch batch into endpoint requests, refreshing URL history when activity changes.
-    function _processPrefetchBatch() {
-        let profileStart = Date.now();
-        if (!loadAuthorInfo || !token) {
-            prefetchTimer.stop();
-            _prefetchQueue = [];
-            _prefetchQueuedThreadIds = ({});
-            prefetchMaybeComplete();
-            return;
-        }
-
-        if (_prefetchQueue.length === 0) {
-            prefetchTimer.stop();
-            prefetchMaybeComplete();
-            profileOperation("_processPrefetchBatch", profileStart, "empty");
-            return;
-        }
-
-        let batchSize = Math.max(1, GitHubConstants.authorPrefetchBatchSize);
-        let queue = _prefetchQueue;
-        let nextQueuedIds = _prefetchQueuedThreadIds;
-        let processed = 0;
-
-        while (processed < batchSize && processed < queue.length) {
-            let item = queue[processed];
-            processed++;
-
-            if (item.threadId)
-                delete nextQueuedIds[item.threadId];
-
-            let lastFetchedUpdatedAt = fetchedAtUpdatedAt[item.threadId] || "";
-            let forceFetch = !!item.force;
-            let includeDetails = !!item.includeDetails;
-            if (!forceFetch && !includeDetails && fetchedAtMatches(lastFetchedUpdatedAt, item.updatedAt))
-                continue;
-
-            // Message updated since last fetch: clear URL-level state once,
-            // then let the normal URL filter avoid duplicate subrequests.
-            if ((forceFetch || lastFetchedUpdatedAt !== "") && fetchedUrlsByThread.hasOwnProperty(item.threadId)) {
-                delete fetchedUrlsByThread[item.threadId];
-            }
-
-            enqueueAuthorUrls(item.threadId, AuthorUtils.buildAuthorFetchUrls(item.subjectApiUrl, item.subjectType || "", includeDetails, item.reason || ""), item.updatedAt || "", true, item.fallbackAuthor || null, item.subjectTitle || "", item.subjectType || "", item.reason || "");
-        }
-
-        _prefetchQueue = queue.slice(processed);
-        _prefetchQueuedThreadIds = nextQueuedIds;
-
-        if (_prefetchQueue.length === 0) {
-            prefetchTimer.stop();
-            prefetchMaybeComplete();
-        }
-        profileOperation("_processPrefetchBatch", profileStart, "processed=" + processed + " remaining=" + _prefetchQueue.length);
-    }
     // Measure this operation through the shared profiling gate.
     function _profile(label, startMs, details) {
         profileOperation(label, startMs, details);
     }
-    // Build authenticated fetches that use jq to extract actors, workflow details and release links.
+    // Build the automatic fetch command using the shared request service.
     function buildAutomaticAuthorExtractCommand(urls) {
-        let retryPolicy = authorFetcher.providerApi.getRetryPolicy();
-        let script = "" + "IFS= read -r token || exit 1\n" + "split=$1\n" + "connect_timeout=$2\n" + "max_time=$3\n" + "accept_header=$4\n" + "api_version=$5\n" + "retry_count=$6\n" + "retry_max_time=$7\n" + "shift 7\n" + "command -v jq >/dev/null 2>&1 || exit 127\n" + "filter='def appslug($profileUrl): if (($profileUrl // \"\") | startswith(\"https://github.com/apps/\")) then (($profileUrl | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then reverse[] else . end; def authorobj: . as $authorObject | (($authorObject.html_url? // $authorObject.htmlUrl? // \"\") as $html | ($authorObject.login? // $authorObject.slug? // appslug($html) // \"\") as $login | ($authorObject.avatar_url? // $authorObject.avatarUrl? // $authorObject.logo_url? // $authorObject.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($authorObject.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $authorObject.slug) else \"\" end)), type:($authorObject.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($authorObject): $authorObject.actor?, $authorObject.triggering_actor?, $authorObject.user?, $authorObject.author?, $authorObject.sender?, $authorObject.creator?, $authorObject.merged_by?, $authorObject.closed_by?, $authorObject.dismissed_by?; rootobj as $root | {authors:([nodes as $node | author_sources($node) | validauthor] | reduce .[] as $author ([]; if any(.[]; .login == $author.login and .htmlUrl == $author.htmlUrl and .avatarUrl == $author.avatarUrl) then . else . + [$author] end)), subjectWebUrl:($root.html_url // \"\"), subjectReference:(($root.subjectReference // $root.subject_reference // $root.run_number // \"\") | tostring), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), runNumber:((.run_number // \"\") | tostring), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\"), actor:(if .actor? then (.actor | authorobj) else null end), triggeringActor:(if .triggering_actor? then (.triggering_actor | authorobj) else null end)})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n" + "for url in \"$@\"; do\n" + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" --retry \"$retry_count\" --retry-connrefused --retry-max-time \"$retry_max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"$url\") || exit $?\n" + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n" + "  printf '\\n%s\\n' \"$split\"\n" + "done\n";
-
-        let command = ["nice", "-n", "10", "bash", "-c", script, "github-author-extract", authorSplitToken, GitHubConstants.curlConnectTimeoutSeconds, GitHubConstants.curlMaxTimeSeconds, GitHubConstants.httpAcceptHeader, GitHubConstants.githubApiVersionHeader, String(retryPolicy.retryCount), String(retryPolicy.maximumRetryTimeSeconds)];
-
-        for (let urlIndex = 0; urlIndex < urls.length; urlIndex++) {
-            if (urls[urlIndex])
-                command.push(urls[urlIndex]);
-        }
-        return command;
+        return authorRequests.buildAutomaticAuthorExtractCommand(urls);
     }
-    // Build authenticated fetches that return raw response bodies separated by the worker marker.
+    // Build the explicit fetch command using the shared request service.
     function buildRawAuthorFetchCommand(urls) {
-        let retryPolicy = authorFetcher.providerApi.getRetryPolicy();
-        let script = "" + "IFS= read -r token || exit 1\n" + "split=$1; connect_timeout=$2; max_time=$3; accept_header=$4; api_version=$5; retry_count=$6; retry_max_time=$7\n" + "shift 7\n" + "for url in \"$@\"; do\n" + "  printf 'Authorization: token %s\\n' \"$token\" | curl -sS --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" --retry \"$retry_count\" --retry-connrefused --retry-max-time \"$retry_max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- -w \"\\n$split\\n\" \"$url\"\n" + "done\n";
-        let command = ["bash", "-c", script, "github-author-fetch", authorSplitToken, GitHubConstants.curlConnectTimeoutSeconds, GitHubConstants.curlMaxTimeSeconds, GitHubConstants.httpAcceptHeader, GitHubConstants.githubApiVersionHeader, String(retryPolicy.retryCount), String(retryPolicy.maximumRetryTimeSeconds)];
-        for (let urlIndex = 0; urlIndex < urls.length; urlIndex++)
-            if (urls[urlIndex])
-                command.push(urls[urlIndex]);
-        return command;
+        return authorRequests.buildRawAuthorFetchCommand(urls);
     }
     // Cancel author work and clear both completed endpoint history and activity markers.
     function clearAllState() {
@@ -226,16 +89,11 @@ Item {
         activeUrlsByThread = ({});
         fetchedAtUpdatedAt = ({});
     }
-
-    /// Returns the current merged authorsByThread including not-yet-flushed pending merges.
+    // Include pending merge batches when the cache requests the current author snapshot.
     function cloneAuthorsByThread(authorsByThread) {
-        let copy = {};
-        for (let threadId in authorsByThread)
-            copy[threadId] = authorsByThread[threadId];
-        for (let pendingId in _pendingMerges)
-            copy[pendingId] = _pendingMerges[pendingId];
-        return copy;
+        return authorMerges.cloneAuthorsByThread(authorsByThread);
     }
+
     // Plan subject endpoints and enqueue them when author loading and authentication are available.
     function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle) {
         if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl || typeof subjectApiUrl !== 'string')
@@ -369,19 +227,7 @@ Item {
         if (fetchedAuthors.length === 0 && fallbackAuthor)
             fetchedAuthors = [fallbackAuthor];
         fetchedAuthors = normalizeAuthorsForSubject(message.subjectType || "", message.reason || "", fetchedAuthors);
-        let currentAuthors = authorsByThreadRef ? authorsByThreadRef : ({});
-
-        let existingAuthors = message.automaticPrefetch ? [] : (_pendingMerges[threadId] || currentAuthors[threadId] || []);
-        let mergedAuthors = AuthorUtils.mergeAuthorLists(existingAuthors, fetchedAuthors);
-
-        let nextPending = _pendingMerges;
-        nextPending[threadId] = mergedAuthors;
-        _pendingMerges = nextPending;
-
-        let pendingAvatars = _pendingAvatarPreloadAuthors;
-        for (let authorIndex = 0; authorIndex < mergedAuthors.length; authorIndex++)
-            pendingAvatars.push(mergedAuthors[authorIndex]);
-        _pendingAvatarPreloadAuthors = pendingAvatars;
+        authorMerges.stage(threadId, fetchedAuthors, !!message.automaticPrefetch);
 
         if (threadId) {
             let fetchedMarker = fetchedAtValue(updatedAt);
@@ -405,14 +251,46 @@ Item {
         if ((message.subjectWebUrl || message.subjectReference) && threadId)
             subjectWebUrlResolved(threadId, message.subjectWebUrl || "", message.subjectReference || "");
 
-        if (!_mergeFlushQueued) {
-            _mergeFlushQueued = true;
-            mergeFlushTimer.restart();
-        }
+        authorMerges.schedule();
 
         requestsInFlight = Math.max(0, requestsInFlight - 1);
         prefetchMaybeComplete();
         Qt.callLater(processQueue);
+    }
+    // Release a completed request and pass successful response text to the parser worker.
+    function handleRequestFinished(request, generation, exitCode, buffer, bufferBytes, startedAt) {
+        if (generation !== requestGeneration)
+            return;
+        let threadId = request.threadId || "";
+        let requestedUrls = request.urls || [];
+        markThreadUrlsInactive(threadId, requestedUrls);
+
+        if (!loadAuthorInfo || exitCode !== 0 || !workerSendMessage) {
+            if (loadAuthorInfo && exitCode !== 0)
+                PluginLogger.error("author", "GitHub author request failed with exit code " + exitCode);
+            requestsInFlight = Math.max(0, requestsInFlight - 1);
+            prefetchMaybeComplete();
+            Qt.callLater(processQueue);
+            return;
+        }
+
+        markThreadUrlsFetched(threadId, requestedUrls);
+        workerSendMessage({
+            action: "parseAuthors",
+            generation: generation,
+            threadId: threadId,
+            updatedAt: request.updatedAt || "",
+            requestedUrls: requestedUrls,
+            automaticPrefetch: !!request.automaticPrefetch,
+            subjectType: request.subjectType || "",
+            reason: request.reason || "",
+            shouldExpand: !request.automaticPrefetch && shouldExpandFromRequestedUrls(requestedUrls),
+            fallbackAuthor: request.fallbackAuthor || null,
+            subjectTitle: request.subjectTitle || "",
+            buffer: buffer,
+            splitToken: authorSplitToken
+        });
+        profileOperation("authorFetchProcess", startedAt, "thread=" + threadId + " bytes=" + bufferBytes + " urls=" + requestedUrls.length + " automatic=" + !!request.automaticPrefetch);
     }
     // Treat optional detail endpoints as covered when each has been fetched or is already active.
     function hasFetchedAuthorDetailsForMessage(item) {
@@ -436,7 +314,7 @@ Item {
     }
     // Include delayed prefetch batches and unpublished author merges in the pending-work check.
     function hasPendingPrefetchWork() {
-        return _prefetchQueue.length > 0 || prefetchTimer.running || _mergeFlushQueued || mergeFlushTimer.running;
+        return authorPrefetch.isBusy || authorMerges.isBusy;
     }
     // Check both active endpoint membership and queued requests for this thread.
     function hasQueuedOrActiveThreadRequest(threadId) {
@@ -533,123 +411,14 @@ Item {
 
         return filtered;
     }
-    // Queue missing or stale subject details within the automatic per-refresh message budget.
+    // Schedule missing details for messages received during a refresh.
     function prefetchForMessages(items) {
-        let profileStart = Date.now();
-        _perfLog("prefetchForMessages --- items=" + (items ? items.length : 0));
-        if (!GitHubConstants.automaticAuthorPrefetchEnabled)
-            return;
-        if (!loadAuthorInfo || !token || !items || items.length === 0)
-            return;
-        let nextQueue = _prefetchQueue.slice(0);
-        let nextQueuedIds = _prefetchQueuedThreadIds;
-        let accepted = _prefetchAcceptedCount;
-        let enqueued = 0;
-
-        for (let index = 0; index < items.length; index++) {
-            if (accepted >= GitHubConstants.maxAuthorPrefetchMessagesPerRefresh)
-                break;
-            let item = items[index];
-            if (!item || !item.threadId)
-                continue;
-            let needsSubjectWebUrl = requiresSubjectWebUrlResolution(item);
-            let needsSubjectReference = requiresSubjectReferenceResolution(item);
-            let needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item) && !hasFetchedAuthorDetailsForMessage(item);
-            let existingAuthors = (authorsByThreadRef || ({}))[item.threadId] || [];
-            let needsMissingAuthors = existingAuthors.length === 0;
-            if (!needsSubjectWebUrl && !needsSubjectReference && !needsAuthorDetails && !needsMissingAuthors && fetchedAtMatches(fetchedAtUpdatedAt[item.threadId], item.updatedAt))
-                continue;
-            let subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item);
-            if (!subjectApiUrl)
-                continue;
-            if (nextQueuedIds[item.threadId])
-                continue;
-            if (hasQueuedOrActiveThreadRequest(item.threadId))
-                continue;
-            nextQueuedIds[item.threadId] = true;
-            nextQueue.push({
-                threadId: item.threadId,
-                subjectApiUrl: subjectApiUrl,
-                subjectType: item.subjectType || "",
-                updatedAt: item.updatedAt || "",
-                subjectTitle: item.title || "",
-                includeDetails: shouldFetchAuthorDetailsForMessage(item),
-                force: needsSubjectWebUrl || needsSubjectReference,
-                fallbackAuthor: fallbackAuthorForMessage(item),
-                reason: item.reason || ""
-            });
-            accepted++;
-            enqueued++;
-        }
-
-        if (enqueued > 0) {
-            _prefetchQueue = nextQueue;
-            _prefetchQueuedThreadIds = nextQueuedIds;
-            _prefetchAcceptedCount = accepted;
-            if (!prefetchTimer.running)
-                prefetchTimer.restart();
-        }
-        _perfLog("prefetchForMessages --- enqueued=" + enqueued);
-        profileOperation("prefetchForMessages", profileStart, "items=" + (items ? items.length : 0) + " enqueued=" + enqueued);
+        authorPrefetch.prefetchForMessages(items);
     }
-    // Queue unresolved details after cache restoration without duplicating queued or active threads.
+    // Schedule missing details after cached author state is restored.
     function prefetchMissingForMessages(items, authorsByThread) {
-        let profileStart = Date.now();
-        _perfLog("prefetchMissingForMessages --- items=" + (items ? items.length : 0));
-        if (!GitHubConstants.automaticAuthorPrefetchEnabled)
-            return;
-        if (!loadAuthorInfo || !token || !items || items.length === 0)
-            return;
-        let knownAuthors = authorsByThread || ({});
-        let nextQueue = _prefetchQueue.slice(0);
-        let nextQueuedIds = _prefetchQueuedThreadIds;
-        let enqueued = 0;
-
-        for (let index = 0; index < items.length; index++) {
-            let item = items[index];
-            if (!item || !item.threadId)
-                continue;
-            let needsSubjectWebUrl = requiresSubjectWebUrlResolution(item);
-            let needsSubjectReference = requiresSubjectReferenceResolution(item);
-            let needsAuthorDetails = shouldFetchAuthorDetailsForMessage(item) && !hasFetchedAuthorDetailsForMessage(item);
-            let existingAuthors = knownAuthors[item.threadId] || [];
-            let needsMissingAuthors = existingAuthors.length === 0;
-            if (!needsSubjectWebUrl && !needsSubjectReference && !needsAuthorDetails && !needsMissingAuthors && fetchedAtMatches(fetchedAtUpdatedAt[item.threadId], item.updatedAt))
-                continue;
-            if (!needsSubjectWebUrl && !needsSubjectReference && !needsAuthorDetails && existingAuthors.length > 0 && fetchedAtMatches(fetchedAtUpdatedAt[item.threadId], item.updatedAt))
-                continue;
-            let subjectApiUrl = AuthorUtils.resolveSubjectApiUrlForAuthors(item);
-            if (!subjectApiUrl)
-                continue;
-            if (nextQueuedIds[item.threadId])
-                continue;
-            if (hasQueuedOrActiveThreadRequest(item.threadId))
-                continue;
-            nextQueuedIds[item.threadId] = true;
-            nextQueue.push({
-                threadId: item.threadId,
-                subjectApiUrl: subjectApiUrl,
-                subjectType: item.subjectType || "",
-                updatedAt: item.updatedAt || "",
-                subjectTitle: item.title || "",
-                includeDetails: shouldFetchAuthorDetailsForMessage(item),
-                force: needsSubjectWebUrl || needsSubjectReference,
-                fallbackAuthor: fallbackAuthorForMessage(item),
-                reason: item.reason || ""
-            });
-            enqueued++;
-        }
-
-        if (enqueued > 0) {
-            _prefetchQueue = nextQueue;
-            _prefetchQueuedThreadIds = nextQueuedIds;
-            if (!prefetchTimer.running)
-                prefetchTimer.restart();
-        }
-        _perfLog("prefetchMissingForMessages --- enqueued=" + enqueued);
-        profileOperation("prefetchMissingForMessages", profileStart, "items=" + (items ? items.length : 0) + " enqueued=" + enqueued);
+        authorPrefetch.prefetchMissingForMessages(items, authorsByThread);
     }
-
     // =========================================================================
     //  INTERNAL
     // =========================================================================
@@ -674,22 +443,10 @@ Item {
             markThreadUrlsActive(request.threadId, urls);
             requestsInFlight++;
             startedRequests++;
-            let command = request.automaticPrefetch ? buildAutomaticAuthorExtractCommand(urls) : buildRawAuthorFetchCommand(urls);
-
-            authorFetchComponentDef.createObject(authorFetcher, {
-                generation: requestGeneration,
-                requestToken: token,
-                threadId: request.threadId,
-                requestedUrls: urls,
-                updatedAt: request.updatedAt || "",
-                automaticPrefetch: !!request.automaticPrefetch,
-                fallbackAuthor: request.fallbackAuthor || null,
-                subjectTitle: request.subjectTitle || "",
-                subjectType: request.subjectType || "",
-                reason: request.reason || "",
-                command: command,
-                running: true
+            let fetchRequest = Object.assign({}, request, {
+                urls: urls
             });
+            authorRequests.startRequest(fetchRequest, requestGeneration, token);
 
             ApiCallStats.recordCalls(urls.length);
         }
@@ -753,18 +510,12 @@ Item {
     // Invalidate in-flight results and clear pending requests, prefetch batches and unpublished merges.
     function resetState() {
         requestGeneration = requestGeneration + 1;
-        prefetchTimer.stop();
-        mergeFlushTimer.stop();
+        authorPrefetch.reset();
+        authorMerges.reset();
         requestQueue = [];
         requestsInFlight = 0;
         activeUrlsByThread = ({});
         prefetchPending = false;
-        _pendingMerges = ({});
-        _mergeFlushQueued = false;
-        _pendingAvatarPreloadAuthors = [];
-        _prefetchQueue = [];
-        _prefetchQueuedThreadIds = ({});
-        _prefetchAcceptedCount = 0;
     }
     // Expand comment or detail responses that may refer back to a parent issue or pull request.
     function shouldExpandFromRequestedUrls(urls) {
@@ -795,114 +546,28 @@ Item {
 
     visible: false
 
-    Timer {
-        id: prefetchTimer
+    AuthorPrefetchService {
+        id: authorPrefetch
 
-        interval: GitHubConstants.authorPrefetchBatchIntervalMs
-        repeat: true
+        authorWorker: authorFetcher
+        loadAuthorInfo: authorFetcher.loadAuthorInfo
+        token: authorFetcher.token
 
-        onTriggered: authorFetcher._processPrefetchBatch()
+        onPrefetchMaybeComplete: authorFetcher.prefetchMaybeComplete()
     }
-    Timer {
-        id: mergeFlushTimer
+    AuthorMergeService {
+        id: authorMerges
 
-        interval: GitHubConstants.authorMergeFlushIntervalMs
-        repeat: false
+        authorsByThread: authorFetcher.authorsByThreadRef
 
-        onTriggered: authorFetcher._flushMerges()
+        onMerged: (authorsByThread, preloadAuthors, changedThreadIds) => authorFetcher.authorsMerged(authorsByThread, preloadAuthors, changedThreadIds)
     }
+    AuthorRequestService {
+        id: authorRequests
 
-    // =========================================================================
-    //  PROCESS COMPONENT
-    // =========================================================================
+        authorSplitToken: authorFetcher.authorSplitToken
+        providerApi: authorFetcher.providerApi
 
-    Component {
-        id: authorFetchComponentDef
-
-        Process {
-            id: authorFetchProcess
-
-            property string _buffer: ""
-            property int _bufferBytes: 0
-            property real _startedAt: Date.now()
-            property bool automaticPrefetch: false
-            property var fallbackAuthor: null
-            property int generation: 0
-            property string reason: ""
-            property string requestToken: ""
-            property var requestedUrls: []
-            property string subjectTitle: ""
-            property string subjectType: ""
-            property string threadId: ""
-            property string updatedAt: ""
-
-            stdinEnabled: true
-
-            stdout: SplitParser {
-                onRead: line => {
-                    authorFetchProcess._buffer += line + "\n";
-                    authorFetchProcess._bufferBytes += line.length + 1;
-                }
-            }
-
-            onExited: exitCode => {
-                if (generation !== authorFetcher.requestGeneration) {
-                    destroy();
-                    return;
-                }
-
-                authorFetcher.markThreadUrlsInactive(threadId, requestedUrls || []);
-
-                if (!authorFetcher.loadAuthorInfo) {
-                    authorFetcher.requestsInFlight = Math.max(0, authorFetcher.requestsInFlight - 1);
-                    authorFetcher.prefetchMaybeComplete();
-                    Qt.callLater(authorFetcher.processQueue);
-                    destroy();
-                    return;
-                }
-
-                if (exitCode !== 0) {
-                    PluginLogger.error("author", "GitHub author request failed with exit code " + exitCode);
-                    authorFetcher.requestsInFlight = Math.max(0, authorFetcher.requestsInFlight - 1);
-                    authorFetcher.prefetchMaybeComplete();
-                    Qt.callLater(authorFetcher.processQueue);
-                    destroy();
-                    return;
-                }
-
-                if (!authorFetcher.workerSendMessage) {
-                    authorFetcher.requestsInFlight = Math.max(0, authorFetcher.requestsInFlight - 1);
-                    authorFetcher.prefetchMaybeComplete();
-                    Qt.callLater(authorFetcher.processQueue);
-                    destroy();
-                    return;
-                }
-
-                authorFetcher.markThreadUrlsFetched(threadId, requestedUrls || []);
-
-                authorFetcher.workerSendMessage({
-                    action: "parseAuthors",
-                    generation: generation,
-                    threadId: threadId,
-                    updatedAt: updatedAt || "",
-                    requestedUrls: requestedUrls || [],
-                    automaticPrefetch: automaticPrefetch,
-                    subjectType: subjectType || "",
-                    reason: reason || "",
-                    shouldExpand: !automaticPrefetch && authorFetcher.shouldExpandFromRequestedUrls(requestedUrls || []),
-                    fallbackAuthor: fallbackAuthor || null,
-                    subjectTitle: subjectTitle || "",
-                    buffer: _buffer,
-                    splitToken: authorFetcher.authorSplitToken
-                });
-                authorFetcher.profileOperation("authorFetchProcess", _startedAt, "thread=" + threadId + " bytes=" + _bufferBytes + " urls=" + (requestedUrls ? requestedUrls.length : 0) + " automatic=" + automaticPrefetch);
-                destroy();
-            }
-            onStarted: {
-                write(requestToken + "\n");
-                stdinEnabled = false;
-                requestToken = "";
-            }
-        }
+        onFinished: (request, generation, exitCode, buffer, bufferBytes, startedAt) => authorFetcher.handleRequestFinished(request, generation, exitCode, buffer, bufferBytes, startedAt)
     }
 }

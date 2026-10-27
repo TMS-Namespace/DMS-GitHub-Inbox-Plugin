@@ -19,6 +19,7 @@ const javascriptTests = [
     "tests/JS/Integrations/GitHub/GitHubHelpers.test.js",
     "tests/JS/Integrations/GitHub/AuthorTools.test.js",
     "tests/JS/Helpers/CacheCommands.test.js",
+    "tests/JS/Helpers/InboxOperationRules.test.js",
     "tests/JS/Helpers/CalendarTime.test.js",
     "tests/JS/Storage/CacheSerialization.test.js",
     "tests/JS/Integrations/GitHub/InboxParserBackgroundWorker.test.js",
@@ -112,12 +113,13 @@ try {
             cwd: repositoryRoot,
             env: {
                 ...testEnvironment.environment,
+                GITHUB_INBOX_TEST_MUTATIONS: "1",
                 WAYLAND_DISPLAY: undefined,
                 DISPLAY: undefined,
                 QML_IMPORT_PATH: path.join(testEnvironment.directory, "modules")
             },
             encoding: "utf8",
-            timeout: 15000,
+            timeout: 20000,
             maxBuffer: 16 * 1024 * 1024
         });
         duxControls = childProcess.spawnSync("qs", ["-p", testEnvironment.nativeDuxPath], {

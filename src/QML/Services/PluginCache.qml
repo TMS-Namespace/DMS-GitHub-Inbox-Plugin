@@ -9,8 +9,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell.Io
-import "../../JS/Helpers/CacheCommands.js" as CacheCommands
 import "../../JS/Storage/CacheSerialization.js" as CacheSerialization
 import ".."
 
@@ -39,7 +37,7 @@ Item {
     readonly property string cacheFilePath: cacheObjectsDir ? (cacheObjectsDir + "/" + GitHubConstants.cacheFileName) : ""
     readonly property string cacheObjectsDir: cacheDir ? (cacheDir + "/" + GitHubConstants.cacheObjectsSubdirectory) : ""
     property bool cacheWorkerEnabled: true
-    property var cacheWorkerObject: null
+    readonly property var cacheWorkerObject: cacheStorage.workerObject
     property var cachedAuthorFetchedAt: ({})
     property var cachedAuthorsByThread: ({})
     property var cachedDoneThreadState: ({})
@@ -113,12 +111,7 @@ Item {
     function _backupDamagedCache(message) {
         _preserveDamagedCache = true;
         let backupPath = cacheFilePath + ".damaged-" + Date.now();
-        damagedCacheBackupComponent.createObject(cache, {
-            failureMessage: message,
-            backupPath: backupPath,
-            command: ["cp", "-p", "--", cacheFilePath, backupPath],
-            running: true
-        });
+        cacheStorage.backupDamagedCache(message, backupPath);
     }
     // Replace map identity so QML bindings can observe an update.
     function _cloneMap(source) {
@@ -130,10 +123,7 @@ Item {
     // Create the cache's object and avatar directories before reading persisted state.
     function _createDirs() {
         _perfLog("_createDirs --- spawning mkdir -p");
-        initDirComponent.createObject(cache, {
-            command: ["mkdir", "-p", cacheObjectsDir, cacheAvatarsDir],
-            running: true
-        });
+        cacheStorage.createDirectories();
     }
     // Merge staged author records, fetch markers and avatar paths, optionally scheduling a save.
     function _flushPendingMetadata(queueSaveAfterFlush) {
@@ -337,12 +327,8 @@ Item {
         }
 
         // Read existing cache file via Process (FileView.reload is unreliable)
-        let cachePath = cacheFileView.path || cacheFilePath;
         _perfLog("_onDirReady --- reading cache via cat");
-        readCacheComponent.createObject(cache, {
-            command: ["env", "LC_ALL=C", "cat", cachePath],
-            running: true
-        });
+        cacheStorage.readCacheFile();
     }
 
     // =========================================================================
@@ -378,15 +364,6 @@ Item {
     function _queueSave() {
         saveDebounce.restart();
     }
-    // Remove a failed download only when its path lies under the avatar cache directory.
-    function _removeAvatarFile(localPath) {
-        if (!localPath || localPath.indexOf(cacheAvatarsDir + "/") !== 0)
-            return;
-        removeAvatarComponent.createObject(cache, {
-            command: ["rm", "-f", localPath],
-            running: true
-        });
-    }
     /// Check which cached avatar files exist and are actually images.
     /// Missing or invalid files are removed from avatarLocalPaths so they get
     /// re-downloaded instead of repeatedly forcing QML Image decode failures.
@@ -396,19 +373,7 @@ Item {
         if (logins.length === 0 || !cacheDir)
             return;
 
-        // Paths remain process arguments, not shell source. Invalid downloads
-        // are usually GitHub HTML/JSON error pages saved under a .png name.
-        let avatarDir = cacheAvatarsDir;
-        let avatarPaths = [];
-        for (let i = 0; i < logins.length; i++) {
-            let login = logins[i];
-            avatarPaths.push(avatarDir + "/" + login + ".png");
-        }
-
-        avatarValidateComponent.createObject(cache, {
-            command: CacheCommands.buildAvatarValidationCommand(avatarPaths),
-            running: true
-        });
+        cacheStorage.validateAvatarFiles(logins);
     }
     // Flush staged metadata and send a current-format snapshot to the serialization worker.
     function _writeToDisk() {
@@ -475,11 +440,7 @@ Item {
         _clearCachePending = false;
         _clearCacheDuringInitialize = _initializing && !initialized;
 
-        clearCacheComponent.createObject(cache, {
-            duringInitialize: _clearCacheDuringInitialize,
-            command: CacheCommands.buildCacheResetCommand(cacheDir, cacheObjectsDir, cacheAvatarsDir),
-            running: true
-        });
+        cacheStorage.clearCache(_clearCacheDuringInitialize);
     }
     // Validate an avatar destination and start its bounded Dux download with the caller's generation.
     function downloadAvatar(login, remoteUrl, generation) {
@@ -490,18 +451,7 @@ Item {
             return;
         }
 
-        let localPath = cacheAvatarsDir + "/" + normalizedLogin + ".png";
-        let retryPolicy = providerApi.getRetryPolicy();
-        // Unlike authenticated API calls, public avatars need no token or secret headers, so dms dl is safe here.
-        avatarDownloadComponent.createObject(cache, {
-            login: normalizedLogin,
-            localPath: localPath,
-            generation: generation,
-            downloadCommand: ["dms", "dl", "--connect-timeout", GitHubConstants.avatarDownloadConnectTimeoutSeconds, "--timeout", GitHubConstants.avatarDownloadMaxTimeSeconds, "-o", localPath, "--", normalizedUrl],
-            maximumRetries: retryPolicy.retryCount,
-            retryWindowMs: retryPolicy.maximumRetryTimeSeconds * 1000,
-            retryDelayMs: GitHubConstants.avatarDownloadRetryDelayMs
-        });
+        cacheStorage.downloadAvatar(normalizedLogin, normalizedUrl, generation, providerApi.getRetryPolicy());
     }
     // Prefer a staged author-fetch marker over the persisted marker for this thread.
     function getAuthorFetchedAt(threadId) {
@@ -537,10 +487,7 @@ Item {
             return;
         }
         // Determine default cache dir from environment
-        resolveDirComponent.createObject(cache, {
-            command: CacheCommands.buildCacheRootResolveCommand(GitHubConstants.cacheRootDirectoryName),
-            running: true
-        });
+        cacheStorage.resolveDirectory();
     }
     // Expose whether cache metadata exists; scheduling validates its timestamp separately.
     function isFresh() {
@@ -648,31 +595,6 @@ Item {
 
     visible: false
 
-    // -- FileView for the JSON cache file -------------------------------------
-    FileView {
-        id: cacheFileView
-
-        atomicWrites: true
-        blockLoading: false
-        path: cache.cacheFilePath
-        preload: false
-    }
-    Connections {
-        // Log FileView load failures if the file is reloaded outside the initial process-based read.
-        function onLoadFailed(error) {
-            // Only used if FileView is ever reloaded elsewhere
-            PluginLogger.error("cache", "Cache file could not be loaded");
-        }
-        // Surface write failures instead of treating a queued save as successful persistence.
-        function onSaveFailed(error) {
-            PluginLogger.error("cache", "Cache file could not be saved");
-            cache.cacheFailure("The inbox cache could not be saved. Check available disk space and file permissions.");
-        }
-
-        target: cacheFileView
-    }
-
-    // -- Save debounce timer --------------------------------------------------
     Timer {
         id: saveDebounce
 
@@ -691,213 +613,51 @@ Item {
 
         onTriggered: cache._flushPendingMetadata(true)
     }
-    Component {
-        id: initDirComponent
+    CacheStorageService {
+        id: cacheStorage
 
-        Process {
-            property bool _done: false
+        avatarsDirectory: cache.cacheAvatarsDir
+        cacheDirectory: cache.cacheDir
+        cacheFilePath: cache.cacheFilePath
+        objectsDirectory: cache.cacheObjectsDir
+        workerEnabled: cache.cacheWorkerEnabled
 
-            stderr: SplitParser {
-                onRead: function (line) {}
-            }
-            stdout: SplitParser {
-                onRead: function (line) {}
-            }
-
-            onExited: function (exitCode) {
-                if (!_done) {
-                    _done = true;
-                    cache._onDirReady(exitCode === 0);
+        onAvatarDownloadFinished: (login, localUrl, generation, success) => cache.avatarDownloadFinished(login, localUrl, generation, success)
+        onAvatarValidationFinished: output => cache._onAvatarValidationDone(output)
+        onBackupFinished: (exitCode, message, backupPath) => cache._onDamagedCacheBackupDone(exitCode, message, backupPath)
+        onCacheFileMissing: cache._onCacheFileReadFailed()
+        onCacheFileRead: text => cache._onCacheFileRead(text)
+        onCacheFileReadFailed: details => cache._backupDamagedCache("The saved cache could not be read: " + details)
+        onClearFinished: (exitCode, duringInitialize) => cache._onClearCacheDone(exitCode, duringInitialize)
+        onDirectoryReady: success => cache._onDirReady(success)
+        onDirectoryResolved: path => cache._onDirResolved(path)
+        onSaveFailed: cache.cacheFailure("The inbox cache could not be saved. Check available disk space and file permissions.")
+        onWorkerMessage: message => {
+            if (message.action === "cacheError") {
+                if (message.failure)
+                    PluginLogger.error("cache worker", message.failure.details);
+                if (message.operation === "parseCache" && message.seq === cache._cacheParseSeq) {
+                    cache._preserveDamagedCache = true;
+                    cache._backupDamagedCache(message.error);
+                } else if (message.operation === "stringifyCache" && message.seq === cache._cacheWriteSeq) {
+                    PluginLogger.error("cache", message.error);
+                    cache.cacheFailure(message.error);
                 }
-                destroy();
+                return;
             }
-        }
-    }
-    Component {
-        id: avatarDownloadComponent
-
-        AvatarDownloadWorker {
-            property int generation: 0
-            property string localPath: ""
-            property string login: ""
-
-            onFinished: function (success) {
-                if (!success)
-                    cache._removeAvatarFile(localPath);
-                cache.avatarDownloadFinished(login, success ? ("file://" + localPath) : "", generation, success);
-                destroy();
-            }
-        }
-    }
-    Component {
-        id: removeAvatarComponent
-
-        Process {
-            stderr: SplitParser {
-                onRead: function (line) {}
-            }
-            stdout: SplitParser {
-                onRead: function (line) {}
-            }
-
-            onExited: function (exitCode) {
-                destroy();
-            }
-        }
-    }
-    Component {
-        id: readCacheComponent
-
-        Process {
-            id: readCacheProcess
-
-            property var _errorLines: []
-            property var _lines: []
-
-            stderr: SplitParser {
-                onRead: function (line) {
-                    readCacheProcess._errorLines.push(line);
+            if (message.action === "cacheParsed") {
+                if (message.seq !== cache._cacheParseSeq)
+                    return;
+                if (!message.data || message.data.version !== GitHubConstants.cacheFormatVersion) {
+                    cache._preserveDamagedCache = true;
+                    cache._backupDamagedCache("The saved cache uses an unsupported format.");
+                    return;
                 }
+                cache._applyParsedCache(message.data);
+                return;
             }
-            stdout: SplitParser {
-                onRead: function (line) {
-                    readCacheProcess._lines.push(line);
-                }
-            }
-
-            onExited: function (exitCode) {
-                if (exitCode === 0)
-                    cache._onCacheFileRead(readCacheProcess._lines.join("\n"));
-                else if (readCacheProcess._errorLines.join("\n").toLowerCase().indexOf("no such file or directory") >= 0)
-                    cache._onCacheFileReadFailed();
-                else
-                    cache._backupDamagedCache("The saved cache could not be read: " + readCacheProcess._errorLines.join(" "));
-                destroy();
-            }
-        }
-    }
-    Component {
-        id: resolveDirComponent
-
-        Process {
-            id: resolveDirProcess
-
-            property string _captured: ""
-
-            stderr: SplitParser {
-                onRead: function (line) {}
-            }
-            stdout: SplitParser {
-                onRead: function (line) {
-                    resolveDirProcess._captured = line.trim();
-                }
-            }
-
-            onExited: function (exitCode) {
-                cache._onDirResolved(exitCode === 0 ? resolveDirProcess._captured : "");
-                destroy();
-            }
-        }
-    }
-    Component {
-        id: clearCacheComponent
-
-        Process {
-            property bool duringInitialize: false
-
-            stderr: SplitParser {
-                onRead: function (line) {}
-            }
-            stdout: SplitParser {
-                onRead: function (line) {}
-            }
-
-            onExited: function (exitCode) {
-                cache._onClearCacheDone(exitCode, duringInitialize);
-                destroy();
-            }
-        }
-    }
-    Component {
-        id: avatarValidateComponent
-
-        Process {
-            id: avatarValidationProcess
-
-            property string _output: ""
-
-            stderr: SplitParser {
-                onRead: function (line) {}
-            }
-            stdout: SplitParser {
-                onRead: function (line) {
-                    avatarValidationProcess._output = (avatarValidationProcess._output ? avatarValidationProcess._output + "\n" : "") + line;
-                }
-            }
-
-            onExited: function (exitCode) {
-                cache._onAvatarValidationDone(avatarValidationProcess._output);
-                destroy();
-            }
-        }
-    }
-    Loader {
-        id: cacheWorkerLoader
-
-        active: cache.cacheWorkerEnabled
-
-        sourceComponent: Component {
-            WorkerScript {
-                source: Qt.resolvedUrl("../../JS/BackgroundWorkers/CacheBackgroundWorker.js")
-
-                onMessage: function (message) {
-                    if (message.action === "cacheError") {
-                        if (message.failure)
-                            PluginLogger.error("cache worker", message.failure.details);
-                        if (message.operation === "parseCache" && message.seq === cache._cacheParseSeq) {
-                            cache._preserveDamagedCache = true;
-                            cache._backupDamagedCache(message.error);
-                        } else if (message.operation === "stringifyCache" && message.seq === cache._cacheWriteSeq) {
-                            PluginLogger.error("cache", message.error);
-                            cache.cacheFailure(message.error);
-                        }
-                        return;
-                    }
-
-                    if (message.action === "cacheParsed") {
-                        if (message.seq !== cache._cacheParseSeq)
-                            return;
-                        if (!message.data || message.data.version !== GitHubConstants.cacheFormatVersion) {
-                            cache._preserveDamagedCache = true;
-                            cache._backupDamagedCache("The saved cache uses an unsupported format.");
-                            return;
-                        }
-                        cache._applyParsedCache(message.data);
-                        return;
-                    }
-
-                    if (message.action === "cacheStringified") {
-                        if (message.seq !== cache._cacheWriteSeq)
-                            return;
-                        cacheFileView.setText(message.text || "{}");
-                    }
-                }
-            }
-        }
-
-        onItemChanged: cache.cacheWorkerObject = item
-    }
-    Component {
-        id: damagedCacheBackupComponent
-
-        Process {
-            property string backupPath: ""
-            property string failureMessage: ""
-
-            onExited: function (exitCode) {
-                cache._onDamagedCacheBackupDone(exitCode, failureMessage, backupPath);
-                destroy();
-            }
+            if (message.action === "cacheStringified" && message.seq === cache._cacheWriteSeq)
+                cacheStorage.writeCacheText(message.text || "{}");
         }
     }
 }
