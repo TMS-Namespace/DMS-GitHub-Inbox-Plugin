@@ -52,11 +52,11 @@ Item {
     function _remoteAvatarUrl(login) {
         return providerApi ? providerApi.buildAvatarUrl(login) : "";
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Persist a replacement author map through the disk-cache owner.
     function bulkUpdateAuthors(authorsMap) {
         diskCache.bulkUpdateAuthors(authorsMap);
     }
-    // Read the owner's current data without initiating unrelated background work.
+    // Return a cached local avatar URL without scheduling a download.
     function cachedLocalAvatarUrl(login) {
         let normalizedLogin = String(login || "").trim();
         if (!diskCache.initialized || !normalizedLogin)
@@ -65,7 +65,7 @@ Item {
         let resolved = diskCache.resolveAvatarUrl(_remoteAvatarUrl(normalizedLogin), normalizedLogin);
         return _isLocalUrl(resolved) ? resolved : "";
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Cancel avatar downloads before clearing memory and disk cache state.
     function clearCache() {
         avatarWorker.reset();
         diskCache.clearCache();
@@ -73,7 +73,7 @@ Item {
 
     // -- Settings clear-cache flag handling -----------------------------------
 
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Consume the persisted clear-cache request and clear its flag after dispatch.
     function handleClearCacheRequest(pluginData, pluginService) {
         let flag = (pluginData.clearCacheRequested || "").trim().toLowerCase();
         if (flag === "true" || flag === "1") {
@@ -94,7 +94,7 @@ Item {
 
     // -- Load cached data into runtime structures -----------------------------
 
-    /// Returns { messages, authorsByThread, authorFetchedAt, timestamp }
+    /// Restore message, author, Done-state and refresh-scheduling fields from the disk cache.
     function loadCachedState() {
         let profileStart = Date.now();
         _perfLog("loadCachedState");
@@ -109,16 +109,16 @@ Item {
         _profile("loadCachedState", profileStart, "messages=" + result.messages.length);
         return result;
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Ask the disk cache to retain author metadata only for these thread IDs.
     function pruneToThreads(keepIds) {
         diskCache.pruneToThreads(keepIds);
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Cancel queued downloads and restore the downloader's known local paths.
     function resetAvatarDownloads() {
         avatarWorker.reset();
         avatarWorker.setAvatarLocalPaths(diskCache.avatarLocalPaths);
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Replace author avatar URLs with cached files and enqueue missing downloads.
     function resolveAuthorAvatars(authors) {
         let profileStart = Date.now();
         _perfLog("resolveAuthorAvatars --- count=" + (authors ? authors.length : 0));
@@ -159,7 +159,7 @@ Item {
 
     // -- Avatar resolution ----------------------------------------------------
 
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Replace repository-owner avatar URLs with cached files and enqueue missing downloads.
     function resolveMessageAvatars(items) {
         let profileStart = Date.now();
         _perfLog("resolveMessageAvatars --- count=" + (items ? items.length : 0));
@@ -197,7 +197,7 @@ Item {
             coordinator.avatarCachedLocally(resolvedLogin, resolvedLocalAvatars[resolvedLogin]);
         _profile("resolveMessageAvatars", profileStart, "items=" + (items ? items.length : 0) + " downloads=" + downloads.length);
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Stage a thread's author-fetch marker through the disk-cache owner.
     function updateAuthorFetchedAt(threadId, updatedAt) {
         diskCache.updateAuthorFetchedAt(threadId, updatedAt);
     }
@@ -205,11 +205,11 @@ Item {
     function updateAuthors(threadId, authors) {
         diskCache.updateAuthors(threadId, authors);
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Stage only changed thread author lists through the disk-cache owner.
     function updateChangedAuthors(changedAuthorsByThread) {
         diskCache.updateChangedAuthors(changedAuthorsByThread);
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Persist the normalized Done-state map through the disk-cache owner.
     function updateDoneThreadState(state) {
         diskCache.updateDoneThreadState(state);
     }
@@ -257,7 +257,7 @@ Item {
         }
     }
     Connections {
-        // Handle this workflow result at the ownership boundary and preserve failure visibility.
+        // Refresh the downloader's known local paths when the disk cache publishes a new map.
         function onAvatarLocalPathsChanged() {
             avatarWorker.setAvatarLocalPaths(diskCache.avatarLocalPaths);
         }

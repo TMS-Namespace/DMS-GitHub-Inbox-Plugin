@@ -4,7 +4,7 @@
 
 .import "AuthorTools.js" as AuthorTools
 
-// Construct an independent value implementing this module's public contract.
+// Implement the provider API contract using the supplied GitHub declarations and helpers.
 function create(providerApi, properties, helpers) {
     var api = providerApi.create();
     api.providerId = properties.providerId;

@@ -15,6 +15,9 @@ failed, not what any one plugin does.
 - Do not shadow or reuse a name for a different meaning in the same scope.
 - Every file starts with a short header stating its role and its rules.
 - Match the surrounding code: comment density, naming, idiom.
+- Comments must describe the actual function or constraint. Do not paste generic contract text onto
+  unrelated functions or claim validation, bounds, retries or state changes the implementation does not perform.
+  Review generated code and comments before submission; the disclosure does not replace that review.
 - Keep each JavaScript module line count small; split it by responsibility before it grows further.
 - One concept, one place: no duplicated approaches (for example, one clamp function, not two variants).
 

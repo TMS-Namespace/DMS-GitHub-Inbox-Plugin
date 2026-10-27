@@ -27,12 +27,12 @@ Item {
     property bool startupAuthorPrefetchQueued: false
     property bool tokenAvailable: false
 
-    // Check the relevant invariants before dependent work can proceed.
+    // Stop the delayed enrichment pass and discard its pending messages.
     function cancelBackgroundEnrichment() {
         backgroundEnrichmentTimer.stop();
         pendingEnrichmentMessages = [];
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Stop startup scans and clear their pending messages and avatar lists.
     function cancelPendingScans() {
         startupMissingInfoTimer.stop();
         pendingStartupAuthorMessages = [];
@@ -194,7 +194,7 @@ Item {
         }
         authorWorker.enqueueAuthorFetch(threadId, resolvedUrl, resolvedType, updatedAt, false, null, title);
     }
-    // Restore idle state and invalidate work belonging to an obsolete generation.
+    // Discard staged cache restoration, stop enrichment scans and clear runtime authors.
     function reset() {
         pendingCacheState = null;
         cancelBackgroundEnrichment();
@@ -251,14 +251,14 @@ Item {
         if (Object.keys(changedAuthors).length > 0)
             cacheCoordinator.updateChangedAuthors(changedAuthors);
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Select unresolved messages and delay their enrichment until authentication is available.
     function scheduleBackgroundEnrichment(items) {
         pendingEnrichmentMessages = filterMessagesNeedingEnrichment(items || []);
         if (!tokenAvailable || pendingEnrichmentMessages.length === 0)
             return;
         backgroundEnrichmentTimer.restart();
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Stage restored messages and author avatars for an authenticated startup scan.
     function scheduleStartupScan(messages, resolvedAuthors) {
         if (!tokenAvailable)
             return;

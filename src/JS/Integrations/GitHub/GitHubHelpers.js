@@ -10,7 +10,7 @@
 
 var _notifications = Notifications.createParser(PluginError);
 
-// Provider values are passed by QML so this pure module has no duplicate limits.
+// Display and token-syntax bounds; request limits come from the provider declarations.
 var _UNREAD_COUNT_DISPLAY_MAX = 999;
 var _CLASSIC_TOKEN_MIN_LENGTH = 40;
 var _TOKEN_MAX_LENGTH = 255;
@@ -34,7 +34,7 @@ function validateTokenFormat(value) {
     return "";
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Allow account names and the optional [bot] suffix before constructing account URLs.
 function isSafeGitHubLogin(value) {
     var login = String(value || "").trim();
     if (!login) return false;
@@ -43,7 +43,7 @@ function isSafeGitHubLogin(value) {
     return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,78}[A-Za-z0-9])?$/.test(baseLogin);
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Accept repository API URLs with safe path segments and simple query parameters.
 function isSafeGitHubApiUrl(value) {
     var url = String(value || "").trim();
     var prefix = "https://api.github.com/repos/";
@@ -64,7 +64,7 @@ function isSafeGitHubApiUrl(value) {
     return true;
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Allow GitHub app icons and avatar-host URLs, rejecting unsafe paths and encoded characters.
 function isAllowedAvatarUrl(value) {
     var url = String(value || "").trim();
     if (/^https:\/\/github\.com\/apps\/[A-Za-z0-9][A-Za-z0-9._-]*\.png(?:\?size=[0-9]{1,4})?$/.test(url)) return true;
@@ -90,7 +90,7 @@ function isAllowedAvatarUrl(value) {
     return true;
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Restrict browser links to github.com paths and queries without unsafe URL characters.
 function isSafeGitHubWebUrl(value) {
     var url = String(value || "").trim();
     var prefix = "https://github.com/";
@@ -167,27 +167,27 @@ function pollIntervalMs(value, defaultIntervalSeconds, minimumIntervalSeconds) {
     return seconds * 1000;
 }
 
-// Delegate to the same pure parser used by WorkerScript.
+// Decode one notification list using the shared inbox parser.
 function parseMessagesPayload(payloadText) {
     return _notifications.parseMessagesPayload(payloadText);
 }
 
-// Delegate to the same pure parser used by WorkerScript.
+// Decode a paired inbox/participation payload using the shared inbox parser.
 function parseMessagesWithParticipation(payloadText, separator) {
     return _notifications.parseMessagesWithParticipation(payloadText, separator);
 }
 
-// Delegate to the same pure parser used by WorkerScript.
+// Merge paginated inbox and participation lists using the supplied inbox page count.
 function parseMessagesWithParticipationSegments(payloadText, separator, allSegmentCount) {
     return _notifications.parseMessagesWithParticipationSegments(payloadText, separator, allSegmentCount);
 }
 
-// Delegate to the same pure parser used by WorkerScript.
+// Resolve a notification's browser destination through the shared inbox parser.
 function resolveWebUrl(notification) {
     return _notifications.resolveWebUrl(notification);
 }
 
-// Delegate to the same pure parser used by WorkerScript.
+// Translate a subject API endpoint into a browser link using its type and title.
 function apiToWebUrl(apiUrl, subjectType, subjectTitle) {
     return _notifications.apiToWebUrl(apiUrl, subjectType, subjectTitle);
 }

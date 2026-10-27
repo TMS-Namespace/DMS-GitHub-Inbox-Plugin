@@ -104,12 +104,12 @@ Item {
         });
         return true;
     }
-    // Coalesce pending work before its owning timer or bounded processor runs.
+    // Keep the latest nonempty message batch pending until notification delivery.
     function queue(messages) {
         if (messages && messages.length > 0)
             pendingMessages = messages;
     }
-    // Restore idle state and invalidate work belonging to an obsolete generation.
+    // Clear the activity baseline, error-notification cooldown and pending notification batch.
     function reset() {
         baselineUpdatedAtMs = 0;
         errorNotificationAt = 0;

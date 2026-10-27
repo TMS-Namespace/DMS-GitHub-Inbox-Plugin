@@ -9,6 +9,7 @@ const { createTestEnvironment } = require("./TestEnvironment");
 
 const repositoryRoot = path.resolve(__dirname, "..");
 const javascriptTests = [
+    "tests/CommentAudit.test.js",
     "tests/HostContracts.test.js",
     "tests/SetupSymlink.test.js",
     "tests/TestEnvironment.test.js",

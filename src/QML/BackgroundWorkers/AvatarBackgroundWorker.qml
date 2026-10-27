@@ -113,7 +113,7 @@ Item {
         _profile("queueAvatarDownload", profileStart, "queue=" + _avatarQueue.length);
         _processAvatarQueue();
     }
-    // Restore idle state and invalidate work belonging to an obsolete generation.
+    // Invalidate active download results and clear queued, active, failed and local-avatar maps.
     function reset() {
         _generation = _generation + 1;
         _avatarQueue = [];

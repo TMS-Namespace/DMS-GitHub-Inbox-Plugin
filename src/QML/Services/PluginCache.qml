@@ -4,7 +4,7 @@
 // Default layout:
 //   ~/.cache/dms-github-inbox-plugin/objects/cache.json
 //   ~/.cache/dms-github-inbox-plugin/avatars/<login>.png
-// All writes are debounced so rapid updates are batched into one disk flush.
+// Metadata saves are debounced; avatar downloads write their own files.
 
 pragma ComponentBehavior: Bound
 
@@ -57,7 +57,7 @@ Item {
     signal cacheFailure(string message)
     signal cacheReady
 
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Decode restored cache fields and validate avatar files before publishing cache readiness.
     function _applyParsedCache(data) {
         let profileStart = Date.now();
         _perfLog("_applyParsedCache --- start");
@@ -127,7 +127,7 @@ Item {
             copy[key] = source[key];
         return copy;
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Create the cache's object and avatar directories before reading persisted state.
     function _createDirs() {
         _perfLog("_createDirs --- spawning mkdir -p");
         initDirComponent.createObject(cache, {
@@ -135,7 +135,7 @@ Item {
             running: true
         });
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Merge staged author records, fetch markers and avatar paths, optionally scheduling a save.
     function _flushPendingMetadata(queueSaveAfterFlush) {
         let profileStart = Date.now();
         let pendingAuthors = _pendingChangedAuthors || ({});
@@ -182,7 +182,7 @@ Item {
         _profile("_flushPendingMetadata", profileStart, "authors=" + Object.keys(pendingAuthors).length + " fetchedAt=" + Object.keys(pendingFetchedAt).length + " avatars=" + Object.keys(pendingAvatars).length);
         return true;
     }
-    // Apply the owning module's rules before exposing data to dependent components.
+    // Replace restored remote avatar URLs with validated local paths matched by login.
     function _normalizeCachedResourceUrls(localPaths) {
         let paths = localPaths || ({});
         let changed = false;
@@ -216,7 +216,7 @@ Item {
 
         return changed;
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Drop invalid avatar paths, request replacements and finish initialization after validation.
     function _onAvatarValidationDone(output) {
         let lines = output ? output.split("\n") : [];
         let initializing = _avatarValidationDuringInit;
@@ -269,7 +269,7 @@ Item {
             cacheReady();
         }
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Send cache text to the parser worker with a sequence number to reject stale results.
     function _onCacheFileRead(text) {
         _perfLog("_onCacheFileRead --- dispatching JSON parse to worker, len=" + text.length);
         _cacheParseSeq = _cacheParseSeq + 1;
@@ -284,13 +284,13 @@ Item {
             expectedVersion: GitHubConstants.cacheFormatVersion
         });
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Finish first-run initialization when there is no cache file to restore.
     function _onCacheFileReadFailed() {
         _perfLog("_onCacheFileReadFailed --- file does not exist or is empty (first run)");
         initialized = true;
         cacheReady();
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Report cache-reset failures and disable writes when the reset command did not succeed.
     function _onClearCacheDone(exitCode, duringInitialize) {
         _perfLog("_onClearCacheDone --- exitCode=" + exitCode + " duringInitialize=" + duringInitialize);
         _clearCacheDuringInitialize = false;
@@ -308,7 +308,7 @@ Item {
             cacheReady();
         }
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Report the damaged-cache backup result and allow recovery writes only if it succeeded.
     function _onDamagedCacheBackupDone(exitCode, message, backupPath) {
         let backupSucceeded = exitCode === 0;
         _preserveDamagedCache = !backupSucceeded;
@@ -321,7 +321,7 @@ Item {
         initialized = true;
         cacheReady();
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Read or clear the cache after directory creation, reporting initialization failures.
     function _onDirReady(success) {
         _perfLog("_onDirReady --- success=" + success);
         if (!success) {
@@ -349,7 +349,7 @@ Item {
     //  INTERNAL
     // =========================================================================
 
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Accept the resolved cache root, or use the fallback path, then create its directories.
     function _onDirResolved(resolvedPath) {
         _perfLog("_onDirResolved --- cache path resolved=" + Boolean(resolvedPath));
         if (!resolvedPath) {
@@ -374,11 +374,11 @@ Item {
         let duration = Date.now() - startMs;
         PluginLogger.profile("PluginCache", label, duration, details);
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Restart the save debounce so rapid metadata changes share one disk write.
     function _queueSave() {
         saveDebounce.restart();
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Remove a failed download only when its path lies under the avatar cache directory.
     function _removeAvatarFile(localPath) {
         if (!localPath || localPath.indexOf(cacheAvatarsDir + "/") !== 0)
             return;
@@ -410,7 +410,7 @@ Item {
             running: true
         });
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Flush staged metadata and send a current-format snapshot to the serialization worker.
     function _writeToDisk() {
         let profileStart = Date.now();
         if (!cacheDir || !initialized || _preserveDamagedCache)
@@ -445,7 +445,7 @@ Item {
         });
         _profile("_writeToDisk.preparePayload", profileStart, "msgs=" + cachedMessages.length + " authors=" + Object.keys(cachedAuthorsByThread).length + " avatars=" + Object.keys(avatarMap).length + " done=" + Object.keys(cachedDoneThreadState).length);
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Replace the full cached author map and schedule persistence.
     function bulkUpdateAuthors(authorsMap) {
         cachedAuthorsByThread = authorsMap || ({});
         _queueSave();
@@ -453,7 +453,7 @@ Item {
 
     // -- Clear ----------------------------------------------------------------
 
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Clear in-memory cache state and run the disk reset once the cache root is available.
     function clearCache() {
         metadataFlushTimer.stop();
         saveDebounce.stop();
@@ -481,7 +481,7 @@ Item {
             running: true
         });
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Validate an avatar destination and start its bounded Dux download with the caller's generation.
     function downloadAvatar(login, remoteUrl, generation) {
         let normalizedLogin = String(login || "");
         let normalizedUrl = String(remoteUrl || "");
@@ -503,17 +503,17 @@ Item {
             retryDelayMs: GitHubConstants.avatarDownloadRetryDelayMs
         });
     }
-    // Read the owner's current data without initiating unrelated background work.
+    // Prefer a staged author-fetch marker over the persisted marker for this thread.
     function getAuthorFetchedAt(threadId) {
         if (_pendingAuthorFetchedAt.hasOwnProperty(threadId))
             return _pendingAuthorFetchedAt[threadId] || "";
         return cachedAuthorFetchedAt[threadId] || "";
     }
-    // Read the owner's current data without initiating unrelated background work.
+    // Return cached authors for this thread, or an empty list when absent.
     function getCachedAuthors(threadId) {
         return cachedAuthorsByThread[threadId] || [];
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Report whether the thread has at least one cached author.
     function hasAuthors(threadId) {
         let entry = cachedAuthorsByThread[threadId];
         return entry && entry.length > 0;
@@ -521,7 +521,7 @@ Item {
 
     // -- Avatar resolution ----------------------------------------------------
 
-    // Check the relevant invariants before dependent work can proceed.
+    // Include newly staged avatar paths when checking local availability.
     function hasLocalAvatar(login) {
         return avatarLocalPaths.hasOwnProperty(login) || _pendingAvatarLocalPaths.hasOwnProperty(login);
     }
@@ -549,7 +549,7 @@ Item {
 
     // -- Pruning --------------------------------------------------------------
 
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Retain author records and fetch markers only for the supplied thread IDs; leave avatars intact.
     function pruneToThreads(keepIds) {
         let keep = {};
         for (let i = 0; i < keepIds.length; i++)
@@ -571,7 +571,7 @@ Item {
 
         _queueSave();
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Prefer a staged or saved local avatar path, otherwise keep the supplied remote URL.
     function resolveAvatarUrl(remoteUrl, login) {
         if (!login || !remoteUrl)
             return remoteUrl || "";
@@ -579,7 +579,7 @@ Item {
             return _pendingAvatarLocalPaths[login];
         return avatarLocalPaths[login] || remoteUrl;
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Stage the thread's author-fetch marker for the next metadata flush.
     function updateAuthorFetchedAt(threadId, updatedAt) {
         if (!threadId)
             return;
@@ -598,7 +598,7 @@ Item {
         cachedAuthorsByThread = next;
         _queueSave();
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Stage a changed local avatar path without requeuing identical values.
     function updateAvatarLocalPath(login, localUrl) {
         if (!login || !localUrl)
             return;
@@ -609,12 +609,12 @@ Item {
         _pendingAvatarLocalPaths = nextPending;
         metadataFlushTimer.restart();
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Replace the complete local avatar-path map and schedule persistence.
     function updateAvatarLocalPaths(paths) {
         avatarLocalPaths = paths || ({});
         _queueSave();
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Stage changed author lists by thread for a batched metadata flush.
     function updateChangedAuthors(changedAuthorsByThread) {
         if (!changedAuthorsByThread)
             return;
@@ -629,7 +629,7 @@ Item {
         _pendingChangedAuthors = nextPending;
         metadataFlushTimer.restart();
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Normalize the Done-state map before scheduling its persistence.
     function updateDoneThreadState(state) {
         cachedDoneThreadState = CacheSerialization.normalizeDoneThreadState(state);
         _queueSave();
@@ -658,12 +658,12 @@ Item {
         preload: false
     }
     Connections {
-        // Handle this workflow result at the ownership boundary and preserve failure visibility.
+        // Log FileView load failures if the file is reloaded outside the initial process-based read.
         function onLoadFailed(error) {
             // Only used if FileView is ever reloaded elsewhere
             PluginLogger.error("cache", "Cache file could not be loaded");
         }
-        // Handle this workflow result at the ownership boundary and preserve failure visibility.
+        // Surface write failures instead of treating a queued save as successful persistence.
         function onSaveFailed(error) {
             PluginLogger.error("cache", "Cache file could not be saved");
             cache.cacheFailure("The inbox cache could not be saved. Check available disk space and file permissions.");

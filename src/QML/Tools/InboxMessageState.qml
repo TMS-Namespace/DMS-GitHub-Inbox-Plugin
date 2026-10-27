@@ -102,7 +102,7 @@ Item {
         }
         return inferred;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Recognize check-suite, check-run and workflow-run subjects case-insensitively.
     function isCiSubjectType(subjectType) {
         let normalizedType = String(subjectType || "").toLowerCase();
         return normalizedType === "checksuite" || normalizedType === "checkrun" || normalizedType === "workflowrun";

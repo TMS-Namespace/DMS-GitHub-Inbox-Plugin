@@ -2,7 +2,7 @@
 
 .pragma library
 
-// Construct an independent value implementing this module's public contract.
+// Create an independent provider declaration with default endpoints, limits and retry settings.
 function create() {
     return {
         providerId: "",
@@ -27,7 +27,7 @@ function create() {
     };
 }
 
-// Return declaration errors before a provider is exposed to callers.
+// Reject missing or unknown declaration fields, invalid types and inconsistent request limits.
 function validate(properties) {
     var expected = create();
     if (!properties || typeof properties !== "object" || Array.isArray(properties))

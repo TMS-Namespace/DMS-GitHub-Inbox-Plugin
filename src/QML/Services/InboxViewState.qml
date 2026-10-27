@@ -42,7 +42,7 @@ Item {
             settled();
         }
     }
-    // Coalesce pending work before its owning timer or bounded processor runs.
+    // Replace the pending visible snapshot and start chunked rendering only while the popup is open.
     function queue(items) {
         if (!popoutVisible) {
             pendingMessages = [];
@@ -63,7 +63,7 @@ Item {
         if (popoutVisible)
             messagesForView = (items || []).slice(0);
     }
-    // Restore idle state and invalidate work belonging to an obsolete generation.
+    // Stop chunked rendering and clear both pending and displayed message lists.
     function reset() {
         pendingMessages = [];
         messagesForView = [];

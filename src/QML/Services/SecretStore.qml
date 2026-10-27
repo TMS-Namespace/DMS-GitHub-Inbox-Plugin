@@ -153,7 +153,7 @@ Item {
     }
 
     Connections {
-        // Handle this workflow result at the ownership boundary and preserve failure visibility.
+        // Reload the keyring token after this plugin's settings change, unless a store is active.
         function onPluginDataChanged(changedPluginId) {
             if (changedPluginId === store.pluginId && !store.isStoring)
                 store.loadToken();

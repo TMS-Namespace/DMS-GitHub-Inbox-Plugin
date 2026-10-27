@@ -32,7 +32,7 @@ var requiredMethods = [
     "subjectReferenceLabel"
 ];
 
-// Construct an independent value implementing this module's public contract.
+// Create an API contract with empty metadata and null methods for the integration to implement.
 function create() {
     return {
         providerId: "",
@@ -67,7 +67,7 @@ function create() {
     };
 }
 
-// Return declaration errors before a provider is exposed to callers.
+// Check the API's provider identity, declaration reference and required method implementations.
 function validate(api, properties) {
     var errors = [];
     if (!api || typeof api !== "object") return ["Provider API must be an object."];

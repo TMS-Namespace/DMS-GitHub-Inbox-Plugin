@@ -54,7 +54,7 @@ Item {
         if (changed)
             pendingDoneThreadState = pendingCopy;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Require a token and idle fetch/mutation queues before accepting a public action.
     function _canStartPublicOperation() {
         return token !== "" && !isLoading && !isBusy;
     }
@@ -72,7 +72,7 @@ Item {
             copy[key] = source[key];
         return copy;
     }
-    // Retain recognized author data while deduplicating candidates and resources.
+    // Collect distinct message thread IDs, optionally restricting them to unread messages.
     function _collectThreadIds(messages, unreadOnly) {
         let result = [];
         let seen = {};
@@ -88,7 +88,7 @@ Item {
         }
         return result;
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Release consumed Done-queue entries when the queue is exhausted or its prefix grows.
     function _compactDoneQueueIfNeeded() {
         if (pendingThreadDoneIndex === 0)
             return;
@@ -102,7 +102,7 @@ Item {
             pendingThreadDoneIndex = 0;
         }
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Release consumed read-queue entries when the queue is exhausted or its prefix grows.
     function _compactReadQueueIfNeeded() {
         if (pendingThreadReadIndex === 0)
             return;
@@ -116,7 +116,7 @@ Item {
             pendingThreadReadIndex = 0;
         }
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Record the Done source, message activity timestamp and local save time.
     function _doneStateEntryForThread(threadId, source, item) {
         let pendingMessage = item || pendingDoneMessagesByThread[threadId] || ({});
         return {
@@ -125,7 +125,7 @@ Item {
             savedAt: Date.now()
         };
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Use the message activity time for retention, falling back to the Done record's save time.
     function _doneStateTimestampMs(entry) {
         if (!entry || typeof entry !== "object")
             return 0;
@@ -135,20 +135,20 @@ Item {
         let savedAtMs = parseInt(entry.savedAt || 0);
         return isNaN(savedAtMs) ? 0 : savedAtMs;
     }
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Emit rollback actions for failed optimistic read or Done requests.
     function _handleMutationFailure(actionType, threadId) {
         if (actionType === "thread_done_sync" && threadId)
             operationApplied("thread_done_revert", threadId, "", []);
         if (actionType === "thread_read_sync" && threadId)
             operationApplied("thread_read_revert", threadId, "", []);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Return a message copy with its unread flag cleared.
     function _markAsReadItem(item) {
         let copy = _cloneItem(item);
         copy.unread = false;
         return copy;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Overlay pending Done IDs on confirmed Done records for immediate hiding.
     function _mergeDoneStates(confirmed, pending) {
         let merged = _cloneMap(confirmed || ({}));
         for (let key in pending) {
@@ -157,17 +157,17 @@ Item {
         }
         return merged;
     }
-    // Apply the owning module's rules before exposing data to dependent components.
+    // Convert restored Done records through the shared cache-format migration.
     function _normalizeDoneThreadState(source) {
         return CacheSerialization.normalizeDoneThreadState(source);
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Give queued read requests priority over Done requests while keeping mutations serial.
     function _processPendingOperationQueues() {
         processPendingReadQueue();
         if (!isOperating)
             processPendingDoneQueue();
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Enqueue distinct Done thread IDs and attempt the next remote mutation.
     function _queueThreadDoneSync(threadIds) {
         if (!threadIds || threadIds.length === 0)
             return;
@@ -188,7 +188,7 @@ Item {
         pendingThreadDoneQueue = nextQueue;
         processPendingDoneQueue();
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Enqueue distinct read thread IDs and attempt the next remote mutation.
     function _queueThreadReadSync(threadIds) {
         if (!threadIds || threadIds.length === 0)
             return;
@@ -209,7 +209,7 @@ Item {
         pendingThreadReadQueue = nextQueue;
         processPendingReadQueue();
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Forget a saved rollback copy after the thread's Done request settles.
     function _removePendingDoneMessage(threadId) {
         if (!threadId || !pendingDoneMessagesByThread[threadId])
             return;
@@ -217,7 +217,7 @@ Item {
         delete next[threadId];
         pendingDoneMessagesByThread = next;
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Forget a saved rollback copy after the thread's read request settles.
     function _removePendingReadMessage(threadId) {
         if (!threadId || !pendingReadMessagesByThread[threadId])
             return;
@@ -225,7 +225,7 @@ Item {
         delete next[threadId];
         pendingReadMessagesByThread = next;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Reinsert the saved message after a failed Done request unless it is already present.
     function _restorePendingDoneMessage(threadId, messages) {
         let stored = pendingDoneMessagesByThread[threadId];
         _removePendingDoneMessage(threadId);
@@ -256,7 +256,7 @@ Item {
             unreadChanged: true
         };
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Mark a thread unread again after a failed read request if a rollback copy was saved.
     function _restorePendingReadMessage(threadId, messages) {
         let stored = pendingReadMessagesByThread[threadId];
         _removePendingReadMessage(threadId);
@@ -321,7 +321,7 @@ Item {
         }
         _runMutation(request.method, request.url, actionType, threadId, repositoryFullName, request.payloadJson);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Save message copies before optimistic Done removal so failed requests can restore them.
     function _stashPendingDoneMessages(threadIds, messages) {
         let idSet = _threadIdSet(threadIds || []);
         let next = _cloneMap(pendingDoneMessagesByThread);
@@ -337,7 +337,7 @@ Item {
         if (changed)
             pendingDoneMessagesByThread = next;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Save unread message copies before optimistic read changes so failed requests can restore them.
     function _stashPendingReadMessages(threadIds, messages) {
         let idSet = _threadIdSet(threadIds || []);
         let next = _cloneMap(pendingReadMessagesByThread);
@@ -355,7 +355,7 @@ Item {
         if (changed)
             pendingReadMessagesByThread = next;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Build a membership map from nonempty thread IDs.
     function _threadIdSet(threadIds) {
         let result = {};
         let ids = threadIds || [];
@@ -365,7 +365,7 @@ Item {
         }
         return result;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Keep pending optimistic read flags when fresh messages arrive before requests complete.
     function applyPendingReadState(messages) {
         let hasPending = false;
         for (let pendingId in pendingReadMessagesByThread) {
@@ -539,7 +539,7 @@ Item {
             unreadChanged: true
         };
     }
-    // Build a provider-specific destination from validated subject data.
+    // Build a curl mutation with optional JSON and an authorization header supplied on stdin.
     function buildMutationCommand(method, url, payloadJson) {
         // Dux v2's dms dl is GET-only and has no stdin/header-file input.
         // Mutations need PATCH/PUT/DELETE and curl -H @- to keep the token out of argv.
@@ -590,13 +590,13 @@ Item {
         if (changed)
             doneThreadState = doneCopy;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Request GitHub's all-read action when no fetch or mutation is active.
     function markAllAsRead() {
         if (!_canStartPublicOperation())
             return;
         _runProviderMutation(providerApi ? providerApi.buildMarkAllReadRequest() : null, "all_read", "", "");
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Store local Done records with the supplied source and clear matching pending state.
     function markMessagesLocallyDone(messages, source) {
         let doneCopy = _cloneMap(doneThreadState);
         let pendingCopy = _cloneMap(pendingDoneThreadState);
@@ -618,7 +618,7 @@ Item {
         doneThreadState = doneCopy;
         pendingDoneThreadState = pendingCopy;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Request GitHub's repository-read action when no fetch or mutation is active.
     function markRepoAsRead(repositoryFullName) {
         if (!repositoryFullName)
             return;
@@ -626,7 +626,7 @@ Item {
             return;
         _runProviderMutation(providerApi ? providerApi.buildRepositoryReadRequest(repositoryFullName) : null, "repo_read", "", repositoryFullName);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Hide the supplied repository messages immediately and queue per-thread Done requests.
     function markRepoDone(repositoryFullName, messages) {
         if (!repositoryFullName)
             return;
@@ -651,7 +651,7 @@ Item {
     //  PUBLIC API
     // =========================================================================
 
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Request a thread read mutation when no fetch or mutation is active.
     function markThreadAsRead(threadId) {
         if (!threadId)
             return;
@@ -659,7 +659,7 @@ Item {
             return;
         _runProviderMutation(providerApi ? providerApi.buildThreadActionRequest("read", threadId) : null, "thread_read", threadId, "");
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Request a thread unread mutation when no fetch or mutation is active.
     function markThreadAsUnread(threadId) {
         if (!threadId)
             return;
@@ -667,7 +667,7 @@ Item {
             return;
         _runProviderMutation(providerApi ? providerApi.buildThreadActionRequest("unread", threadId) : null, "thread_unread", threadId, "");
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Hide a thread immediately and queue its remote Done request.
     function markThreadDone(threadId) {
         if (!threadId)
             return;
@@ -677,7 +677,7 @@ Item {
         _addPendingDoneThreadIds([threadId]);
         _queueThreadDoneSync([threadId]);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Create local Done records from thread IDs when no message details are supplied.
     function markThreadIdsLocallyDone(threadIds, source) {
         let messages = [];
         let ids = threadIds || [];
@@ -687,7 +687,7 @@ Item {
             });
         markMessagesLocallyDone(messages, source);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Mark an opened thread read immediately and queue its remote read request.
     function markThreadReadAfterOpen(threadId) {
         if (!threadId)
             return;
@@ -696,7 +696,7 @@ Item {
         operationApplied("thread_read_pending", threadId, "", []);
         _queueThreadReadSync([threadId]);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Mark unread members of the supplied message set read and queue their remote requests.
     function markThreadsAsRead(messages) {
         if (!_canStartPublicOperation())
             return;
@@ -706,7 +706,7 @@ Item {
         operationApplied("threads_read", "", "", threadIds);
         _queueThreadReadSync(threadIds);
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Hide distinct threads in the supplied message set and queue remote Done requests.
     function markThreadsDone(messages) {
         if (!_canStartPublicOperation())
             return;
@@ -717,7 +717,7 @@ Item {
         _addPendingDoneThreadIds(threadIds);
         _queueThreadDoneSync(threadIds);
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Start the next Done request only when authentication is available and fetch/mutation work is idle.
     function processPendingDoneQueue() {
         if (!token || isOperating || isLoading)
             return;
@@ -729,7 +729,7 @@ Item {
 
         _runProviderMutation(providerApi ? providerApi.buildThreadActionRequest("done", threadId) : null, "thread_done_sync", threadId, "");
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Start the next read request only when authentication is available and fetch/mutation work is idle.
     function processPendingReadQueue() {
         if (!token || isOperating || isLoading)
             return;
@@ -741,7 +741,7 @@ Item {
 
         _runProviderMutation(providerApi ? providerApi.buildThreadActionRequest("read", threadId) : null, "thread_read_sync", threadId, "");
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Remove Done records older than the retention cutoff, preserving records with unknown dates.
     function pruneDoneThreadState(retentionMs) {
         let maxAge = Math.max(0, parseInt(retentionMs || 0));
         if (maxAge <= 0)
@@ -761,7 +761,7 @@ Item {
         if (changed)
             doneThreadState = next;
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Invalidate in-flight mutations and clear pending queues, optionally retaining confirmed Done records.
     function resetState(clearDoneState) {
         operationGeneration = operationGeneration + 1;
         isOperating = false;
@@ -775,7 +775,7 @@ Item {
         if (clearDoneState === undefined || clearDoneState)
             doneThreadState = ({});
     }
-    // Publish changed state through the owning component so consumers observe one coherent update.
+    // Restore confirmed Done records through the shared format migration.
     function setDoneThreadState(state) {
         doneThreadState = _normalizeDoneThreadState(state);
     }

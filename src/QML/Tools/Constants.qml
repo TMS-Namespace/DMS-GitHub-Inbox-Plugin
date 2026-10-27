@@ -1,11 +1,9 @@
 // Constants.qml - exported as GitHubConstants in qmldir.
-// Central registry of every hardcoded value used by the GitHub Inbox plugin.
+// Shared UI, cache, request and diagnostic settings for QML components.
 //
-// All files in this module reference values through this singleton so that a change
-// to any magic number, URL, or token only needs to be made in one place.
+// Pure JavaScript modules and worker scripts declare values they need outside QML.
 //
-// QML usage:   GitHubConstants.SOME_CONSTANT   (no import needed - registered in qmldir)
-// WorkerScript modules keep only the constants they need outside the QML context.
+// Import the plugin module and access the singleton, for example GitHubConstants.defaultTitleLines.
 
 pragma Singleton
 pragma ComponentBehavior: Bound

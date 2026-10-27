@@ -77,7 +77,8 @@ function createParser(errorContract) {
 
         // A bounded fetch is authoritative for pseudo-Done reconciliation only once
         // its oldest returned `updated_at` reaches the oldest cached visible thread.
-        // See Widget.qml::_inferDoneMessagesFromRefresh and GitHub's pagination docs:
+        // Widget._applyFetchedMessages reconciles that window through InboxMessageState.
+        // GitHub pagination reference:
         // https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api
         if (!isComplete && targetOldestMs > 0 && oldestFetchedMs > 0) isComplete = oldestFetchedMs <= targetOldestMs;
 

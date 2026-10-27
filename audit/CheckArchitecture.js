@@ -8,6 +8,37 @@ const { contractErrors } = require("./CheckHostContracts");
 
 const root = path.resolve(__dirname, "..");
 
+// Reject the known template sentences found during the comment audit; semantic accuracy still needs review.
+const genericCommentTemplates = new Set([
+    "Build a provider-specific destination from validated subject data.",
+    "Decode only recognized response fields while preserving notification context.",
+    "Check the relevant invariants before dependent work can proceed.",
+    "Retain recognized author data while deduplicating candidates and resources.",
+    "Apply the owning module's rules before exposing data to dependent components.",
+    "Handle this workflow result at the ownership boundary and preserve failure visibility.",
+    "Publish changed state through the owning component so consumers observe one coherent update.",
+    "Coordinate storage and resource work through this owner rather than from visual components.",
+    "Read the owner's current data without initiating unrelated background work.",
+    "Keep optimistic mutation state separate from confirmed server state.",
+    "Keep queued work bounded and discard requests that no longer belong to the active state.",
+    "Discard obsolete work through the owning component so unrelated state is preserved.",
+    "Coalesce pending work before its owning timer or bounded processor runs.",
+    "Restore idle state and invalidate work belonging to an obsolete generation.",
+    "Construct an independent value implementing this module's public contract.",
+    "Deduplicate a candidate before adding it to the bounded result set."
+]);
+
+// Report known boilerplate in standalone comment lines, not in code strings used by fixtures.
+function commentErrors(source) {
+    const failures = [];
+    for (const [index, line] of source.split(/\r?\n/).entries()) {
+        const comment = line.match(/^\s*(?:\/\/\/?|\/\*+|\*)\s*(.*?)\s*(?:\*\/)?$/);
+        if (comment && genericCommentTemplates.has(comment[1]))
+            failures.push(`line ${index + 1}: replace generic template text with a function-specific comment.`);
+    }
+    return failures;
+}
+
 function stripComments(source) {
     return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 }
@@ -116,7 +147,9 @@ function checkArchitecture() {
             );
     }
     for (const filename of [...qmlFiles, ...javascriptFiles]) {
-        const lines = fs.readFileSync(filename, "utf8").split(/\r?\n/);
+        const source = fs.readFileSync(filename, "utf8");
+        for (const failure of commentErrors(source)) failures.push(`${path.relative(root, filename)}: ${failure}`);
+        const lines = source.split(/\r?\n/);
         for (let index = 0; index < lines.length; index++)
             if (/^\s*function\s+\w+\s*\(/.test(lines[index]) && !/^\s*(?:\/\/|\*|\/\*)/.test(lines[index - 1] || ""))
                 failures.push(`${path.relative(root, filename)}:${index + 1}: document the named function's contract.`);
@@ -180,6 +213,7 @@ function checkArchitecture() {
         "source layout and view dependencies respect layer boundaries",
         "views delegate background work to services",
         "named function contracts and source headers are documented",
+        "known generic template comments are rejected",
         "host doubles match installed module locations when available",
         "JavaScript module size is bounded",
         "QML logging is centralized",
@@ -198,7 +232,7 @@ function collectFiles(directory, suffix) {
     });
 }
 
-module.exports = { checkArchitecture };
+module.exports = { checkArchitecture, commentErrors };
 
 if (require.main === module) {
     try {

@@ -1,5 +1,5 @@
 // ApiCallStats.qml --- Singleton for tracking GitHub API call statistics.
-// Shared between Widget.qml (writer) and Settings.qml (reader).
+// Workers and widget refresh accounting write statistics; the settings view reads them.
 
 pragma Singleton
 

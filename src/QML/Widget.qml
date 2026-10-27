@@ -1,7 +1,6 @@
-// Widget.qml - Main GitHub Inbox widget orchestrator for DankMaterialShell
+// Widget.qml - GitHub Inbox entry point for Dux, wiring views, services and workers.
 //
-// This file is the top-level PluginComponent that wires together the
-// extracted sub-components.  Business logic lives in the delegates:
+// This PluginComponent connects popup events to inbox, mutation and cache owners:
 //   - InboxFetchService      --- inbox requests, pagination and chunk buffering
 //   - AuthorBackgroundWorker --- author data queue, dedup, fetching
 //   - InboxOperations     --- mark read/done/unread operations

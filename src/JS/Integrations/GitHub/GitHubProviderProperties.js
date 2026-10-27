@@ -2,7 +2,7 @@
 
 .pragma library
 
-// Construct an independent value implementing this module's public contract.
+// Fill the provider declaration with GitHub endpoints, request limits and retry policy.
 function create(providerProperties) {
     var properties = providerProperties.create();
     properties.providerId = "github";

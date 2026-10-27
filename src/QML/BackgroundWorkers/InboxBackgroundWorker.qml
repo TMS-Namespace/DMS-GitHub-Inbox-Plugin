@@ -40,7 +40,7 @@ Item {
     signal fetchComplete(var items, int unreadCount)
     signal fetchError(string errorMessage)
 
-    // Handle this workflow result at the ownership boundary and preserve failure visibility.
+    // Translate curl stderr into a user-facing network, authentication or API error.
     function _describeFetchFailure(stderrText) {
         let text = String(stderrText || "");
         let lower = text.toLowerCase();
@@ -59,7 +59,7 @@ Item {
             return "GitHub API error: request was forbidden or rate limited.";
         return "GitHub request failed. Check token or network.";
     }
-    // Decode only recognized response fields while preserving notification context.
+    // Read the last numeric stderr marker, returning zero when it is absent or invalid.
     function _parseFetchMarker(lines, marker) {
         let source = lines || [];
         for (let index = source.length - 1; index >= 0; index--) {
@@ -80,7 +80,7 @@ Item {
     function _perfLog(label) {
         PluginLogger.debug("InboxBackgroundWorker", label);
     }
-    // Build a provider-specific destination from validated subject data.
+    // Build paginated inbox and participation fetches, stopping at the cached time boundary or page cap.
     function buildDynamicFetchCommand(targetOldestMs, maxPages) {
         // Dux v2's dms dl cannot read headers from stdin or a file; curl -H @- avoids exposing the token in argv.
         let retryPolicy = providerApi.getRetryPolicy();

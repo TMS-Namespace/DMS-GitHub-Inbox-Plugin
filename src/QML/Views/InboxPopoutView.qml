@@ -71,7 +71,7 @@ Item {
     onParentPopoutChanged: syncPopoutVisibility()
 
     Connections {
-        // Handle this workflow result at the ownership boundary and preserve failure visibility.
+        // Mirror host popup visibility changes into the view's published visibility state.
         function onShouldBeVisibleChanged() {
             view.syncPopoutVisibility();
         }

@@ -36,7 +36,7 @@ Item {
             applyTimer.restart();
         return batch;
     }
-    // Coalesce pending work before its owning timer or bounded processor runs.
+    // Keep the latest local URL per login and restart the propagation delay.
     function queue(login, localUrl) {
         let normalizedLogin = String(login || "").trim();
         let normalizedUrl = String(localUrl || "");
@@ -50,7 +50,7 @@ Item {
         if (automaticProcessing)
             applyTimer.restart();
     }
-    // Restore idle state and invalidate work belonging to an obsolete generation.
+    // Stop the propagation timer and discard all pending avatar updates.
     function reset() {
         applyTimer.stop();
         pendingUpdates = ({});

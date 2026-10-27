@@ -71,7 +71,7 @@ Item {
             copy[url] = source[url];
         return copy;
     }
-    // Coordinate storage and resource work through this owner rather than from visual components.
+    // Publish one batch of pending author merges and defer any remaining threads.
     function _flushMerges() {
         let profileStart = Date.now();
         _mergeFlushQueued = false;
@@ -138,7 +138,7 @@ Item {
     function _perfLog(label) {
         PluginLogger.debug("AuthorBackgroundWorker", label);
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Turn one prefetch batch into endpoint requests, refreshing URL history when activity changes.
     function _processPrefetchBatch() {
         let profileStart = Date.now();
         if (!loadAuthorInfo || !token) {
@@ -196,7 +196,7 @@ Item {
     function _profile(label, startMs, details) {
         profileOperation(label, startMs, details);
     }
-    // Build a provider-specific destination from validated subject data.
+    // Build authenticated fetches that use jq to extract actors, workflow details and release links.
     function buildAutomaticAuthorExtractCommand(urls) {
         let retryPolicy = authorFetcher.providerApi.getRetryPolicy();
         let script = "" + "IFS= read -r token || exit 1\n" + "split=$1\n" + "connect_timeout=$2\n" + "max_time=$3\n" + "accept_header=$4\n" + "api_version=$5\n" + "retry_count=$6\n" + "retry_max_time=$7\n" + "shift 7\n" + "command -v jq >/dev/null 2>&1 || exit 127\n" + "filter='def appslug($profileUrl): if (($profileUrl // \"\") | startswith(\"https://github.com/apps/\")) then (($profileUrl | split(\"?\")[0] | split(\"#\")[0] | split(\"/\"))[-1]) else \"\" end; def rootobj: if type == \"object\" then . else {} end; def nodes: if type == \"array\" then reverse[] else . end; def authorobj: . as $authorObject | (($authorObject.html_url? // $authorObject.htmlUrl? // \"\") as $html | ($authorObject.login? // $authorObject.slug? // appslug($html) // \"\") as $login | ($authorObject.avatar_url? // $authorObject.avatarUrl? // $authorObject.logo_url? // $authorObject.logoUrl? // (if appslug($html) != \"\" then ($html + \".png?size=128\") else \"\" end)) as $avatar | {login:$login, avatarUrl:$avatar, htmlUrl:($html // (if (($authorObject.slug? // \"\") != \"\") then (\"https://github.com/apps/\" + $authorObject.slug) else \"\" end)), type:($authorObject.type? // (if appslug($html) != \"\" then \"App\" else \"\" end))}); def validauthor: authorobj | select((.login // \"\") != \"\" and (((.avatarUrl // \"\") != \"\") or ((.htmlUrl // \"\") != \"\"))); def author_sources($authorObject): $authorObject.actor?, $authorObject.triggering_actor?, $authorObject.user?, $authorObject.author?, $authorObject.sender?, $authorObject.creator?, $authorObject.merged_by?, $authorObject.closed_by?, $authorObject.dismissed_by?; rootobj as $root | {authors:([nodes as $node | author_sources($node) | validauthor] | reduce .[] as $author ([]; if any(.[]; .login == $author.login and .htmlUrl == $author.htmlUrl and .avatarUrl == $author.avatarUrl) then . else . + [$author] end)), subjectWebUrl:($root.html_url // \"\"), subjectReference:(($root.subjectReference // $root.subject_reference // $root.run_number // \"\") | tostring), actionRuns:(($root.workflow_runs // []) | map({htmlUrl:(.html_url // \"\"), runNumber:((.run_number // \"\") | tostring), name:(.name // \"\"), displayTitle:(.display_title // \"\"), headBranch:(.head_branch // \"\"), conclusion:(.conclusion // \"\"), updatedAt:(.updated_at // \"\"), actor:(if .actor? then (.actor | authorobj) else null end), triggeringActor:(if .triggering_actor? then (.triggering_actor | authorobj) else null end)})), release:(if (($root.tag_name // \"\") != \"\" and ($root.html_url // \"\") != \"\") then {tagName:($root.tag_name // \"\"), htmlUrl:($root.html_url // \"\")} else null end)}'\n" + "for url in \"$@\"; do\n" + "  body=$(printf 'Authorization: token %s\\n' \"$token\" | curl -f -sS -L --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" --retry \"$retry_count\" --retry-connrefused --retry-max-time \"$retry_max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- \"$url\") || exit $?\n" + "  printf '%s\\n' \"$body\" | jq -c \"$filter\" || exit $?\n" + "  printf '\\n%s\\n' \"$split\"\n" + "done\n";
@@ -209,7 +209,7 @@ Item {
         }
         return command;
     }
-    // Build a provider-specific destination from validated subject data.
+    // Build authenticated fetches that return raw response bodies separated by the worker marker.
     function buildRawAuthorFetchCommand(urls) {
         let retryPolicy = authorFetcher.providerApi.getRetryPolicy();
         let script = "" + "IFS= read -r token || exit 1\n" + "split=$1; connect_timeout=$2; max_time=$3; accept_header=$4; api_version=$5; retry_count=$6; retry_max_time=$7\n" + "shift 7\n" + "for url in \"$@\"; do\n" + "  printf 'Authorization: token %s\\n' \"$token\" | curl -sS --connect-timeout \"$connect_timeout\" --max-time \"$max_time\" --retry \"$retry_count\" --retry-connrefused --retry-max-time \"$retry_max_time\" -H \"Accept: $accept_header\" -H \"X-GitHub-Api-Version: $api_version\" -H @- -w \"\\n$split\\n\" \"$url\"\n" + "done\n";
@@ -219,7 +219,7 @@ Item {
                 command.push(urls[urlIndex]);
         return command;
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Cancel author work and clear both completed endpoint history and activity markers.
     function clearAllState() {
         resetState();
         fetchedUrlsByThread = ({});
@@ -236,13 +236,13 @@ Item {
             copy[pendingId] = _pendingMerges[pendingId];
         return copy;
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Plan subject endpoints and enqueue them when author loading and authentication are available.
     function enqueueAuthorFetch(threadId, subjectApiUrl, subjectType, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle) {
         if (!loadAuthorInfo || !token || !threadId || !subjectApiUrl || typeof subjectApiUrl !== 'string')
             return;
         enqueueAuthorUrls(threadId, AuthorUtils.buildAuthorFetchUrls(subjectApiUrl, subjectType || "", !automaticPrefetch, ""), updatedAt || "", !!automaticPrefetch, fallbackAuthor || null, subjectTitle || "", subjectType || "", "");
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Deduplicate endpoint requests per thread, cap automatic work and prioritize explicit requests.
     function enqueueAuthorUrls(threadId, urls, updatedAt, automaticPrefetch, fallbackAuthor, subjectTitle, subjectType, reason) {
         let profileStart = Date.now();
         if (!token || !threadId || !urls || urls.length === 0)
@@ -302,7 +302,7 @@ Item {
         profileOperation("enqueueAuthorUrls", profileStart, "thread=" + threadId + " urls=" + filtered.length + " queue=" + requestQueue.length);
         processQueue();
     }
-    // Use actor hints only where the subject-specific author policy permits them.
+    // Do not guess authors from notification hints; resolve them from subject or workflow details.
     function fallbackAuthorForMessage(item) {
         return null;
     }
@@ -310,12 +310,12 @@ Item {
     function fetchedAtMatches(cachedValue, updatedAt) {
         return String(cachedValue || "") === fetchedAtValue(updatedAt);
     }
-    // Preserve the explicit marker used for notifications without an activity timestamp.
+    // Prefix nonempty activity timestamps with the author-cache policy version; missing time stays empty.
     function fetchedAtValue(updatedAt) {
         let value = String(updatedAt || "");
         return value ? ("authors-v4:" + value) : "";
     }
-    // Apply the owning module's rules before exposing data to dependent components.
+    // Exclude GitHub Actions automation from issue and pull-request participant lists.
     function filterAuthorsForSubject(normalizedType, authors) {
         let source = authors || [];
         if (normalizedType !== "pullrequest" && normalizedType !== "issue")
@@ -332,7 +332,7 @@ Item {
         }
         return filtered;
     }
-    // Apply the owning module's rules before exposing data to dependent components.
+    // Keep valid endpoints that are neither fetched, active nor repeated in this request.
     function filterThreadUnfetchedUrls(threadId, urls) {
         let result = [];
         if (!threadId || !urls || urls.length === 0)
@@ -414,7 +414,7 @@ Item {
         prefetchMaybeComplete();
         Qt.callLater(processQueue);
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Treat optional detail endpoints as covered when each has been fetched or is already active.
     function hasFetchedAuthorDetailsForMessage(item) {
         if (!item || !item.threadId || !shouldFetchAuthorDetailsForMessage(item))
             return true;
@@ -434,11 +434,11 @@ Item {
 
         return true;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Include delayed prefetch batches and unpublished author merges in the pending-work check.
     function hasPendingPrefetchWork() {
         return _prefetchQueue.length > 0 || prefetchTimer.running || _mergeFlushQueued || mergeFlushTimer.running;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Check both active endpoint membership and queued requests for this thread.
     function hasQueuedOrActiveThreadRequest(threadId) {
         if (!threadId)
             return false;
@@ -454,12 +454,12 @@ Item {
 
         return false;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Recognize check-suite, check-run and workflow-run subjects case-insensitively.
     function isCiSubjectType(subjectType) {
         let normalizedType = String(subjectType || "").toLowerCase();
         return normalizedType === "checksuite" || normalizedType === "checkrun" || normalizedType === "workflowrun";
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Reserve normalized endpoints while a thread's author fetch is active.
     function markThreadUrlsActive(threadId, urls) {
         if (!threadId || !urls || urls.length === 0)
             return;
@@ -473,7 +473,7 @@ Item {
 
         activeUrlsByThread[threadId] = nextThreadMap;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Record completed endpoints so subsequent requests can skip them.
     function markThreadUrlsFetched(threadId, urls) {
         if (!threadId || !urls || urls.length === 0)
             return;
@@ -487,7 +487,7 @@ Item {
 
         fetchedUrlsByThread[threadId] = nextThreadMap;
     }
-    // Keep optimistic mutation state separate from confirmed server state.
+    // Release a thread's completed or failed endpoint reservations and remove empty entries.
     function markThreadUrlsInactive(threadId, urls) {
         if (!threadId || !urls || urls.length === 0)
             return;
@@ -515,7 +515,7 @@ Item {
         else
             delete activeUrlsByThread[threadId];
     }
-    // Apply the owning module's rules before exposing data to dependent components.
+    // Filter automation, keep one CI actor and cap comment/PR-author lists at the display limit.
     function normalizeAuthorsForSubject(subjectType, reason, authors) {
         let source = authors || [];
         let normalizedType = String(subjectType || "").toLowerCase();
@@ -533,7 +533,7 @@ Item {
 
         return filtered;
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Queue missing or stale subject details within the automatic per-refresh message budget.
     function prefetchForMessages(items) {
         let profileStart = Date.now();
         _perfLog("prefetchForMessages --- items=" + (items ? items.length : 0));
@@ -592,7 +592,7 @@ Item {
         _perfLog("prefetchForMessages --- enqueued=" + enqueued);
         profileOperation("prefetchForMessages", profileStart, "items=" + (items ? items.length : 0) + " enqueued=" + enqueued);
     }
-    // Keep queued work bounded and discard requests that no longer belong to the active state.
+    // Queue unresolved details after cache restoration without duplicating queued or active threads.
     function prefetchMissingForMessages(items, authorsByThread) {
         let profileStart = Date.now();
         _perfLog("prefetchMissingForMessages --- items=" + (items ? items.length : 0));
@@ -702,7 +702,7 @@ Item {
         let duration = Date.now() - startMs;
         PluginLogger.profile("AuthorBackgroundWorker", label, duration, details);
     }
-    // Validate the repository fallback before using it for navigation or actor matching.
+    // Use the message's repository URL, falling back to a URL built from its repository name.
     function repositoryWebUrlForMessage(item) {
         let repoUrl = String((item && item.repositoryUrl) || "").trim();
         if (repoUrl)
@@ -711,7 +711,7 @@ Item {
         let repo = String((item && item.repository) || "").trim();
         return repo ? (GitHubConstants.githubWebBaseUrl + "/" + repo) : "";
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Fetch workflow details when a CI subject has no displayable run number.
     function requiresSubjectReferenceResolution(item) {
         if (!item)
             return false;
@@ -722,7 +722,7 @@ Item {
 
         return String(item.subjectReference || "").trim() === "";
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Resolve generic CI links and release links that have not yet been confirmed by the API.
     function requiresSubjectWebUrlResolution(item) {
         if (!item)
             return false;
@@ -750,7 +750,7 @@ Item {
 
         return false;
     }
-    // Discard obsolete work through the owning component so unrelated state is preserved.
+    // Invalidate in-flight results and clear pending requests, prefetch batches and unpublished merges.
     function resetState() {
         requestGeneration = requestGeneration + 1;
         prefetchTimer.stop();
@@ -766,7 +766,7 @@ Item {
         _prefetchQueuedThreadIds = ({});
         _prefetchAcceptedCount = 0;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Expand comment or detail responses that may refer back to a parent issue or pull request.
     function shouldExpandFromRequestedUrls(urls) {
         if (!urls || urls.length === 0)
             return false;
@@ -781,7 +781,7 @@ Item {
 
         return false;
     }
-    // Check the relevant invariants before dependent work can proceed.
+    // Request participant detail endpoints only for issue or pull-request root subjects.
     function shouldFetchAuthorDetailsForMessage(item) {
         if (!item)
             return false;

@@ -93,7 +93,7 @@ function create(providerApi, properties, perPageQuery) {
     function buildAuthorFetchUrls(subjectApiUrl, subjectType, includeDetails, reason) {
         let urls = [];
 
-        // Deduplicate a candidate before adding it to the bounded result set.
+        // Add each planned endpoint once; the caller applies the request-count cap.
         function push(url) {
             if (!url || urls.indexOf(url) >= 0) return;
             urls.push(url);
@@ -146,7 +146,7 @@ function create(providerApi, properties, perPageQuery) {
     // Collect distinct issue and pull-request roots from recognized response fields.
     function collectSubjectExpansionUrls(value, target, seen) {
         if (!value || typeof value !== "object") return;
-        // Deduplicate a candidate before adding it to the bounded result set.
+        // Keep each validated issue or pull-request root once across response objects.
         function push(url) {
             let normalized = normalizeApiUrl(url);
             if (!normalized || !isThreadParentApiUrl(normalized) || seen[normalized]) return;
@@ -287,7 +287,7 @@ function create(providerApi, properties, perPageQuery) {
         try {
             parsed = JSON.parse(payloadText || "{}");
         } catch (error) {
-            // Optional author sections may be missing or invalid; keep other participants and the message usable.
+            // Invalid optional author JSON contributes no participants; the inbox item remains usable.
             return [];
         }
 
@@ -392,7 +392,7 @@ function create(providerApi, properties, perPageQuery) {
             try {
                 parsed = JSON.parse(part);
             } catch (error) {
-                // Optional author sections may be missing or invalid; keep other participants and the message usable.
+                // Skip malformed optional details and retain expansion URLs from the other sections.
                 continue;
             }
 

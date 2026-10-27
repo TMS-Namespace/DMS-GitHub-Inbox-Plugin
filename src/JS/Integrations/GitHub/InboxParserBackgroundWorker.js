@@ -13,7 +13,7 @@ var _MESSAGES_PARSE_CHUNK_SIZE = 40;
 var _AVATAR_DEFAULT_SIZE_PX = 128;
 
 WorkerScript.onMessage = function (message) {
-    // ---- Author JSON parsing (offloaded from Widget.qml main thread) -------
+    // ---- Author JSON parsing requested by AuthorBackgroundWorker -----------
     if (message.action === "parseAuthors") {
         var authors = [];
         var expansionUrls = [];
@@ -132,9 +132,9 @@ WorkerScript.onMessage = function (message) {
     }
 };
 
-// ---- Author parsing helpers (mirror of Widget.qml, runs in worker thread) --
+// ---- Author and subject-detail parsing in the worker thread ---------------
 
-// Build a provider-specific destination from validated subject data.
+// Build the fallback avatar-host URL for a nonempty account name.
 function defaultAvatarUrlForLogin(login) {
     var normalized = String(login || "").trim();
     if (!normalized) return "";
@@ -143,7 +143,7 @@ function defaultAvatarUrlForLogin(login) {
     );
 }
 
-// Retain recognized author data while deduplicating candidates and resources.
+// Prefer an explicit avatar URL, then an app icon, then the account avatar endpoint.
 function authorAvatarUrl(authorLike) {
     if (!authorLike) return "";
     var avatarUrl = String(authorLike.avatarUrl || authorLike.avatar_url || "").trim();
@@ -155,7 +155,7 @@ function authorAvatarUrl(authorLike) {
     return "";
 }
 
-// Retain recognized author data while deduplicating candidates and resources.
+// Extract the first path segment after GitHub's app-profile prefix.
 function appSlugFromHtmlUrl(htmlUrl) {
     var normalized = String(htmlUrl || "").trim();
     var prefix = "https://github.com/apps/";
@@ -164,12 +164,12 @@ function appSlugFromHtmlUrl(htmlUrl) {
     return String(slug || "").trim();
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Recognize app-profile URLs with a nonempty slug.
 function isGitHubAppUrl(htmlUrl) {
     return appSlugFromHtmlUrl(htmlUrl) !== "";
 }
 
-// Retain recognized author data while deduplicating candidates and resources.
+// Deduplicate by case-insensitive login, falling back to profile or avatar URL.
 function authorKey(login, htmlUrl, avatarUrl) {
     var normalizedLogin = String(login || "")
         .trim()
@@ -180,7 +180,7 @@ function authorKey(login, htmlUrl, avatarUrl) {
     return String(avatarUrl || "").trim();
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Accept account-style names, including names ending in [bot].
 function isLikelyGitHubLogin(login) {
     var value = String(login || "").trim();
     if (!value) return false;
@@ -189,7 +189,7 @@ function isLikelyGitHubLogin(login) {
     return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,78}[A-Za-z0-9])?$/.test(base);
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Identify account-like actors from their type or profile, excluding explicit organizations.
 function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     if (!userLike || typeof userLike !== "object") return false;
     var normalizedLogin = String(login || "").trim();
@@ -220,7 +220,7 @@ function isLikelyGitHubUserObject(userLike, login, avatarUrl, htmlUrl) {
     return false;
 }
 
-// Retain recognized author data while deduplicating candidates and resources.
+// Normalize an actor and fill missing fields on an existing matching author.
 function pushAuthorCandidate(target, byKey, userLike) {
     if (!userLike || typeof userLike !== "object") return;
     var htmlUrl = userLike.html_url || userLike.htmlUrl || "";
@@ -245,7 +245,7 @@ function pushAuthorCandidate(target, byKey, userLike) {
     target.push({ login: login, avatarUrl: avatarUrl, htmlUrl: htmlUrl });
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Extract authors from known actor fields or a pre-extracted payload, bounding nested traversal.
 function parseSubjectAuthors(payloadText) {
     var authors = [];
     var byKey = {};
@@ -253,7 +253,6 @@ function parseSubjectAuthors(payloadText) {
     try {
         parsed = JSON.parse(payloadText || "{}");
     } catch (error) {
-        // Optional author sections may be missing or invalid; keep other participants and the message usable.
         // Malformed optional author details should not discard the inbox item.
         return [];
     }
@@ -319,7 +318,7 @@ function parseSubjectAuthors(payloadText) {
     return authors;
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Recognize the jq envelope containing authors and extracted subject or workflow details.
 function isPreExtractedAuthorPayload(value) {
     return (
         value &&
@@ -330,7 +329,7 @@ function isPreExtractedAuthorPayload(value) {
     );
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Merge distinct authors from delimiter-separated subject-detail responses.
 function parseSubjectAuthorsMulti(payloadText, splitToken) {
     var marker = "\n" + (splitToken || "") + "\n";
     var normalized = String(payloadText || "");
@@ -347,7 +346,7 @@ function parseSubjectAuthorsMulti(payloadText, splitToken) {
     return merged;
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Recognize CI notifications by their reason or workflow/check subject type.
 function isCiAuthorSubject(subjectType, reason) {
     var normalizedType = String(subjectType || "").toLowerCase();
     var normalizedReason = String(reason || "").toLowerCase();
@@ -359,7 +358,7 @@ function isCiAuthorSubject(subjectType, reason) {
     );
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Select the matching workflow run and prefer its triggering actor over its original actor.
 function parseBestActionRunAuthorsMulti(payloadText, splitToken, subjectTitle, updatedAt) {
     var marker = "\n" + (splitToken || "") + "\n";
     var normalized = String(payloadText || "");
@@ -374,7 +373,6 @@ function parseBestActionRunAuthorsMulti(payloadText, splitToken, subjectTitle, u
         try {
             parsed = JSON.parse(part);
         } catch (error) {
-            // Optional author sections may be missing or invalid; keep other participants and the message usable.
             // Continue checking other response pages when one detail payload is malformed.
             continue;
         }
@@ -392,7 +390,7 @@ function parseBestActionRunAuthorsMulti(payloadText, splitToken, subjectTitle, u
     return authors;
 }
 
-// Apply the owning module's rules before exposing data to dependent components.
+// Reject unsafe repository API URLs and strip query options for endpoint deduplication.
 function normalizeApiUrlWorker(url) {
     var normalized = String(url || "").trim();
     if (!normalized) return "";
@@ -413,7 +411,7 @@ function normalizeApiUrlWorker(url) {
     return normalized;
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Accept only numeric issue or pull-request root endpoints on the GitHub API host.
 function isThreadParentApiUrlWorker(url) {
     var normalized = normalizeApiUrlWorker(url);
     if (!normalized) return false;
@@ -424,10 +422,10 @@ function isThreadParentApiUrlWorker(url) {
     return /^[0-9]+$/.test(parts[7]);
 }
 
-// Retain recognized author data while deduplicating candidates and resources.
+// Collect distinct issue or pull-request roots referenced by a response object.
 function collectSubjectExpansionUrlsWorker(value, target, seen) {
     if (!value || typeof value !== "object") return;
-    // Deduplicate a candidate before adding it to the bounded result set.
+    // Keep each validated subject root once across all response sections.
     function push(url) {
         var normalized = normalizeApiUrlWorker(url);
         if (!normalized || !isThreadParentApiUrlWorker(normalized) || seen[normalized]) return;
@@ -439,7 +437,7 @@ function collectSubjectExpansionUrlsWorker(value, target, seen) {
     push(value.url);
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Gather subject-root endpoints from valid delimiter-separated response sections.
 function parseSubjectExpansionUrls(payloadText, splitToken) {
     var marker = "\n" + (splitToken || "") + "\n";
     var normalized = String(payloadText || "");
@@ -454,7 +452,6 @@ function parseSubjectExpansionUrls(payloadText, splitToken) {
         try {
             parsed = JSON.parse(part);
         } catch (error) {
-            // Optional author sections may be missing or invalid; keep other participants and the message usable.
             // Ignore malformed response pages and retain valid expansion URLs from the rest.
             continue;
         }
@@ -467,7 +464,7 @@ function parseSubjectExpansionUrls(payloadText, splitToken) {
     return urls;
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Prefer a direct subject URL, otherwise use the best-matching workflow run URL.
 function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedAt) {
     var marker = "\n" + (splitToken || "") + "\n";
     var normalized = String(payloadText || "");
@@ -482,7 +479,6 @@ function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedA
         try {
             parsed = JSON.parse(part);
         } catch (error) {
-            // Optional author sections may be missing or invalid; keep other participants and the message usable.
             // A malformed detail payload may still be followed by one with a valid subject URL.
             continue;
         }
@@ -496,7 +492,7 @@ function parseSubjectWebUrlMulti(payloadText, splitToken, subjectTitle, updatedA
     return best.url || "";
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Prefer an explicit subject reference, otherwise use the best-matching workflow run number.
 function parseSubjectReferenceMulti(payloadText, splitToken, subjectTitle, updatedAt) {
     var marker = "\n" + (splitToken || "") + "\n";
     var normalized = String(payloadText || "");
@@ -511,7 +507,6 @@ function parseSubjectReferenceMulti(payloadText, splitToken, subjectTitle, updat
         try {
             parsed = JSON.parse(part);
         } catch (error) {
-            // Optional author sections may be missing or invalid; keep other participants and the message usable.
             // A malformed detail payload may still be followed by one with a valid reference.
             continue;
         }
@@ -525,7 +520,7 @@ function parseSubjectReferenceMulti(payloadText, splitToken, subjectTitle, updat
     return best.reference || "";
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Read explicit subject or release links, including nested release objects.
 function directSubjectWebUrlFromObject(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return "";
 
@@ -542,7 +537,7 @@ function directSubjectWebUrlFromObject(value) {
     return "";
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Read a subject reference or workflow run number without a leading hash.
 function directSubjectReferenceFromObject(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return "";
 
@@ -555,7 +550,7 @@ function directSubjectReferenceFromObject(value) {
     return "";
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Look for subject identifiers or descriptive fields before accepting an object's html_url.
 function isLikelySubjectObject(value) {
     if (!value || typeof value !== "object") return false;
     if (value.url || value.node_id || value.id || value.number || value.sha) return true;
@@ -627,7 +622,7 @@ function chooseBestActionRunUrl(value, subjectTitle, updatedAt, currentBest) {
     return best;
 }
 
-// Check the relevant invariants before dependent work can proceed.
+// Recognize run objects by their actions URL and run-number or actor fields.
 function isWorkflowRunObject(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     var url = String(value.htmlUrl || value.html_url || "").trim();
@@ -641,19 +636,19 @@ function isWorkflowRunObject(value) {
     );
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Read the workflow name preceding "workflow run" in a notification title.
 function workflowNameFromNotificationTitle(title) {
     var match = String(title || "").match(/^(.+?) workflow run/i);
     return match ? match[1].trim() : "";
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Read the branch following "for" and preceding the title's "branch" suffix.
 function branchFromNotificationTitle(title) {
     var match = String(title || "").match(/ for (.+) branch$/i);
     return match ? match[1].trim() : "";
 }
 
-// Decode only recognized response fields while preserving notification context.
+// Translate the notification title's outcome into a workflow conclusion identifier.
 function conclusionFromNotificationTitle(title) {
     var normalized = String(title || "").toLowerCase();
     if (normalized.indexOf(" failed ") >= 0) return "failure";

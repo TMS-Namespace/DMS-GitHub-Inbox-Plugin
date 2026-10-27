@@ -21,12 +21,12 @@ var _CACHE_RESET_SCRIPT = 'find "$1" -mindepth 1 -exec rm -rf -- {} + && mkdir -
 
 var _CACHE_ROOT_RESOLVE_SCRIPT = 'printf "%s\\n" "${XDG_CACHE_HOME:-$HOME/.cache}/$1"';
 
-// Build a provider-specific destination from validated subject data.
+// Build a MIME-check command that reports missing avatars and deletes non-image files.
 function buildAvatarValidationCommand(avatarPaths) {
     return ["bash", "-c", _AVATAR_VALIDATION_SCRIPT, "github-avatar-validation"].concat(avatarPaths || []);
 }
 
-// Build a provider-specific destination from validated subject data.
+// Build a command to empty the cache root and recreate its object and avatar directories.
 function buildCacheResetCommand(cacheDirectory, objectsDirectory, avatarsDirectory) {
     return [
         "bash",
@@ -39,7 +39,7 @@ function buildCacheResetCommand(cacheDirectory, objectsDirectory, avatarsDirecto
     ];
 }
 
-// Build a provider-specific destination from validated subject data.
+// Resolve the named cache root under XDG_CACHE_HOME, falling back to HOME/.cache.
 function buildCacheRootResolveCommand(cacheRootName) {
     return ["bash", "-c", _CACHE_ROOT_RESOLVE_SCRIPT, "github-cache-root", cacheRootName];
 }

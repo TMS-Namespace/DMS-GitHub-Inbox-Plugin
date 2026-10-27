@@ -85,7 +85,7 @@ Item {
 
         queueFromAuthors(ownerAuthors);
     }
-    // Restore idle state and invalidate work belonging to an obsolete generation.
+    // Release hidden preload images and clear their deduplication map.
     function reset() {
         entries = [];
         entryMap = ({});

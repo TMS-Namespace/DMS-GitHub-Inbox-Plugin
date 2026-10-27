@@ -72,7 +72,7 @@ Item {
         onTriggered: repository._flushAvatarUpdates()
     }
     Connections {
-        // Handle this workflow result at the ownership boundary and preserve failure visibility.
+        // Batch the cache coordinator's completed avatar paths for resource consumers.
         function onAvatarCachedLocally(login, localUrl) {
             repository.notifyAvatarCached(login, localUrl);
         }
