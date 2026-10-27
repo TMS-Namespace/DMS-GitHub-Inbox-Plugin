@@ -43,7 +43,9 @@ This plugin uses a **GitHub classic personal access token**, which can be create
 ## Requirements
 
 - Dux Shell (DMS) >= 2.0.0.
-- `GNU coreutils` (or compatible: `sh`, `ls`, `mkdir`, `rm`, `mktemp`, `cat`, `tail`) in `$PATH`, used to fetch data and manage cache.
+- `curl` for authenticated GitHub API requests, `jq` for response processing, `secret-tool` (libsecret) for secure token storage, and `file` for cached-avatar MIME checks.
+- `bash`, `find`, and coreutils commands (`nice`, `cp`, `mkdir`, `cat`, `rm`, `env`, `sleep`) in `$PATH` for background processes and cache management.
+- The built-in `dms notify` and `dms dl` commands provide desktop notifications and avatar downloads. No `libnotify` dependency is needed.
 - Unlocked Freedesktop Secret Service keyring to store the token.
 - Internet access to GitHub's API and avatar hosts.
 
@@ -60,6 +62,7 @@ This plugin uses a **GitHub classic personal access token**, which can be create
   - Improvement: Structural refactoring for easier future maintenance.
   - Improvement: Better test coverage.
   - Improvement: Basic validation of the authentication token.
+  - Improvement: Use built-in Dux commands for notifications and avatar downloads instead of requiring libnotify.
   - Fix: Bug with how grouping by date works.
   - Fix: API statistics were showing wrong info.
   - Fix: Some security issues related to `curl`.

@@ -27,6 +27,7 @@ try {
     }
     const manifest = JSON.parse(fs.readFileSync(path.join(root, "plugin.json"), "utf8"));
     assert.equal(manifest.requires_dms, ">=2.0.0");
+    assert.equal(manifest.dependencies.includes("notify-send"), false);
 } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 }

@@ -3,6 +3,7 @@
 import QtQuick
 import Quickshell
 import "../../src/JS/Integrations/GitHub/GitHubHelpers.js" as Helpers
+import "../../src/QML/BackgroundWorkers"
 import "../../src/QML/Services"
 
 ShellRoot {
@@ -39,8 +40,8 @@ ShellRoot {
         } else if (phase === "cacheFailure") {
             if (!require(message.failure && message.failure.name === "PluginError" && message.failure.userMessage !== message.failure.details, "Missing typed cache error"))
                 return;
-            console.info("RUNTIME_CHECKS_PASSED");
-            successExit.start();
+            phase = "download";
+            avatarDownload.startAttempt();
         }
     }
     function checkInbox(message) {
@@ -123,6 +124,22 @@ ShellRoot {
                 return;
             testRoot.phase = "lookup";
             secret.loadToken();
+        }
+    }
+    AvatarDownloadWorker {
+        id: avatarDownload
+
+        autoStart: false
+        downloadCommand: ["env", "GITHUB_INBOX_TEST_DMS_DOWNLOAD=retry", "dms", "dl", "https://example.invalid/avatar.png"]
+        maximumRetries: 2
+        retryDelayMs: 10
+        retryWindowMs: 1000
+
+        onFinished: success => {
+            if (!testRoot.require(success && attempts === 2, "Native Dux download did not retry then complete"))
+                return;
+            console.info("RUNTIME_CHECKS_PASSED");
+            successExit.start();
         }
     }
     WorkerScript {

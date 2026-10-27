@@ -1,4 +1,4 @@
-// DesktopNotificationService.qml - batches inbox notifications and dispatches notify-send.
+// DesktopNotificationService.qml - batches inbox notifications through the built-in Dux CLI.
 
 pragma ComponentBehavior: Bound
 
@@ -79,11 +79,11 @@ Item {
         }
 
         let summary = items.length === 1 ? "New GitHub Message" : items.length + " New GitHub Messages";
-        let command = ["notify-send", "-a", GitHubConstants.notificationAppName, "-t", String(GitHubConstants.notificationExpireMs)];
+        let command = ["dms", "notify", "-a", GitHubConstants.notificationAppName, "-t", String(GitHubConstants.notificationExpireMs)];
         let iconPath = resolveIcon(items);
         if (iconPath)
             command.push("-i", iconPath);
-        command.push(summary, body);
+        command.push("--", summary, body);
         return command;
     }
     // Throttle all error texts from this source with one cooldown; manual failures stay inline.
@@ -99,7 +99,7 @@ Item {
         errorNotificationText = text;
         errorNotificationAt = now;
         notifyProcessDef.createObject(service, {
-            command: ["notify-send", "-a", GitHubConstants.notificationAppName, "-u", "normal", "-t", String(GitHubConstants.notificationExpireMs), "GitHub Inbox refresh failed", text],
+            command: ["dms", "notify", "-a", GitHubConstants.notificationAppName, "-u", "normal", "-t", String(GitHubConstants.notificationExpireMs), "--", "GitHub Inbox refresh failed", text],
             running: true
         });
         return true;

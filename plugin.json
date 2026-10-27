@@ -15,6 +15,6 @@
     "requires_dms": ">=2.0.0",
     "distro": ["any"],
     "compositors": ["any"],
-    "dependencies": ["curl", "secret-tool", "jq", "notify-send", "file", "bash", "nice", "cp", "find", "mkdir", "cat", "rm", "env", "sleep"],
+    "dependencies": ["curl", "secret-tool", "jq", "file", "bash", "nice", "cp", "find", "mkdir", "cat", "rm", "env", "sleep"],
     "screenshot": "https://github.com/TMS-Namespace/DMS-GitHub-Inbox-Plugin/raw/main/images/plugin_group_by_date.png"
 }

@@ -2,6 +2,8 @@
 //
 // Handles URL-level deduplication, queue management, curl-based fetching,
 // and offloading JSON parsing to a WorkerScript (via InboxBackgroundWorker).
+// Dux v2's dms dl accepts headers only through argv, not stdin or a header file.
+// Both authenticated fetch builders retain curl -H @- to keep tokens out of process arguments.
 
 pragma ComponentBehavior: Bound
 

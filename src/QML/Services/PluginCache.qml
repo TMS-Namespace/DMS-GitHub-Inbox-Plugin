@@ -491,13 +491,16 @@ Item {
         }
 
         let localPath = cacheAvatarsDir + "/" + normalizedLogin + ".png";
-        let retryArguments = providerApi.buildCurlRetryArguments();
+        let retryPolicy = providerApi.getRetryPolicy();
+        // Unlike authenticated API calls, public avatars need no token or secret headers, so dms dl is safe here.
         avatarDownloadComponent.createObject(cache, {
             login: normalizedLogin,
             localPath: localPath,
             generation: generation,
-            command: ["curl", "-f", "-sS", "-L", "--connect-timeout", GitHubConstants.avatarDownloadConnectTimeoutSeconds, "--max-time", GitHubConstants.avatarDownloadMaxTimeSeconds].concat(retryArguments, ["-o", localPath, normalizedUrl]),
-            running: true
+            downloadCommand: ["dms", "dl", "--connect-timeout", GitHubConstants.avatarDownloadConnectTimeoutSeconds, "--timeout", GitHubConstants.avatarDownloadMaxTimeSeconds, "-o", localPath, "--", normalizedUrl],
+            maximumRetries: retryPolicy.retryCount,
+            retryWindowMs: retryPolicy.maximumRetryTimeSeconds * 1000,
+            retryDelayMs: GitHubConstants.avatarDownloadRetryDelayMs
         });
     }
     // Read the owner's current data without initiating unrelated background work.
@@ -713,20 +716,12 @@ Item {
     Component {
         id: avatarDownloadComponent
 
-        Process {
+        AvatarDownloadWorker {
             property int generation: 0
             property string localPath: ""
             property string login: ""
 
-            stderr: SplitParser {
-                onRead: function (line) {}
-            }
-            stdout: SplitParser {
-                onRead: function (line) {}
-            }
-
-            onExited: function (exitCode) {
-                let success = exitCode === 0;
+            onFinished: function (success) {
                 if (!success)
                     cache._removeAvatarFile(localPath);
                 cache.avatarDownloadFinished(login, success ? ("file://" + localPath) : "", generation, success);

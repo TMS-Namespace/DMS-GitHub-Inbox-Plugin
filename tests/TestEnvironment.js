@@ -40,7 +40,7 @@ function createTestEnvironment() {
         "secret-tool":
             '#!/bin/sh\nif [ "$GITHUB_INBOX_TEST_SECRET_FAIL" = "$1" ]; then printf "%s\\n" "Test Secret Service failure" >&2; exit 7; fi\ncase "$1" in\nlookup) test -f "$XDG_CACHE_HOME/test-secret" || exit 1; cat "$XDG_CACHE_HOME/test-secret";;\nstore) cat > "$XDG_CACHE_HOME/test-secret";;\nclear) rm -f "$XDG_CACHE_HOME/test-secret";;\n*) exit 2;;\nesac\n',
         curl: '#!/bin/sh\nprintf "%s\\n" curl >> "$GITHUB_INBOX_BLOCKED_REQUESTS"\nexit 99\n',
-        "notify-send": "#!/bin/sh\nexit 0\n"
+        dms: '#!/bin/sh\ncase "$1" in\nnotify) exit 0;;\ndl) if [ "$GITHUB_INBOX_TEST_DMS_DOWNLOAD" = retry ]; then if [ ! -f "$XDG_CACHE_HOME/test-download-attempt" ]; then printf first > "$XDG_CACHE_HOME/test-download-attempt"; exit 1; fi; exit 0; fi;;\nesac\nprintf "%s\\n" "dms $1" >> "$GITHUB_INBOX_BLOCKED_REQUESTS"\nexit 99\n'
     };
     for (const [name, script] of Object.entries(commands))
         fs.writeFileSync(path.join(directory, "bin", name), script, { mode: 0o700 });

@@ -15,9 +15,11 @@ try {
     assert.equal(environment.QT_FATAL_WARNINGS, "0");
     assert.equal(spawnSync("secret-tool", ["lookup"], { env: environment }).status, 1);
     assert.equal(spawnSync("secret-tool", ["store"], { env: environment, input: "test-only" }).status, 0);
-    assert.equal(spawnSync("notify-send", ["Test"], { env: environment }).status, 0);
+    assert.equal(spawnSync("dms", ["notify", "Test"], { env: environment }).status, 0);
     assert.equal(spawnSync("curl", ["https://example.invalid"], { env: environment }).status, 99);
     assert.equal(testEnvironment.blockedRequests(), "curl");
+    assert.equal(spawnSync("dms", ["dl", "https://example.invalid"], { env: environment }).status, 99);
+    assert.equal(testEnvironment.blockedRequests(), "curl\ndms dl");
 } finally {
     testEnvironment.dispose();
 }

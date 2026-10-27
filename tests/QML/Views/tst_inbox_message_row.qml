@@ -2,6 +2,8 @@
 
 import QtQuick
 import QtTest
+import "../../../src/QML" as Plugin
+import qs.Common
 
 TestCase {
     id: testCase
@@ -40,6 +42,13 @@ TestCase {
             }
         });
     }
+    // Collect repeated avatar instances so all three edges can be checked, not just the first.
+    function namedItems(item, name) {
+        let matches = item.objectName === name ? [item] : [];
+        for (let child of item.children || [])
+            matches = matches.concat(namedItems(child, name));
+        return matches;
+    }
     function test_authorCountDoesNotResizeMessageCard() {
         let oneAuthorRow = createRow(1);
         let threeAuthorRow = createRow(3);
@@ -51,6 +60,45 @@ TestCase {
         let row = createRow(5);
         compare(row.limitedAuthors.length, 3);
         row.destroy();
+    }
+    // Fit avatars inside unchanged cards for both grouping styles, widths and title-line settings.
+    function test_avatarSizesAndSpacingFitCards() {
+        for (let width of [320, 520]) {
+            for (let showRepository of [false, true]) {
+                for (let lines of [1, 2, 3, 4]) {
+                    let row = createRow(3);
+                    row.width = width;
+                    row.showRepositoryInfo = showRepository;
+                    row.extraHeight = showRepository ? 0 : 6;
+                    row.titleLines = lines;
+                    wait(30);
+                    let avatars = namedItems(row, "authorAvatar");
+                    compare(avatars.length, 3);
+                    avatars.sort((left, right) => left.mapToItem(row, 0, 0).y - right.mapToItem(row, 0, 0).y);
+                    let previousBottom = 0;
+                    for (let avatar of avatars) {
+                        let point = avatar.mapToItem(row, 0, 0);
+                        compare(avatar.width, row.avatarSize);
+                        compare(avatar.height, row.avatarSize);
+                        verify(point.y >= Theme.spacingS, "Top inset: " + point.y + ", width=" + width + ", lines=" + lines + ", repository=" + showRepository);
+                        verify(point.y + avatar.height <= row.height - Theme.spacingS);
+                        verify(point.x >= Theme.spacingS);
+                        verify(point.x + avatar.width <= row.width - Theme.spacingS);
+                        if (previousBottom > 0)
+                            verify(point.y - previousBottom >= row.authorRowSpacing, "Avatar gap: " + (point.y - previousBottom) + ", expected=" + row.authorRowSpacing + ", width=" + width + ", lines=" + lines + ", repository=" + showRepository);
+                        previousBottom = point.y + avatar.height;
+                    }
+                    let repository = findChild(row, "repositoryAvatar");
+                    compare(repository.width, row.avatarSize);
+                    compare(repository.height, row.avatarSize);
+                    let expectedHeight = Math.max(Theme.fontSizeMedium * 3 + Plugin.GitHubConstants.messageRowMinHeightDelta, row.contentMinHeight, 3 * (Theme.fontSizeMedium + Plugin.GitHubConstants.messageAuthorRowHeightDelta) + Theme.spacingM + Plugin.GitHubConstants.messageRowAuthorColumnPaddingDelta) + row.extraHeight;
+                    compare(row.height, expectedHeight);
+                    if (lines === 2)
+                        verify(row.avatarSize > 24);
+                    row.destroy();
+                }
+            }
+        }
     }
     // Verify the cache-to-row-to-image path, rather than only checking author metadata.
     function test_cachedAuthorAvatarLoadsFromDisk() {
@@ -146,6 +194,7 @@ TestCase {
     }
 
     name: "InboxMessageRow"
+    visible: true
 
     SignalSpy {
         id: closeSpy

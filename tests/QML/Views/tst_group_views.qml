@@ -54,6 +54,45 @@ TestCase {
             }
         ];
     }
+    // The repository header icon follows the fitted author diameter used by its message cards.
+    function test_repositoryHeaderMatchesAuthorAvatars() {
+        let component = Qt.createComponent("../../../src/QML/Views/RepoGroupingGroupView.qml");
+        compare(component.status, Component.Ready, component.errorString());
+        let group = createTemporaryObject(component, testCase, {
+            width: 480,
+            expanded: true,
+            showAuthorInfo: true,
+            titleLines: 2,
+            authorsByThread: {
+                one: [
+                    {
+                        login: "first"
+                    },
+                    {
+                        login: "second"
+                    },
+                    {
+                        login: "third"
+                    }
+                ]
+            },
+            groupData: {
+                repository: "owner/repo",
+                items: [
+                    {
+                        threadId: "one",
+                        title: "Message"
+                    }
+                ]
+            }
+        });
+        let row = findChild(group, "groupMessageRow");
+        let repository = findChild(group, "repositoryGroupAvatar");
+        verify(row);
+        verify(repository);
+        compare(repository.width, row.avatarSize);
+        compare(repository.height, row.avatarSize);
+    }
 
     name: "GroupViews"
 }

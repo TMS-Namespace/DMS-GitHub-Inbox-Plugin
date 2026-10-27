@@ -91,8 +91,9 @@ Rectangle {
 
                 Item {
                     anchors.verticalCenter: parent.verticalCenter
-                    height: GitHubConstants.popoutRepoAvatarSizePx
-                    width: GitHubConstants.popoutRepoAvatarSizePx
+                    height: Math.min(Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta, repoHeader.height)
+                    objectName: "repositoryGroupAvatar"
+                    width: height
 
                     RoundedAvatar {
                         anchors.fill: parent

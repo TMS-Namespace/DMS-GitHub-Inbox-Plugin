@@ -18,6 +18,7 @@ Settings 1.0 Settings.qml
 
 AuthorBackgroundWorker 1.0 BackgroundWorkers/AuthorBackgroundWorker.qml
 AvatarBackgroundWorker 1.0 BackgroundWorkers/AvatarBackgroundWorker.qml
+AvatarDownloadWorker 1.0 BackgroundWorkers/AvatarDownloadWorker.qml
 InboxBackgroundWorker 1.0 BackgroundWorkers/InboxBackgroundWorker.qml
 
 Author 1.0 Contracts/Author.qml

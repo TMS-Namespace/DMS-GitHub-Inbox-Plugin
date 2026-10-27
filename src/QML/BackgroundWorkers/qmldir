@@ -1,3 +1,4 @@
 AuthorBackgroundWorker 1.0 AuthorBackgroundWorker.qml
 AvatarBackgroundWorker 1.0 AvatarBackgroundWorker.qml
+AvatarDownloadWorker 1.0 AvatarDownloadWorker.qml
 InboxBackgroundWorker 1.0 InboxBackgroundWorker.qml

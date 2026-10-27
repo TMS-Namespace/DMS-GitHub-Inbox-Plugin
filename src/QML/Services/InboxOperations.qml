@@ -541,6 +541,8 @@ Item {
     }
     // Build a provider-specific destination from validated subject data.
     function buildMutationCommand(method, url, payloadJson) {
+        // Dux v2's dms dl is GET-only and has no stdin/header-file input.
+        // Mutations need PATCH/PUT/DELETE and curl -H @- to keep the token out of argv.
         let command = ["bash", "-c", "exec \"$@\" -H @-", "github-inbox-mutation", "curl", "-sS", "-o", "/dev/null", "-w", GitHubConstants.curlStatusCodeFormat, "--connect-timeout", GitHubConstants.curlConnectTimeoutSeconds, "--max-time", GitHubConstants.curlMaxTimeSeconds, "-X", method, "-H", "Accept: " + GitHubConstants.httpAcceptHeader, "-H", "X-GitHub-Api-Version: " + GitHubConstants.githubApiVersionHeader];
         command = command.concat(providerApi.buildCurlRetryArguments());
         if (payloadJson)

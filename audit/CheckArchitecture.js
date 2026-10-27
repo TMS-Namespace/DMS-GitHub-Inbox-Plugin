@@ -67,6 +67,8 @@ function checkArchitecture() {
             failures.push(`${relativePath} performs background work; views must delegate it to services.`);
         if (/\bimport\s+qs\.Widgets\b|\bDank[A-Z]\w*\s*\{/.test(source))
             failures.push(`${relativePath} must use the current DCommon widget module and D* names.`);
+        if (/\bnotify-send\b/.test(source))
+            failures.push(`${relativePath} must use built-in dms notify rather than libnotify.`);
         if (
             relativePath.startsWith("Views/") &&
             /\b(?:Flickable|ListView|GridView|ScrollBar|Button|TextField|Slider|Switch|ComboBox|ToolTip)\s*\{/.test(

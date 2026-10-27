@@ -23,9 +23,6 @@ QtObject {
     /// Size of the "person" fallback icon shown when no avatar URL is available.
     readonly property int authorAvatarFallbackIconSizePx: 12
 
-    /// Width and height (square) of the circular author avatar canvas.
-    readonly property int authorAvatarSizePx: 24
-
     /// Query string appended to author-detail sub-requests to fetch up to 100
     /// items per page and avoid unnecessary pagination.
     readonly property string authorFetchPerPageQuery: "per_page=100"
@@ -69,6 +66,9 @@ QtObject {
 
     /// max-time (seconds) for avatar image downloads via curl.
     readonly property string avatarDownloadMaxTimeSeconds: "30"
+
+    /// Delay between built-in downloader attempts, bounded by the provider retry policy.
+    readonly property int avatarDownloadRetryDelayMs: 1000
 
     /// Maximum number of times a RoundedAvatar retries loading after an error
     /// (e.g. transient network failure after system wakeup).
@@ -368,7 +368,8 @@ QtObject {
     /// info area.
     readonly property int messageAuthorColumnMinWidthPx: 72
 
-    /// Offset from Theme.fontSizeMedium for each author entry row.
+    /// Preferred author avatar diameter and row height, relative to Theme.fontSizeMedium.
+    /// Compact cards fit this down to preserve all three avatars and their padding.
     readonly property int messageAuthorRowHeightDelta: 12
 
     /// Fill opacity of the subject-type icon badge background tint.
@@ -457,14 +458,14 @@ QtObject {
     /// Minimum allowed value for the title lines setting.
     readonly property int minTitleLines: 1
 
-    /// Application name passed to notify-send via the -a flag.
+    /// Application name passed to dms notify via the -a flag.
     readonly property string notificationAppName: "GitHub Inbox"
 
     /// Maximum number of new inbox messages whose title is shown in the
     /// desktop-notification body. Larger batches use a generic message.
     readonly property int notificationDetailedMessageLimit: 2
 
-    /// Notification expiry timeout in milliseconds passed to notify-send -t.
+    /// Notification expiry timeout in milliseconds passed to dms notify -t.
     readonly property int notificationExpireMs: 10000
 
     // =========================================================================
@@ -545,10 +546,6 @@ QtObject {
     /// loaded yet.
     readonly property int popoutRepoAvatarFallbackIconSizePx: 18
 
-    /// Width and height (square) of the repo-owner avatar shown in the group
-    /// header.
-    readonly property int popoutRepoAvatarSizePx: 20
-
     /// Offset from Theme.fontSizeSmall for the notification-count badge height.
     readonly property int popoutRepoCountBadgeHeightDelta: 6
 
@@ -608,7 +605,7 @@ QtObject {
     readonly property int refreshBusyStaleMs: 300000
 
     /// External commands required for the plugin's full operation.
-    readonly property var requiredCommands: ["bash", "curl", "secret-tool", "jq", "notify-send", "file", "nice", "cp", "find", "mkdir", "cat", "rm", "env", "sleep"]
+    readonly property var requiredCommands: ["bash", "curl", "secret-tool", "jq", "file", "nice", "cp", "find", "mkdir", "cat", "rm", "env", "sleep"]
 
     /// Minimum delay between resource-ready UI notifications. Avatar/author
     /// workers may finish several resources close together; the view consumes

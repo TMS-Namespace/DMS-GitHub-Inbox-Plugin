@@ -11,10 +11,13 @@ Item {
     id: row
 
     property bool allowAuthorRequests: true
-    property int authorColumnHeight: showAuthors ? GitHubConstants.maxAuthorsDisplayedPerMessage * authorRowHeight : 0
+    // Keep the existing card-height budget independent of the fitted avatar dimensions.
+    property int authorColumnHeight: showAuthors ? GitHubConstants.maxAuthorsDisplayedPerMessage * (Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta) : 0
     property bool authorRequestSent: false
-    property int authorRowHeight: Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta
+    readonly property int authorRowHeight: Math.max(0, Math.min(Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta, Math.floor((height - 2 * Theme.spacingS - (GitHubConstants.maxAuthorsDisplayedPerMessage - 1) * authorRowSpacing) / GitHubConstants.maxAuthorsDisplayedPerMessage)))
+    readonly property real authorRowSpacing: Math.max(0, (Theme.spacingXXS || 0) + GitHubConstants.messageAuthorColumnItemSpacingDelta)
     property var authors: []
+    readonly property int avatarSize: authorRowHeight
     property int contentMinHeight: Theme.fontSizeMedium * 2 + GitHubConstants.messageRowContentMinHeightDelta + (Math.max(1, titleLines) * (Theme.fontSizeMedium + GitHubConstants.messageRowTitleLineHeightDelta)) + repositoryRowHeight + repositoryRowSpacing
     property int extraHeight: 0
     property bool isBusy: false
@@ -278,8 +281,9 @@ Item {
 
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            height: GitHubConstants.popoutRepoAvatarSizePx
-                            width: GitHubConstants.popoutRepoAvatarSizePx
+                            height: row.avatarSize
+                            objectName: "repositoryAvatar"
+                            width: row.avatarSize
 
                             RoundedAvatar {
                                 anchors.fill: parent
@@ -354,7 +358,7 @@ Item {
 
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        spacing: Math.max(0, (Theme.spacingXXS || 0) + GitHubConstants.messageAuthorColumnItemSpacingDelta)
+                        spacing: row.authorRowSpacing
 
                         Repeater {
                             model: row.limitedAuthors
@@ -375,8 +379,8 @@ Item {
                                     Item {
                                         id: avatarHost
 
-                                        height: GitHubConstants.authorAvatarSizePx
-                                        width: GitHubConstants.authorAvatarSizePx
+                                        height: row.avatarSize
+                                        width: row.avatarSize
 
                                         RoundedAvatar {
                                             anchors.fill: parent
