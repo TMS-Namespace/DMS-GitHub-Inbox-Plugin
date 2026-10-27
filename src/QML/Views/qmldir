@@ -9,6 +9,7 @@ PopoutPanel 1.0 PopoutPanel.qml
 RepoGroupingGroupView 1.0 RepoGroupingGroupView.qml
 RepoGroupingView 1.0 RepoGroupingView.qml
 RoundedAvatar 1.0 RoundedAvatar.qml
+LeftAlignedTooltip 1.0 LeftAlignedTooltip.qml
 GitHubTokenSetting 1.0 GitHubTokenSetting.qml
 SettingsApiStatsView 1.0 SettingsApiStatsView.qml
 SettingsCacheView 1.0 SettingsCacheView.qml

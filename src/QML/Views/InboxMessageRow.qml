@@ -14,11 +14,14 @@ Item {
     // Keep the existing card-height budget independent of the fitted avatar dimensions.
     property int authorColumnHeight: showAuthors ? GitHubConstants.maxAuthorsDisplayedPerMessage * (Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta) : 0
     property bool authorRequestSent: false
-    readonly property int authorRowHeight: Math.max(0, Math.min(Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta, Math.floor((height - 2 * Theme.spacingS - (GitHubConstants.maxAuthorsDisplayedPerMessage - 1) * authorRowSpacing) / GitHubConstants.maxAuthorsDisplayedPerMessage)))
-    readonly property real authorRowSpacing: Math.max(0, (Theme.spacingXXS || 0) + GitHubConstants.messageAuthorColumnItemSpacingDelta)
+    readonly property int authorRowHeight: Math.max(0, Math.min(Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta, Math.floor((height - 2 * Theme.spacingS - (GitHubConstants.maxAuthorsDisplayedPerMessage - 1) * minimumAuthorRowSpacing) / GitHubConstants.maxAuthorsDisplayedPerMessage)))
+    // Distribute three stable author slots across the height reserved for the configured title lines.
+    readonly property real authorRowSpacing: Math.max(minimumAuthorRowSpacing, Math.floor((height - 2 * Theme.spacingS - GitHubConstants.maxAuthorsDisplayedPerMessage * authorRowHeight) / (GitHubConstants.maxAuthorsDisplayedPerMessage - 1)))
     property var authors: []
     readonly property int avatarSize: authorRowHeight
-    property int contentMinHeight: Theme.fontSizeMedium * 2 + GitHubConstants.messageRowContentMinHeightDelta + (Math.max(1, titleLines) * (Theme.fontSizeMedium + GitHubConstants.messageRowTitleLineHeightDelta)) + repositoryRowHeight + repositoryRowSpacing
+    property int contentMinHeight: showRepositoryInfo ? dateContentHeight : Theme.fontSizeMedium * 2 + GitHubConstants.messageRowContentMinHeightDelta + (Math.max(1, titleLines) * (Theme.fontSizeMedium + GitHubConstants.messageRowTitleLineHeightDelta)) + mainInfoSpacing
+    // Date cards reserve configured title lines, not the current title's wrapped length.
+    readonly property int dateContentHeight: Math.ceil(titleFontMetrics.height) * Math.max(1, titleLines) + repositoryRowHeight + Math.ceil(metadataFontMetrics.height) + 2 * mainInfoSpacing + 2 * Theme.spacingS
     property int extraHeight: 0
     property bool isBusy: false
     property var limitedAuthors: {
@@ -27,16 +30,19 @@ Item {
             return list;
         return list.slice(0, GitHubConstants.maxAuthorsDisplayedPerMessage);
     }
+    readonly property real mainInfoSpacing: Theme.spacingXS + GitHubConstants.messageMainInfoColumnSpacingDelta
     property var messageData: ({})
+    // Use only the minimum gap in the height budget to avoid a sizing feedback loop.
+    readonly property real minimumAuthorRowSpacing: Math.max(0, (Theme.spacingXXS || 0) + GitHubConstants.messageAuthorColumnItemSpacingDelta)
     property var openExternalUrlHandler: function (url) {
         Qt.openUrlExternally(url);
     }
     readonly property var providerApi: GitHubManager.getProviderApi(GitHubManager.providerTypes[0])
     property string reason: providerApi ? providerApi.reasonLabel(messageData.reason) : "Activity"
     property int repositoryRowHeight: showRepositoryInfo ? Theme.fontSizeMedium + GitHubConstants.messageAuthorRowHeightDelta : 0
-    property int repositoryRowSpacing: showRepositoryInfo ? Theme.spacingXS + GitHubConstants.messageMainInfoColumnSpacingDelta : 0
+    property int repositoryRowSpacing: showRepositoryInfo ? mainInfoSpacing : 0
     property var resolvedAuthors: authors || []
-    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + Theme.spacingM + GitHubConstants.messageRowAuthorColumnPaddingDelta)
+    property int rowHeight: Math.max(contentMinHeight, authorColumnHeight + (showRepositoryInfo ? (GitHubConstants.maxAuthorsDisplayedPerMessage - 1) * minimumAuthorRowSpacing + 2 * Theme.spacingS : Theme.spacingM + GitHubConstants.messageRowAuthorColumnPaddingDelta))
     property bool shouldRequestAuthors: allowAuthorRequests && showAuthors && !authorRequestSent && threadId !== "" && resolvedAuthors.length === 0
     property bool showAuthors: true
     property bool showRepositoryInfo: false
@@ -175,6 +181,16 @@ Item {
     onThreadIdChanged: authorRequestSent = false
     onUpdatedAtChanged: authorRequestSent = false
 
+    FontMetrics {
+        id: titleFontMetrics
+
+        font: titleText.font
+    }
+    FontMetrics {
+        id: metadataFontMetrics
+
+        font: subjectTypeLabel.font
+    }
     Timer {
         id: authorRequestTimer
 
@@ -238,7 +254,7 @@ Item {
                     id: mainInfo
 
                     anchors.top: parent.top
-                    spacing: Theme.spacingXS + GitHubConstants.messageMainInfoColumnSpacingDelta
+                    spacing: row.mainInfoSpacing
                     width: (row.showAuthors && row.limitedAuthors.length > 0) ? Math.max(GitHubConstants.messageMainInfoMinWidthPx, Math.floor(bodySlot.width * GitHubConstants.messageMainInfoWidthRatio)) : bodySlot.width
 
                     Item {
@@ -255,11 +271,14 @@ Item {
                             font.pixelSize: Theme.fontSizeSmall
                             font.weight: row.unread ? Font.DemiBold : Font.Medium
                             maximumLineCount: Math.max(1, row.titleLines)
+                            objectName: "messageTitleText"
                             text: row.title
                             width: parent.width
                             wrapMode: Text.Wrap
                         }
                         MouseArea {
+                            id: titleLink
+
                             cursorShape: row.webUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
                             height: titleHost.height
                             hoverEnabled: true
@@ -267,6 +286,13 @@ Item {
                             width: Math.min(titleText.paintedWidth, titleText.width)
 
                             onClicked: row.openMessageUrl()
+                        }
+                        LeftAlignedTooltip {
+                            hoverArea: titleLink
+                            multiline: true
+                            objectName: "messageTitleTooltip"
+                            target: titleText
+                            text: (titleText.truncated ? row.title + "\n" : "") + GitHubConstants.openWebPageTooltipText
                         }
                     }
                     Item {
@@ -293,19 +319,24 @@ Item {
                             }
                         }
                         StyledText {
+                            id: repositoryName
+
                             anchors.left: repositoryAvatar.right
                             anchors.leftMargin: Theme.spacingXS
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            color: Theme.surfaceVariantText
+                            color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageSecondaryTextOpacity)
                             elide: Text.ElideRight
-                            font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
+                            font.pixelSize: Theme.fontSizeSmall
                             font.weight: Font.Medium
                             maximumLineCount: 1
+                            objectName: "repositoryNameText"
                             text: row.messageData.repository || "Unknown repository"
                             wrapMode: Text.NoWrap
                         }
                         MouseArea {
+                            id: repositoryLink
+
                             anchors.fill: parent
                             cursorShape: row.repositoryWebUrl() ? Qt.PointingHandCursor : Qt.ArrowCursor
                             hoverEnabled: true
@@ -313,33 +344,43 @@ Item {
 
                             onClicked: row.openRepository()
                         }
+                        LeftAlignedTooltip {
+                            hoverArea: repositoryLink
+                            multiline: true
+                            objectName: "repositoryTooltip"
+                            target: repositoryName
+                            text: (repositoryName.truncated ? repositoryName.text + "\n" : "") + GitHubConstants.openRepoWebPageTooltipText
+                        }
                     }
                     Row {
+                        objectName: "messageMetadataRow"
                         spacing: Theme.spacingXS
                         width: parent.width
 
                         StyledText {
-                            color: Theme.surfaceVariantText
+                            id: subjectTypeLabel
+
+                            color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageMetadataTextOpacity)
                             font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             text: row.subjectDisplay
                         }
                         StyledText {
-                            color: Theme.surfaceVariantText
+                            color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageMetadataTextOpacity)
                             font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             text: "\u2022"
                         }
                         StyledText {
-                            color: Theme.surfaceVariantText
+                            color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageMetadataTextOpacity)
                             font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             text: row.reason
                         }
                         StyledText {
-                            color: Theme.surfaceVariantText
+                            color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageMetadataTextOpacity)
                             font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             text: "\u2022"
                         }
                         StyledText {
-                            color: Theme.surfaceVariantText
+                            color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageMetadataTextOpacity)
                             elide: Text.ElideRight
                             font.pixelSize: Theme.fontSizeSmall + GitHubConstants.messageMetadataFontSizeDelta
                             text: row.updatedText
@@ -391,23 +432,35 @@ Item {
                                         }
                                     }
                                     StyledText {
+                                        id: authorName
+
                                         anchors.verticalCenter: parent.verticalCenter
-                                        color: Theme.surfaceVariantText
+                                        color: Theme.withAlpha(Theme.surfaceVariantText, GitHubConstants.messageSecondaryTextOpacity)
                                         elide: Text.ElideRight
                                         font.pixelSize: Theme.fontSizeSmall + GitHubConstants.authorNameFontSizeDelta
                                         maximumLineCount: 1
+                                        objectName: "authorNameText"
                                         text: row.authorDisplayName(authorDelegate.modelData)
                                         width: Math.max(GitHubConstants.authorNameMinWidthPx, authorInfo.width - avatarHost.width - Theme.spacingXS)
                                         wrapMode: Text.NoWrap
                                     }
                                 }
                                 MouseArea {
+                                    id: authorLink
+
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     hoverEnabled: true
                                     objectName: "authorProfileLink"
 
                                     onClicked: row.openAuthorProfile(row.authorProfile(authorDelegate.modelData))
+                                }
+                                LeftAlignedTooltip {
+                                    hoverArea: authorLink
+                                    multiline: true
+                                    objectName: "authorTooltip"
+                                    target: authorName
+                                    text: (authorName.truncated ? authorName.text + "\n" : "") + GitHubConstants.openAuthorWebPageTooltipText
                                 }
                             }
                         }

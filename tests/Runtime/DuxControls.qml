@@ -5,6 +5,7 @@ import QtQuick.Window
 import Quickshell
 import "../../src/QML/Services" as Services
 import "../../src/QML/Views" as Views
+import qs.Common
 import qs.DCommon.Widgets
 
 ShellRoot {
@@ -259,6 +260,20 @@ ShellRoot {
                     return;
                 checks.previousThumbSize = scroller.verticalScrollBar.size;
                 scroller.verticalScrollBar.position = 0.2;
+                let titleTooltip = checks.find(message, "messageTitleTooltip");
+                if (!checks.require(titleTooltip.multiline && titleTooltip.text === "Open web page", "Fitting titles must use the native multiline click tooltip"))
+                    return;
+                message.messageData = Object.assign({}, message.messageData, {
+                    title: "A long title with enough text to be truncated ".repeat(20),
+                    repository: "long-organization/" + "long-repository-name".repeat(10)
+                });
+                message.showRepositoryInfo = true;
+                message.visible = true;
+                message.authors = [
+                    {
+                        login: "a-very-long-author-name".repeat(5)
+                    }
+                ];
                 tokenSettingsService.tokenValue = "ghp_" + "a".repeat(36);
                 if (!checks.require(checks.tokenEdits === 0, "Loading a token was treated as a user edit"))
                     return;
@@ -269,6 +284,21 @@ ShellRoot {
                     return;
                 checks.phase = 1;
             } else if (checks.phase === 1) {
+                let metadata = checks.find(message, "messageMetadataRow");
+                if (!checks.require(metadata.mapToItem(message, 0, 0).y + metadata.height <= message.height - Theme.spacingS, "Date card metadata exceeds bottom padding with native fonts"))
+                    return;
+                for (let pair of [["messageTitleTooltip", "Open web page"], ["repositoryTooltip", "Open repo web page"], ["authorTooltip", "Open author's web page"]]) {
+                    let tooltip = checks.find(message, pair[0]);
+                    if (!checks.require(tooltip && tooltip.multiline && tooltip.target.truncated && tooltip.hoverArea && tooltip.text === tooltip.target.text + "\n" + pair[1], "Truncated links lost their native full-text tooltip: " + pair[0]))
+                        return;
+                    let content = tooltip.findTextContent(tooltip);
+                    if (!checks.require(content && content.horizontalAlignment === Text.AlignLeft, "Native tooltip content is not left-aligned: " + pair[0]))
+                        return;
+                }
+                let errorTooltip = checks.find(panel, "refreshErrorTooltip");
+                let errorContent = errorTooltip.findTextContent(errorTooltip);
+                if (!checks.require(errorContent && errorContent.horizontalAlignment === Text.AlignLeft, "Refresh-error tooltip is not left-aligned"))
+                    return;
                 let tokenInput = checks.find(tokenEditor, "githubTokenInput");
                 let tokenStatus = checks.find(tokenEditor, "githubTokenStatus");
                 if (!checks.require(tokenInput.text === "  ghp_short  " && tokenStatus.text.length > 0 && tokenInput.isError, "Live validation was missing or changed the draft"))

@@ -59,3 +59,4 @@ PopoutPanel 1.0 Views/PopoutPanel.qml
 RepoGroupingGroupView 1.0 Views/RepoGroupingGroupView.qml
 RepoGroupingView 1.0 Views/RepoGroupingView.qml
 RoundedAvatar 1.0 Views/RoundedAvatar.qml
+LeftAlignedTooltip 1.0 Views/LeftAlignedTooltip.qml

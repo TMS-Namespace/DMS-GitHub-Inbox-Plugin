@@ -269,7 +269,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
             }
-            DTooltipHost {
+            LeftAlignedTooltip {
                 hoverArea: refreshTooltipHover
                 multiline: true
                 objectName: "refreshErrorTooltip"

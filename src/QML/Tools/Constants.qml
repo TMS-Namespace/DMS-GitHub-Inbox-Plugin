@@ -36,7 +36,7 @@ QtObject {
 
     /// Offset from Theme.fontSizeSmall for the author login / display-name label beside the
     /// avatar.
-    readonly property int authorNameFontSizeDelta: -1
+    readonly property int authorNameFontSizeDelta: -2
 
     /// Minimum pixel width of the author name label to avoid collapsed text.
     readonly property int authorNameMinWidthPx: 28
@@ -388,7 +388,7 @@ QtObject {
     readonly property int messageIconSlotWidthPx: 26
 
     /// Offset from Theme.spacingXS between title/metadata items.
-    readonly property int messageMainInfoColumnSpacingDelta: -1
+    readonly property int messageMainInfoColumnSpacingDelta: 2
 
     /// Absolute minimum pixel width of the title/metadata column so it never
     /// becomes smaller than a comfortable reading width.
@@ -398,7 +398,8 @@ QtObject {
     readonly property real messageMainInfoWidthRatio: 0.7
 
     /// Offset from Theme.fontSizeSmall for subject-type, reason, and time labels.
-    readonly property int messageMetadataFontSizeDelta: 0
+    readonly property int messageMetadataFontSizeDelta: -1
+    readonly property real messageMetadataTextOpacity: 0.55
 
     /// Offset from Theme.spacingM below the author column when calculating
     /// the total row height.
@@ -426,6 +427,9 @@ QtObject {
 
     /// Opacity of the border drawn around unread inbox message rows.
     readonly property real messageRowUnreadBorderOpacity: 0.35
+
+    /// Theme-derived opacity for repository/author labels and less prominent card metadata.
+    readonly property real messageSecondaryTextOpacity: 0.75
 
     /// Pixel size of the subject-type icon glyph.
     readonly property int messageSubjectIconSizePx: 17
@@ -467,6 +471,11 @@ QtObject {
 
     /// Notification expiry timeout in milliseconds passed to dms notify -t.
     readonly property int notificationExpireMs: 10000
+    readonly property string openAuthorWebPageTooltipText: "Open author's web page"
+    readonly property string openRepoWebPageTooltipText: "Open repo web page"
+
+    /// Shared instruction for browser links, appended after full text when it is truncated.
+    readonly property string openWebPageTooltipText: "Open web page"
 
     // =========================================================================
     // Plugin Identity
