@@ -62,10 +62,9 @@ This plugin uses a **GitHub classic personal access token**, which can be create
   - Improvement: Structural refactoring for easier future maintenance.
   - Improvement: Better test coverage.
   - Improvement: Basic validation of the authentication token.
-  - Improvement: Use built-in Dux commands for notifications and avatar downloads instead of requiring libnotify.
+  - Improvement: Some cosmetic changes.
   - Fix: Bug with how grouping by date works.
   - Fix: API statistics were showing wrong info.
-  - Fix: Some security issues related to `curl`.
 - v1.0.1 :
   - Fixed `DMS` comments [published here](https://github.com/AvengeMedia/dms-plugin-registry/issues/554#issuecomment-5899485656).
   - Fixed some inbox messages was missing.
